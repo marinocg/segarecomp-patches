@@ -67,6 +67,6 @@ scripts/                     repository checks (no commercial data needed)
 
 ## License and trademarks
 
-Repository tooling and documentation are under the [MPL-2.0](LICENSE) unless a file says otherwise. The native providers (`patches/genesis/*/source/provider.c`) are under the [MIT license](LICENSES/MIT.txt): Sonic 2 and Sonic 3 & Knuckles declare it in their package manifests, and for the Sonic 1 provider (whose package manifest has no license field) this repository establishes MIT explicitly without changing the package bytes. BPS deltas are data-only patches for the exact images they name.
+Repository tooling and documentation are under the [MPL-2.0](LICENSE) unless a file says otherwise. The Sonic 1 provider is under the repository's [MPL-2.0](LICENSE): its package manifest has no license field, so this repository establishes it without changing the package bytes. The Sonic 2 and Sonic 3 & Knuckles providers keep the [MIT license](LICENSES/MIT.txt) that their package manifests declare. BPS deltas are data-only patches for the exact images they name.
 
 SEGA, Sega Genesis, Mega Drive, Sonic the Hedgehog and Streets of Rage are trademarks of SEGA Corporation. segarecomp and this repository are not affiliated with or endorsed by SEGA.

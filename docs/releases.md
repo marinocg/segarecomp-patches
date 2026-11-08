@@ -6,7 +6,7 @@ Installable `.segapatch` archives are **GitHub Release assets**, not files in Gi
 
 Every game directory has a `release.json` (format 1) listing its packages with: id, version, revision, schema and native ABI, trust classification (`data-only` or `trusted-native-source`), package SHA-256 and size, package identity (SHA-256 of the manifest), exact source image digest, patched image digest, BPS and native source digests, license, source path, BPS path, evidence tier, supported scope, limitations and the release asset URL. `catalog/index.json` is generated from these files by `scripts/build_catalog.py` and is the static input for a future documentation site. Hashes are never placeholders: they are computed from the actual archives.
 
-`license_declared_in_package` is `false` when the package manifest has no license field and the license (MIT) is established by this repository instead.
+`license_declared_in_package` is `false` when the package manifest has no license field and the license (MPL-2.0, the repository license) is established by this repository instead.
 
 `authoring_revision` is an opaque identifier of the private authoring revision that produced the package.
 

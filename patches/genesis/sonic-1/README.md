@@ -68,7 +68,7 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Source and licensing
 
-* [`source/provider.c`](source/provider.c): the provider shipped byte-for-byte in the package (SHA-256 `1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5`). License: **MIT** (established by this repository in [`LICENSES/MIT.txt`](../../../LICENSES/MIT.txt); the package manifest has no license field and the package bytes are unchanged).
+* [`source/provider.c`](source/provider.c): the provider shipped byte-for-byte in the package (SHA-256 `1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5`). License: **MPL-2.0** (the repository's [`LICENSE`](../../../LICENSE); the package manifest has no license field and the package bytes are unchanged).
 * Comments inside the provider point to private authoring notes that are not published. The file is kept unchanged so its digest matches the package.
 * The BPS delta is in `source/` ([`sonic1-native-widescreen.bps`](source/sonic1-native-widescreen.bps)); each file is byte-identical to the `game.bps` inside its package (SHA-256 in `release.json`).
 
