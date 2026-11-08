@@ -1,0 +1,54 @@
+{
+  "release_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Streets of Rage 2",
+  "release": "v0.1.0",
+  "packages": [
+    {
+      "id": "sor2-widescreen",
+      "version": "1.0.0",
+      "name": "Streets of Rage 2 Widescreen (USA)",
+      "revision": "USA",
+      "region": "USA",
+      "package_file": "sor2-widescreen.segapatch",
+      "package_sha256": "fb0f99422fa8c8b5cbf5f9c3c622fe22e786ed3387200dfdf159bb48c47c1eec",
+      "package_size": 656,
+      "package_identity": "413caf861453d03490f44743d1cad70b3856492f17e0dae50a7b42f0ba68b110",
+      "schema_version": 1,
+      "native_abi": null,
+      "capabilities": [],
+      "trust": "data-only",
+      "executable_code": false,
+      "source_image_sha256": "4a314edbfee92282850fe95c4c764921916efd9d3c2277fdec2581279b1369b1",
+      "patched_image_sha256": "a2bb0feddd7fd5c0dca6e25a4b9c29c86a0064bc004c7aa604521c129ec2deca",
+      "bps_sha256": "79786e7c19d938e87b7378d349261f8976e10937b56f1fc2859a9fb67dcc95ca",
+      "native_source_sha256": null,
+      "author": null,
+      "license": "not applicable (data-only BPS)",
+      "license_declared_in_package": false,
+      "source": null,
+      "authoring_revision": "3149c84",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "none intended",
+      "supported_scope": "Widens the sprite-piece submission window so additional enemies are drawn in the horizontal margins in all levels. Side scenery comes from the generic renderer.",
+      "limitations": [
+        "Only the exact USA image is covered.",
+        "No custom background reconstruction and no HUD relocation: the HUD stays in its original place and the side scenery is generic wrapped scenery.",
+        "Other revisions are not covered."
+      ],
+      "default_widescreen": "enhanced_gameplay",
+      "default_side_style": "raw",
+      "widescreen_width_max": 100,
+      "asset": {
+        "name": "sor2-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sor2-widescreen.segapatch"
+      },
+      "bps": {
+        "path": "source/sor2-widescreen.bps",
+        "sha256": "79786e7c19d938e87b7378d349261f8976e10937b56f1fc2859a9fb67dcc95ca"
+      }
+    }
+  ]
+}

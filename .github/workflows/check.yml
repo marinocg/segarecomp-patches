@@ -1,0 +1,23 @@
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository checks (no commercial data)
+        run: |
+          python3 scripts/check_repo.py
+          python3 scripts/build_catalog.py --check
+          python3 -m unittest -q tests.test_check_repo
+      # The same rebuild the release workflow performs, so a PR cannot merge something the release would reject.
+      - name: Rebuild packages from source and verify against release.json
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$(cat scripts/SEGAPATCH_REF)/tools/segapatch.py" -o "$RUNNER_TEMP/segapatch.py"
+          python3 scripts/build_packages.py --segapatch "$RUNNER_TEMP/segapatch.py" --out "$RUNNER_TEMP/assets"
+          python3 scripts/check_repo.py --assets "$RUNNER_TEMP/assets"

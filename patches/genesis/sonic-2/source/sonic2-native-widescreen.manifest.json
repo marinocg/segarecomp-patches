@@ -1,0 +1,38 @@
+{
+  "format": "segarecomp-patch",
+  "schema_version": 2,
+  "id": "sonic2-native-widescreen",
+  "version": "3.0.1",
+  "name": "Sonic 2 Native Widescreen (World REV00)",
+  "platform": "genesis",
+  "purpose": "widescreen",
+  "source_sha256": "07329f4561044a504923eb0742894485c61fc42ebb0891eebff247ca2e086d61",
+  "payloads": {
+    "rom": {
+      "format": "bps",
+      "file": "game.bps",
+      "sha256": "a02f2bea54d5d067487253bb9ad6c336e001a4fa36535b15fd8313b0c1fb6461",
+      "target_sha256": "1dc384e493b0ac53424046bcd0acc793ef0fde6427de323f1f047550dbf8ecac"
+    },
+    "native": {
+      "format": "c11-source",
+      "file": "provider.c",
+      "sha256": "b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0",
+      "abi": 1,
+      "capabilities": [
+        "frame.work_ram",
+        "frame.vdp",
+        "scenery.words",
+        "overlay.rgba"
+      ],
+      "executable": "yes"
+    }
+  },
+  "author": "segarecomp SEG-122",
+  "license": "MIT",
+  "widescreen_width_max": 100,
+  "presentation_defaults": {
+    "widescreen": "enhanced_gameplay",
+    "side_style": "raw"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "release_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Sonic the Hedgehog",
+  "release": "v0.1.0",
+  "packages": [
+    {
+      "id": "sonic1-native-widescreen",
+      "version": "2.0.1",
+      "name": "Sonic 1 Native Widescreen (REV00)",
+      "revision": "REV00",
+      "region": "USA/Europe",
+      "package_file": "sonic1-native-widescreen.segapatch",
+      "package_sha256": "636342c8a44516cc86bed4325c7f75d5721f0b38de8e852e2964a015566a5921",
+      "package_size": 8037,
+      "package_identity": "3f02775928030587a2fe11236f627afdd9276ac3dfd7e447aea9c363b2d22d37",
+      "schema_version": 2,
+      "native_abi": 1,
+      "capabilities": [
+        "frame.work_ram",
+        "frame.vdp",
+        "scenery.words",
+        "overlay.rgba"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "source_image_sha256": "46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6",
+      "patched_image_sha256": "985d25fff81cf1506072869e013e7eabb0b26572061cf6c5aa4b5383091d2b7f",
+      "bps_sha256": "d621b3f75fb7fdb5341243d142135162896428c35aba7514d125e2b3a758bd9d",
+      "native_source_sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5",
+      "author": "segarecomp SEG-124",
+      "license": "MPL-2.0",
+      "license_declared_in_package": false,
+      "source": {
+        "path": "source/provider.c",
+        "sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5"
+      },
+      "authoring_revision": "3759022",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "changes slightly",
+      "supported_scope": "Running levels of Green Hill, Labyrinth, Marble, Star Light, Spring Yard, Scrap Brain and Final Zone: reconstructed scenery, relocated HUD, and extended actor initialisation (the sprite builder's visibility test is widened by 64 pixels per side so objects do not pop in at the edge of the 16:9 picture). Special-stage background is the VDP's own wrapped plane.",
+      "limitations": [
+        "Only the exact REV00 image is covered.",
+        "Gameplay can differ slightly: objects that wait for the on-screen flag start acting up to 64 pixels earlier than in the original, and a scripted natural-play route through Green Hill 1 did not reproduce identical play.",
+        "The object manager's own load and despawn windows are unchanged, the margin is 64 pixels (the 16:9 strips need 39), and the hardware sprite limits still apply.",
+        "Special-stage background is the VDP's own wrapped plane (no reconstruction)."
+      ],
+      "default_widescreen": "enhanced_gameplay",
+      "default_side_style": "raw",
+      "widescreen_width_max": 100,
+      "asset": {
+        "name": "sonic1-native-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch"
+      },
+      "bps": {
+        "path": "source/sonic1-native-widescreen.bps",
+        "sha256": "d621b3f75fb7fdb5341243d142135162896428c35aba7514d125e2b3a758bd9d"
+      }
+    }
+  ]
+}

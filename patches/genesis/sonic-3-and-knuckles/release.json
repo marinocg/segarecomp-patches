@@ -1,0 +1,65 @@
+{
+  "release_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Sonic 3 & Knuckles",
+  "release": "v0.1.0",
+  "packages": [
+    {
+      "id": "sonic3k-native-widescreen",
+      "version": "1.0.1",
+      "name": "Sonic 3 & Knuckles Native Widescreen (lock-on)",
+      "revision": "lock-on composite (JUE)",
+      "region": "Japan/USA/Europe",
+      "package_file": "sonic3k-native-widescreen.segapatch",
+      "package_sha256": "8d08e4dbf13642331ba821fc46e29d576d8c6c6c017bbaea17f5f52771bf995a",
+      "package_size": 8941,
+      "package_identity": "6ef4f17a9ccd46eac666ca8034a3fe1730d08bfe74630037089fd87671c72ff0",
+      "schema_version": 2,
+      "native_abi": 1,
+      "capabilities": [
+        "frame.work_ram",
+        "frame.vdp",
+        "scenery.words",
+        "overlay.rgba"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "source_image_sha256": "fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23",
+      "patched_image_sha256": "8d31e8b6288f0f35304daaa33a8ea7431b514e4cf2f34993594a21b3d44e7c43",
+      "bps_sha256": "0a6067e3824b1870f184c9559fa26258fa3c502036584da30e9bfc8724e00640",
+      "native_source_sha256": "881f1e2d702a9ab7af2426b36f6aae285a56419d5b8de119a755901ee24bd5da",
+      "author": "segarecomp SEG-122",
+      "license": "MIT",
+      "license_declared_in_package": true,
+      "source": {
+        "path": "source/provider.c",
+        "sha256": "881f1e2d702a9ab7af2426b36f6aae285a56419d5b8de119a755901ee24bd5da"
+      },
+      "authoring_revision": "095ae3b",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "changes slightly",
+      "supported_scope": "Single-player Sonic route of the 4 MiB Sonic & Knuckles + Sonic 3 lock-on composite, built with the lock-on cartridge declaration. Native foreground, background where the level layout explains it, relocated HUD and widened actor coverage.",
+      "limitations": [
+        "Only the exact 4 MiB lock-on composite is covered; standalone Sonic 3 or Sonic & Knuckles images are different identities.",
+        "Must be built as a declared lock-on cartridge (the launcher selects it automatically for this image; CLI builds need --mapper lock_on).",
+        "Some backgrounds still use the VDP's own wrapped scenery.",
+        "Some scenes may exhibit minor background wrapping (the VDP's own wrapped scenery), visual seams or other graphical imperfections.",
+        "Gameplay can differ slightly: additional actors and rings become active in the widened margins.",
+        "Sprite budget and per-line limits can be reached sooner in busy scenes."
+      ],
+      "default_widescreen": "enhanced_gameplay",
+      "default_side_style": "raw",
+      "widescreen_width_max": 100,
+      "asset": {
+        "name": "sonic3k-native-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic3k-native-widescreen.segapatch"
+      },
+      "bps": {
+        "path": "source/sonic3k-native-widescreen.bps",
+        "sha256": "0a6067e3824b1870f184c9559fa26258fa3c502036584da30e9bfc8724e00640"
+      }
+    }
+  ]
+}
