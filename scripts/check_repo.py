@@ -73,6 +73,14 @@ def check(root, errs):
             native = p.get("trust") == "trusted-native-source"
             if native != (p.get("schema_version") == 2) or native != bool(p.get("executable_code")):
                 errs.append(f"{n}: schema/trust/executable_code inconsistent")
+            mp = d / "source" / f"{p.get('id')}.manifest.json"
+            if not mp.is_file(): errs.append(f"{n}: source manifest missing")
+            else:
+                m = json.loads(mp.read_text()); pl = m.get("payloads", {})
+                if (m.get("id"), m.get("version"), m.get("source_sha256"), pl.get("rom", {}).get("sha256"), pl.get("rom", {}).get("target_sha256")) != (
+                        p.get("id"), p.get("version"), p.get("source_image_sha256"), p.get("bps_sha256"), p.get("patched_image_sha256")):
+                    errs.append(f"{n}: source manifest disagrees with release.json")
+                if pl.get("native", {}).get("sha256") != p.get("native_source_sha256"): errs.append(f"{n}: manifest native digest disagrees")
             bp = p.get("bps"); src = p.get("source")
             if not bp or not (d / bp["path"]).is_file(): errs.append(f"{n}: BPS file missing")
             elif sha(d / bp["path"]) != bp["sha256"] or bp["sha256"] != p.get("bps_sha256"): errs.append(f"{n}: BPS digest mismatch")
@@ -91,16 +99,18 @@ def check(root, errs):
 def check_assets(root, assets, cli, errs):
     sums = {}
     sf = assets / "SHA256SUMS"
-    if sf.is_file():
+    if not sf.is_file(): errs.append("SHA256SUMS is missing from the release assets")
+    else:
         for l in sf.read_text().splitlines():
             h, _, name = l.partition("  "); sums[name.strip()] = h
+    expected = set()
     for rj in sorted((root / "patches").glob("*/*/release.json")):
         for p in json.loads(rj.read_text())["packages"]:
-            f = assets / p["package_file"]; n = p["id"]
+            f = assets / p["package_file"]; n = p["id"]; expected.add(p["package_file"])
             if not f.is_file(): errs.append(f"{n}: asset not found"); continue
             if sha(f) != p["package_sha256"]: errs.append(f"{n}: asset SHA-256 differs from release.json")
             if f.stat().st_size != p["package_size"]: errs.append(f"{n}: asset size differs")
-            if sums and sums.get(p["package_file"]) != p["package_sha256"]: errs.append(f"{n}: SHA256SUMS differs")
+            if sums.get(p["package_file"]) != p["package_sha256"]: errs.append(f"{n}: SHA256SUMS missing or differs")
             if cli:
                 r = subprocess.run([cli, "patch", "inspect", str(f)], capture_output=True, text=True)
                 try: i = json.loads(r.stdout)
@@ -111,6 +121,11 @@ def check_assets(root, assets, cli, errs):
                         "executable_code": p["executable_code"], "native_source_sha256": p.get("native_source_sha256") or ""}
                 for k, v in want.items():
                     if i.get(k) != v: errs.append(f"{n}: inspect {k} differs")
+
+
+    if sf.is_file() and set(sums) != expected: errs.append("SHA256SUMS does not list exactly the packages in release.json")
+    extra = {x.name for x in assets.iterdir()} - expected - {"SHA256SUMS"}
+    if extra: errs.append(f"unexpected release assets: {sorted(extra)}")
 
 
 def main(argv=None):

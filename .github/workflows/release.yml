@@ -1,0 +1,38 @@
+name: release
+# Rebuilds every .segapatch from the committed sources and creates a DRAFT release. Publication stays a manual maintainer action.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (needs docs/release-notes/<tag>.md)
+        required: true
+        default: v0.1.0
+permissions:
+  contents: write
+env:
+  # segarecomp commit whose tools/segapatch.py provides the deterministic package writer
+  SEGAPATCH_REF: 55c494b914b93af91c68f09ed8217571d03aa062
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository checks
+        run: |
+          python3 scripts/check_repo.py
+          python3 scripts/build_catalog.py --check
+          python3 -m unittest -q tests.test_check_repo
+      - name: Fetch the product's package writer
+        run: curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/${SEGAPATCH_REF}/tools/segapatch.py" -o "$RUNNER_TEMP/segapatch.py"
+      - name: Rebuild packages from source (must match release.json)
+        run: python3 scripts/build_packages.py --segapatch "$RUNNER_TEMP/segapatch.py" --out "$RUNNER_TEMP/assets"
+      - name: Verify assets against release.json and SHA256SUMS
+        run: python3 scripts/check_repo.py --assets "$RUNNER_TEMP/assets"
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          test -f "docs/release-notes/${TAG}.md"
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "segarecomp Patches ${TAG}" \
+            --notes-file "docs/release-notes/${TAG}.md" "$RUNNER_TEMP"/assets/*.segapatch "$RUNNER_TEMP/assets/SHA256SUMS"

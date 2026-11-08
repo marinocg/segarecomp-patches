@@ -1,0 +1,23 @@
+{
+  "format": "segarecomp-patch",
+  "schema_version": 1,
+  "id": "sor2-widescreen",
+  "version": "1.0.0",
+  "name": "Streets of Rage 2 Widescreen (USA)",
+  "platform": "genesis",
+  "purpose": "widescreen",
+  "source_sha256": "4a314edbfee92282850fe95c4c764921916efd9d3c2277fdec2581279b1369b1",
+  "payloads": {
+    "rom": {
+      "format": "bps",
+      "file": "game.bps",
+      "sha256": "79786e7c19d938e87b7378d349261f8976e10937b56f1fc2859a9fb67dcc95ca",
+      "target_sha256": "a2bb0feddd7fd5c0dca6e25a4b9c29c86a0064bc004c7aa604521c129ec2deca"
+    }
+  },
+  "widescreen_width_max": 100,
+  "presentation_defaults": {
+    "widescreen": "enhanced_gameplay",
+    "side_style": "raw"
+  }
+}

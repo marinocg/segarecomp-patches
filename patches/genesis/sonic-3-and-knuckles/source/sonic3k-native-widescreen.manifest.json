@@ -1,0 +1,38 @@
+{
+  "format": "segarecomp-patch",
+  "schema_version": 2,
+  "id": "sonic3k-native-widescreen",
+  "version": "1.0.0",
+  "name": "Sonic 3 & Knuckles Native Widescreen (lock-on)",
+  "platform": "genesis",
+  "purpose": "widescreen",
+  "source_sha256": "fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23",
+  "payloads": {
+    "rom": {
+      "format": "bps",
+      "file": "game.bps",
+      "sha256": "0a6067e3824b1870f184c9559fa26258fa3c502036584da30e9bfc8724e00640",
+      "target_sha256": "8d31e8b6288f0f35304daaa33a8ea7431b514e4cf2f34993594a21b3d44e7c43"
+    },
+    "native": {
+      "format": "c11-source",
+      "file": "provider.c",
+      "sha256": "881f1e2d702a9ab7af2426b36f6aae285a56419d5b8de119a755901ee24bd5da",
+      "abi": 1,
+      "capabilities": [
+        "frame.work_ram",
+        "frame.vdp",
+        "scenery.words",
+        "overlay.rgba"
+      ],
+      "executable": "yes"
+    }
+  },
+  "author": "segarecomp SEG-122",
+  "license": "MIT",
+  "widescreen_width_max": 100,
+  "presentation_defaults": {
+    "widescreen": "enhanced_gameplay",
+    "side_style": "comfort"
+  }
+}

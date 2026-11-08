@@ -1,0 +1,37 @@
+{
+  "format": "segarecomp-patch",
+  "schema_version": 2,
+  "id": "sonic1-native-widescreen",
+  "version": "2.0.0",
+  "name": "Sonic 1 Native Widescreen (REV00)",
+  "platform": "genesis",
+  "purpose": "widescreen",
+  "source_sha256": "46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6",
+  "payloads": {
+    "rom": {
+      "format": "bps",
+      "file": "game.bps",
+      "sha256": "d621b3f75fb7fdb5341243d142135162896428c35aba7514d125e2b3a758bd9d",
+      "target_sha256": "985d25fff81cf1506072869e013e7eabb0b26572061cf6c5aa4b5383091d2b7f"
+    },
+    "native": {
+      "format": "c11-source",
+      "file": "provider.c",
+      "sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5",
+      "abi": 1,
+      "capabilities": [
+        "frame.work_ram",
+        "frame.vdp",
+        "scenery.words",
+        "overlay.rgba"
+      ],
+      "executable": "yes"
+    }
+  },
+  "author": "segarecomp SEG-124",
+  "widescreen_width_max": 100,
+  "presentation_defaults": {
+    "widescreen": "enhanced_gameplay",
+    "side_style": "comfort"
+  }
+}

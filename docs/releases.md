@@ -12,9 +12,14 @@ Every game directory has a `release.json` (format 1) listing its packages with: 
 
 * [Release notes v0.1.0](release-notes/v0.1.0.md).
 * `python3 scripts/check_repo.py`: structure, metadata, link and forbidden-content checks, source digests, catalog freshness. Needs no commercial data.
+* `python3 scripts/build_packages.py --segapatch <segarecomp tools/segapatch.py> --out <dir>`: rebuilds every `.segapatch` from `source/` (manifest, BPS, provider) with the product's own deterministic writer and fails unless each equals the digest in `release.json`. It needs no game image.
 * `python3 scripts/check_repo.py --assets <dir> [--segarecomp <binary>]`: compares the downloaded release assets with `release.json` and `SHA256SUMS`, and (with the shipped CLI) runs `segarecomp patch inspect` and compares the reported manifest facts.
 
-Full reproduction of a package needs the commercial image and the private authoring inputs, so it runs privately; the outcome is recorded only as a maintainer attestation.
+Rebuilding a package from `source/` needs no game image. Regenerating the BPS from an original image needs the image and the private authoring inputs, so that step runs privately.
+
+## Creating the draft release
+
+Run the **release** workflow (Actions, *Run workflow*, tag such as `v0.1.0`). It rebuilds the packages from source, checks them against `release.json` (hashes, sizes and a mandatory `SHA256SUMS`), and creates a **draft** GitHub Release with the rebuilt packages, `SHA256SUMS` and `docs/release-notes/<tag>.md`. Nothing is published automatically. The product's `segapatch.py` writer is fetched at the commit pinned in the workflow.
 
 ## Excluded from v0.1.0
 

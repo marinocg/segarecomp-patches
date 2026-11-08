@@ -37,7 +37,7 @@ You must supply the original image yourself. No game data is included in this re
 ## What it intentionally does not change
 
 * Does not change the object manager's own load and despawn windows (about -128 to +512 pixels around the camera) or the hardware sprite limits.
-* Does not alter physics, audio or level data.
+* Does not alter game logic, physics, audio or level data.
 * Does not cover other revisions (REV01 or regional dumps are different images).
 
 ## Gameplay

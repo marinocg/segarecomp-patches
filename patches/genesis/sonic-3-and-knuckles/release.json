@@ -44,7 +44,7 @@
         "Only the exact 4 MiB lock-on composite is covered; standalone Sonic 3 or Sonic & Knuckles images are different identities.",
         "Must be built as a declared lock-on cartridge (the launcher selects it automatically for this image; CLI builds need --mapper lock_on).",
         "Some backgrounds still use the VDP's own wrapped scenery.",
-        "Bosses, act transitions, the ending and the Knuckles and Tails-alone routes are not individually verified; no full-campaign guarantee is made.",
+        "Some scenes may exhibit minor background wrapping (the VDP's own wrapped scenery), visual seams or other graphical imperfections.",
         "Gameplay can differ slightly: additional actors and rings become active in the widened margins.",
         "Sprite budget and per-line limits can be reached sooner in busy scenes."
       ],

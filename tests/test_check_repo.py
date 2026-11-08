@@ -45,6 +45,10 @@ class Checks(unittest.TestCase):
         d = self.copy(); (d / "docs/x.md").write_text("see private-corpus/")
         self.assertTrue(any("marker" in e for e in self.errs(d)))
 
+    def test_sums_required(self):
+        d = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d); e = []
+        check_repo.check_assets(ROOT, d, None, e); self.assertTrue(any("SHA256SUMS is missing" in x for x in e))
+
     def test_bad_asset(self):
         d = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d)
         (d / "sor2-widescreen.segapatch").write_bytes(b"not it"); e = []

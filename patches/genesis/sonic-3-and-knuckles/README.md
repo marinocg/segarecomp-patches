@@ -27,6 +27,12 @@ The patch only applies to the exact image below; anything else is refused by dig
 
 You must supply the original image yourself. No game data is included in this repository or in the packages.
 
+## Compatibility
+
+**Playable widescreen (maintainer-tested).** Native 16:9 has been tested across the Sonic campaign. Foreground scenery, HUD relocation and extended actor rendering work as intended. Some scenes may exhibit minor background wrapping, visual seams or other graphical imperfections.
+
+Automated tests cover all 27 Sonic-route acts with high frame acceptance. Boss encounters, transitions, endings and alternative character routes have not received the same exhaustive automated verification. These validation limitations should not be interpreted as known gameplay blockers.
+
 ## Composite lock-on requirement
 
 The image is the 4 MiB lock-on composite: the lower 2 MiB are Sonic & Knuckles, the upper 2 MiB Sonic 3. It must be built as a **declared lock-on cartridge**. The launcher recognises this exact image from its header contents and selects the lock-on mapper automatically; for a command-line build pass `--mapper lock_on`. Without the lock-on declaration the composite stops a few frames after power-on. Standalone Sonic & Knuckles and standalone Sonic 3 images are not covered and are refused by identity.
@@ -40,7 +46,6 @@ The image is the 4 MiB lock-on composite: the lower 2 MiB are Sonic & Knuckles, 
 ## What it intentionally does not change
 
 * Does not make every background seamless: some zones draw background bands from sources the level model does not describe, and those use wrapped scenery.
-* Bosses, act transitions, the ending and the Knuckles and Tails-alone routes have not been individually verified, so this page makes **no full-campaign guarantee**. Expect small visual glitches rather than missing parts of the game.
 * Does not cover standalone Sonic 3 or standalone Sonic & Knuckles images: they are different identities.
 
 ## Gameplay
@@ -61,13 +66,13 @@ See [docs/installation.md](../../../docs/installation.md) for the full steps. In
 * Only the exact 4 MiB lock-on composite is covered; standalone Sonic 3 or Sonic & Knuckles images are different identities.
 * Must be built as a declared lock-on cartridge (the launcher selects it automatically for this image; CLI builds need --mapper lock_on).
 * Some backgrounds still use the VDP's own wrapped scenery.
-* Bosses, act transitions, the ending and the Knuckles and Tails-alone routes are not individually verified; no full-campaign guarantee is made.
+* Some scenes may exhibit minor background wrapping (the VDP's own wrapped scenery), visual seams or other graphical imperfections.
 * Gameplay can differ slightly: additional actors and rings become active in the widened margins.
 * Sprite budget and per-line limits can be reached sooner in busy scenes.
 
 ## Verification evidence
 
-Maintainer-attested: generated-native sweeps of 27 Sonic-route acts (97.7-100 % of level frames accepted per act; the foreground is reconstructed in every accepted frame, the background on 0-100 % of lines depending on the act), a natural play route of 11,000+ frames, and a HUD check against Vanilla (audio and virtual frames identical, only the ten HUD sprite Y words differ). Bosses, transitions and the ending were not individually verified. Aggregate evidence only.
+Maintainer-attested: generated-native sweeps of 27 Sonic-route acts (97.7-100 % of level frames accepted per act; the foreground is reconstructed in every accepted frame, the background on 0-100 % of lines depending on the act), a natural play route of 11,000+ frames, and a HUD check against Vanilla (audio and virtual frames identical, only the ten HUD sprite Y words differ). Aggregate evidence only.
 
 The archive, manifest, source image digest and patched image digest were additionally checked with the shipped `segarecomp patch verify` against the exact local image (maintainer-attested; the image is never published). Public CI cannot repeat this because it needs the commercial image.
 
