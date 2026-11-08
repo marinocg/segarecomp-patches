@@ -23,7 +23,7 @@ The patch only applies to the exact image below; anything else is refused by dig
 
 | Package | Revision | Original image SHA-256 | Package SHA-256 |
 |---|---|---|---|
-| [`sonic3k-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic3k-native-widescreen.segapatch) | lock-on composite (JUE) | `fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23` | `81f5904aea5c7d3ebc1464de4c1826847adab75a0fc58e0ac69181ab6fbc5794` |
+| `sonic3k-native-widescreen.segapatch` | lock-on composite (JUE) | `fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23` | `81f5904aea5c7d3ebc1464de4c1826847adab75a0fc58e0ac69181ab6fbc5794` |
 
 You must supply the original image yourself. No game data is included in this repository or in the packages.
 
@@ -84,9 +84,9 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Download
 
-* [`sonic3k-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic3k-native-widescreen.segapatch): 8944 bytes, SHA-256 `81f5904aea5c7d3ebc1464de4c1826847adab75a0fc58e0ac69181ab6fbc5794`
+* `sonic3k-native-widescreen.segapatch`: 8944 bytes, SHA-256 `81f5904aea5c7d3ebc1464de4c1826847adab75a0fc58e0ac69181ab6fbc5794`
 
-The link becomes valid when the `v0.1.0` release is published.
+Download it from the [Releases page](https://github.com/marinocg/segarecomp-patches/releases) (collection `v0.1.0`) and check it against `SHA256SUMS`.
 
 ## Credits and trademarks
 

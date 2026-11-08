@@ -23,7 +23,7 @@ The patch only applies to the exact image below; anything else is refused by dig
 
 | Package | Revision | Original image SHA-256 | Package SHA-256 |
 |---|---|---|---|
-| [`sonic1-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch) | REV00 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392` |
+| `sonic1-native-widescreen.segapatch` | REV00 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392` |
 
 You must supply the original image yourself. No game data is included in this repository or in the packages.
 
@@ -74,9 +74,9 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Download
 
-* [`sonic1-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch): 8039 bytes, SHA-256 `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392`
+* `sonic1-native-widescreen.segapatch`: 8039 bytes, SHA-256 `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392`
 
-The link becomes valid when the `v0.1.0` release is published.
+Download it from the [Releases page](https://github.com/marinocg/segarecomp-patches/releases) (collection `v0.1.0`) and check it against `SHA256SUMS`.
 
 ## Credits and trademarks
 

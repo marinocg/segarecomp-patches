@@ -22,7 +22,7 @@ The patch only applies to the exact image below; anything else is refused by dig
 
 | Package | Revision | Original image SHA-256 | Package SHA-256 |
 |---|---|---|---|
-| [`sor2-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sor2-widescreen.segapatch) | USA | `4a314edbfee92282850fe95c4c764921916efd9d3c2277fdec2581279b1369b1` | `fb0f99422fa8c8b5cbf5f9c3c622fe22e786ed3387200dfdf159bb48c47c1eec` |
+| `sor2-widescreen.segapatch` | USA | `4a314edbfee92282850fe95c4c764921916efd9d3c2277fdec2581279b1369b1` | `fb0f99422fa8c8b5cbf5f9c3c622fe22e786ed3387200dfdf159bb48c47c1eec` |
 
 You must supply the original image yourself. No game data is included in this repository or in the packages.
 
@@ -73,9 +73,9 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Download
 
-* [`sor2-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sor2-widescreen.segapatch): 656 bytes, SHA-256 `fb0f99422fa8c8b5cbf5f9c3c622fe22e786ed3387200dfdf159bb48c47c1eec`
+* `sor2-widescreen.segapatch`: 656 bytes, SHA-256 `fb0f99422fa8c8b5cbf5f9c3c622fe22e786ed3387200dfdf159bb48c47c1eec`
 
-The link becomes valid when the `v0.1.0` release is published.
+Download it from the [Releases page](https://github.com/marinocg/segarecomp-patches/releases) (collection `v0.1.0`) and check it against `SHA256SUMS`.
 
 ## Credits and trademarks
 
