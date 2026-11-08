@@ -52,6 +52,10 @@
       "asset": {
         "name": "sonic2-native-widescreen.segapatch",
         "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic2-native-widescreen.segapatch"
+      },
+      "bps": {
+        "path": "source/sonic2-native-widescreen.bps",
+        "sha256": "a02f2bea54d5d067487253bb9ad6c336e001a4fa36535b15fd8313b0c1fb6461"
       }
     },
     {
@@ -100,6 +104,10 @@
       "asset": {
         "name": "sonic2-native-widescreen-rev01.segapatch",
         "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic2-native-widescreen-rev01.segapatch"
+      },
+      "bps": {
+        "path": "source/sonic2-native-widescreen-rev01.bps",
+        "sha256": "b5021f9e1ced1b620fdf4407da0b8162177e402e84c96d2f1eeddbde492e6236"
       }
     }
   ]

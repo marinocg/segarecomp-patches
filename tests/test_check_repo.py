@@ -23,6 +23,14 @@ class Checks(unittest.TestCase):
         d = self.copy(); (d / "patches/genesis/sonic-1/game.bin").write_bytes(b"x")
         self.assertTrue(any("forbidden" in e for e in self.errs(d)))
 
+    def test_bps_digest_mismatch(self):
+        d = self.copy(); (d / "patches/genesis/streets-of-rage-2/source/sor2-widescreen.bps").write_bytes(b"x")
+        self.assertTrue(any("BPS digest" in e for e in self.errs(d)))
+
+    def test_stray_bps(self):
+        d = self.copy(); (d / "docs/other.bps").write_bytes(b"x")
+        self.assertTrue(any("forbidden" in e for e in self.errs(d)))
+
     def test_source_digest_mismatch(self):
         d = self.copy(); (d / "patches/genesis/sonic-1/source/provider.c").write_text("tampered")
         self.assertTrue(any("digest" in e for e in self.errs(d)))

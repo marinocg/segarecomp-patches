@@ -1,6 +1,6 @@
 # Sonic the Hedgehog
 
-> Native 16:9 for Sonic the Hedgehog (Genesis, REV00): the level scenery is reconstructed beyond the original 320-pixel picture from the game's own level data, and the original HUD is moved to the left edge of the wider picture.
+> Native 16:9 for Sonic the Hedgehog (Genesis, REV00): the level scenery is reconstructed beyond the original 320-pixel picture from the game's own level data, and the original HUD is moved to the left edge of the wider picture. The same package also extends actor initialisation so objects do not pop in at the edge of the wide picture.
 
 ![Sonic the Hedgehog, Green Hill Zone 1, in generated-native 16:9 with reconstructed scenery on both sides and the original score, time and rings HUD moved to the left edge](https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-1-green-hill-patched-16x9.png)
 
@@ -14,7 +14,7 @@
 | Native SDK ABI | 1 (capabilities: frame.work_ram, frame.vdp, scenery.words, overlay.rgba) |
 | Required segarecomp | A build that includes the patch installer and native patch SDK (not part of v0.7.0; first shipped in the next release) |
 | Supported target | 16:9 (Widescreen Width 100) |
-| Package version | 1.0.0 (collection release `v0.1.0`) |
+| Package version | 2.0.0 (collection release `v0.1.0`) |
 | Evidence tier | maintainer-attested |
 
 ## Original image
@@ -23,7 +23,7 @@ The patch only applies to the exact image below; anything else is refused by dig
 
 | Package | Revision | Original image SHA-256 | Package SHA-256 |
 |---|---|---|---|
-| [`sonic1-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch) | REV00 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | `a62de6fdd90ded70435d6111bdaa20c9938f5d9834e849fa32dc7c47ef0c1a97` |
+| [`sonic1-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch) | REV00 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392` |
 
 You must supply the original image yourself. No game data is included in this repository or in the packages.
 
@@ -32,16 +32,17 @@ You must supply the original image yourself. No game data is included in this re
 * Reconstructs both scenery planes beyond the original picture in the running levels of Green Hill, Labyrinth, Marble, Star Light, Spring Yard and Scrap Brain, and in the Final Zone.
 * Moves the original score/time/rings HUD to the left edge of the widened picture in every running level (a few-byte BPS change hides the original HUD sprites; the provider redraws the same pieces).
 * Draws the special-stage background from the VDP's own wrapped planes when the verified configuration is present.
+* **Extends actor initialisation:** the game's sprite builder only submits an object whose horizontal extent intersects the 320-pixel screen, so nothing beside a 16:9 picture is ever drawn and objects appear abruptly at the edge. This package widens that test by 64 pixels per side (a 12-byte routine in unused ROM padding plus a jump), so objects reach the sprite table, and get the on-screen flag, before they enter the side strips.
 
 ## What it intentionally does not change
 
-* No extended object activation: enemies and items are created and removed exactly as in the original. (An experimental variant that changes this exists privately and is **not** part of this release.)
+* Does not change the object manager's own load and despawn windows (about -128 to +512 pixels around the camera) or the hardware sprite limits.
 * Does not alter game logic, physics, audio or level data.
 * Does not cover other revisions (REV01 or regional dumps are different images).
 
 ## Gameplay
 
-Unchanged apart from the relocated HUD.
+Changes slightly: objects that wait for the on-screen flag start acting up to 64 pixels earlier than in the original, and a scripted natural-play route through Green Hill 1 did not reproduce identical play.
 
 ## Installation
 
@@ -55,8 +56,9 @@ See [docs/installation.md](../../../docs/installation.md) for the full steps. In
 ## Known limitations
 
 * Only the exact REV00 image is covered.
+* Gameplay can differ slightly: objects that wait for the on-screen flag start acting up to 64 pixels earlier than in the original, and a scripted natural-play route through Green Hill 1 did not reproduce identical play.
+* The object manager's own load and despawn windows are unchanged, the margin is 64 pixels (the 16:9 strips need 39), and the hardware sprite limits still apply.
 * Special-stage background is the VDP's own wrapped plane (no reconstruction).
-* No extended object activation: objects are not created or kept alive beyond the original window.
 
 ## Verification evidence
 
@@ -66,13 +68,13 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Source and licensing
 
-* [`source/provider.c`](source/provider.c): the provider shipped byte-for-byte in the package (SHA-256 `1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5`). License declared in the package manifest: **not declared by the package**. This package declares **no** license; the maintainer must decide it before publication and it is not relicensed here.
+* [`source/provider.c`](source/provider.c): the provider shipped byte-for-byte in the package (SHA-256 `1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5`). License declared in the package manifest: **not declared by the package**.
 * Comments inside the provider point to private authoring notes that are not published. The file is kept unchanged so its digest matches the package.
-* The BPS payload is a delta against a commercial image. It is distributed only inside the release package and is **not committed to Git**. Its redistribution is subject to the publication review in [docs/releases.md](../../../docs/releases.md).
+* The BPS delta is in `source/` ([`sonic1-native-widescreen.bps`](source/sonic1-native-widescreen.bps)); each file is byte-identical to the `game.bps` inside its package (SHA-256 in `release.json`).
 
 ## Download
 
-* [`sonic1-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch): 8011 bytes, SHA-256 `a62de6fdd90ded70435d6111bdaa20c9938f5d9834e849fa32dc7c47ef0c1a97`
+* [`sonic1-native-widescreen.segapatch`](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch): 8039 bytes, SHA-256 `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392`
 
 The link becomes valid when the `v0.1.0` release is published.
 

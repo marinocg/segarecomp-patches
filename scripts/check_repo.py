@@ -11,7 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import build_catalog
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
-FORBIDDEN_EXT = {".bin", ".gen", ".smd", ".sms", ".gg", ".iso", ".cue", ".img", ".rom", ".sfc", ".nes", ".z64", ".bps", ".ips",
+FORBIDDEN_EXT = {".bin", ".gen", ".smd", ".sms", ".gg", ".iso", ".cue", ".img", ".rom", ".sfc", ".nes", ".z64", ".ips",
                  ".segapatch", ".zip", ".7z", ".rar", ".gz", ".tar", ".png.raw", ".vram", ".dump", ".sav", ".srm"}
 FORBIDDEN_TEXT = ["private-corpus", ".worktrees", "segarecomp-harness", "/root/dev"]
 TEXT_EXT = {".md", ".json", ".py", ".yml", ".yaml", ".txt"}
@@ -41,7 +41,7 @@ def check(root, errs):
         if not p.is_file(): continue
         rel = p.relative_to(root).as_posix()
         if rel.startswith(".github/") and p.suffix not in {".yml", ".yaml"}: pass
-        if p.suffix.lower() in FORBIDDEN_EXT or p.stat().st_size > MAX_BYTES:
+        if p.suffix.lower() in FORBIDDEN_EXT or p.stat().st_size > MAX_BYTES or (p.suffix == ".bps" and not re.fullmatch(r"patches/[^/]+/[^/]+/source/[a-z0-9-]+\.bps", rel)):
             errs.append(f"forbidden file type or size: {rel}")
         if p.suffix in TEXT_EXT and rel not in ("scripts/check_repo.py", "tests/test_check_repo.py"):
             t = p.read_text(errors="replace")
@@ -73,13 +73,16 @@ def check(root, errs):
             native = p.get("trust") == "trusted-native-source"
             if native != (p.get("schema_version") == 2) or native != bool(p.get("executable_code")):
                 errs.append(f"{n}: schema/trust/executable_code inconsistent")
-            src = p.get("source")
+            bp = p.get("bps"); src = p.get("source")
+            if not bp or not (d / bp["path"]).is_file(): errs.append(f"{n}: BPS file missing")
+            elif sha(d / bp["path"]) != bp["sha256"] or bp["sha256"] != p.get("bps_sha256"): errs.append(f"{n}: BPS digest mismatch")
+            elif (d / bp["path"]).stat().st_size > 4096: errs.append(f"{n}: BPS unexpectedly large")
             if native:
                 if not src: errs.append(f"{n}: native package without source"); continue
                 sp = d / src["path"]
                 if not sp.is_file(): errs.append(f"{n}: missing {src['path']}")
                 elif sha(sp) != src["sha256"] or src["sha256"] != p.get("native_source_sha256"): errs.append(f"{n}: source digest mismatch")
-            elif src or (d / "source").exists(): errs.append(f"{n}: data-only package must not carry source")
+            elif src or (d / "source" / "provider.c").exists(): errs.append(f"{n}: data-only package must not carry source")
     try:
         if (root / "catalog/index.json").read_text() != build_catalog.build(root): errs.append("catalog/index.json is stale")
     except Exception as e: errs.append(f"catalog: {e}")

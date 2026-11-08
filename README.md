@@ -26,13 +26,13 @@ segarecomp can widen any supported Genesis game by itself (the pause menu's *Wid
 * **Native providers** (Sonic 1, Sonic 2, Sonic 3 & Knuckles) rebuild scenery beyond the picture from the game's own level data and redraw the original HUD at the edge of the wide picture. The engine contains no game-specific code; it lives in the package.
 * **Actor-coverage changes** (Sonic 2, Sonic 3 & Knuckles, Streets of Rage 2) make the game submit actors beside the original picture. Each page says whether gameplay can differ.
 
-Patches are distributed separately so the core stays free of game-specific code, patch authors can release independently, and commercial-derived material gets its own publication review.
+Patches are distributed separately so the core stays free of game-specific code and patch authors can release independently of the engine.
 
 ## Included patches (v0.1.0, draft)
 
 | Game | Screenshot | Capabilities | Compatibility scope | Download |
 |---|---|---|---|---|
-| [**Sonic the Hedgehog**](patches/genesis/sonic-1/README.md) | <img src="https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-1-green-hill-patched-16x9.png" width="260" alt="Sonic the Hedgehog, Green Hill Zone 1, in 16:9 with reconstructed scenery on both sides and the HUD moved to the left edge"> | Native scenery, relocated HUD. Gameplay unchanged | Exact REV00 image | [sonic1-native-widescreen](patches/genesis/sonic-1/README.md) ([asset](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch)) |
+| [**Sonic the Hedgehog**](patches/genesis/sonic-1/README.md) | <img src="https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-1-green-hill-patched-16x9.png" width="260" alt="Sonic the Hedgehog, Green Hill Zone 1, in 16:9 with reconstructed scenery on both sides and the HUD moved to the left edge"> | Native scenery, relocated HUD, extended actor initialisation (objects do not pop in at the picture edge). Gameplay changes slightly | Exact REV00 image | [sonic1-native-widescreen](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch) |
 | [**Sonic the Hedgehog 2**](patches/genesis/sonic-2/README.md) | <img src="https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-2-emerald-hill-patched-16x9.png" width="260" alt="Sonic the Hedgehog 2, Emerald Hill Zone 1, in 16:9 with extended scenery, relocated HUD and an enemy in the right margin"> | Native scenery, relocated HUD, widened actors. Gameplay changes slightly | Exact World REV00 and JUE REV01 images | [REV00](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic2-native-widescreen.segapatch), [REV01](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic2-native-widescreen-rev01.segapatch) |
 | [**Sonic 3 & Knuckles**](patches/genesis/sonic-3-and-knuckles/README.md) | <img src="https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-3-knuckles-angel-island-patched-16x9.png" width="260" alt="Sonic 3 and Knuckles, Angel Island Zone 1, in 16:9 with extended jungle scenery and the relocated HUD"> | Native foreground (background where derivable, wrapped VDP plane elsewhere), relocated HUD, widened actors. Gameplay changes slightly | Exact 4 MiB lock-on composite; small visual glitches possible; no full-campaign guarantee | [sonic3k-native-widescreen](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic3k-native-widescreen.segapatch) |
 | [**Streets of Rage 2**](patches/genesis/streets-of-rage-2/README.md) | <img src="https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/streets-of-rage-2-stage-1-patched-16x9.png" width="260" alt="Streets of Rage 2, stage 1, in 16:9 with extra enemies drawn beside the native picture"> | BPS only: extra enemies in the margins. No native scenery, no HUD relocation | Exact USA image | [sor2-widescreen](https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sor2-widescreen.segapatch) |
@@ -46,14 +46,14 @@ Screenshots are real captures of generated-native gameplay, linked from [segarec
 3. For a native (schema 2) package, read the approval sheet and approve only a package you trust.
 4. **Build patched version**, then **Play Patched**.
 
-Details, command-line verification and troubleshooting: [docs/installation.md](docs/installation.md). Compatibility: [docs/compatibility.md](docs/compatibility.md). Release process and publication review: [docs/releases.md](docs/releases.md). Writing a patch: [docs/creating-patches.md](docs/creating-patches.md).
+Details, command-line verification and troubleshooting: [docs/installation.md](docs/installation.md). Compatibility: [docs/compatibility.md](docs/compatibility.md). Release process: [docs/releases.md](docs/releases.md). Writing a patch: [docs/creating-patches.md](docs/creating-patches.md).
 
 segarecomp needs a build that includes the patch installer and native patch SDK. That functionality is on the product's `main` branch and is not part of the v0.7.0 release.
 
 ## Repository layout
 
 ```text
-patches/<platform>/<game>/   README.md, release.json, source/ (reviewed redistributable source only)
+patches/<platform>/<game>/   README.md, release.json, source/ (reviewed provider source and BPS deltas)
 catalog/index.json           static catalog derived from every release.json
 docs/                        installation, compatibility, authoring, releases
 scripts/                     repository checks (no commercial data needed)

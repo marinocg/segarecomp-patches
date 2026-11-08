@@ -68,8 +68,8 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Source and licensing
 
-* There is no `source/` directory: the package is a BPS delta only and no C11 source exists.
-* The BPS payload is a delta against a commercial image. It is distributed only inside the release package and is **not committed to Git**. Its redistribution is subject to the publication review in [docs/releases.md](../../../docs/releases.md).
+* There is no C11 source: the package is a BPS delta only and no provider exists.
+* The BPS delta is in `source/` ([`sor2-widescreen.bps`](source/sor2-widescreen.bps)); each file is byte-identical to the `game.bps` inside its package (SHA-256 in `release.json`).
 
 ## Download
 

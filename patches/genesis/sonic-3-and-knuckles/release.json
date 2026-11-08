@@ -54,6 +54,10 @@
       "asset": {
         "name": "sonic3k-native-widescreen.segapatch",
         "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic3k-native-widescreen.segapatch"
+      },
+      "bps": {
+        "path": "source/sonic3k-native-widescreen.bps",
+        "sha256": "0a6067e3824b1870f184c9559fa26258fa3c502036584da30e9bfc8724e00640"
       }
     }
   ]

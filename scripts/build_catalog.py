@@ -15,7 +15,7 @@ def build(root=ROOT):
                 "source_identity_kind": rel["source_identity_kind"], "bios_requirement": rel["bios_requirement"],
                 "release": rel["release"], **{k: p[k] for k in (
                     "id", "version", "revision", "schema_version", "native_abi", "trust", "package_sha256", "package_size",
-                    "package_identity", "source_image_sha256", "evidence_tier", "gameplay", "license", "asset")}})
+                    "package_identity", "source_image_sha256", "bps_sha256", "evidence_tier", "gameplay", "license", "asset")}})
     return json.dumps({"catalog_format": 1, "packages": entries}, indent=2, ensure_ascii=False) + "\n"
 
 

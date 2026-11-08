@@ -8,14 +8,14 @@
   "packages": [
     {
       "id": "sonic1-native-widescreen",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "name": "Sonic 1 Native Widescreen (REV00)",
       "revision": "REV00",
       "region": "USA/Europe",
       "package_file": "sonic1-native-widescreen.segapatch",
-      "package_sha256": "a62de6fdd90ded70435d6111bdaa20c9938f5d9834e849fa32dc7c47ef0c1a97",
-      "package_size": 8011,
-      "package_identity": "b02b87437609613bd1831f4c2203598ed0654b83a82b8238e1f945ffefa1e49c",
+      "package_sha256": "0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392",
+      "package_size": 8039,
+      "package_identity": "990e7fb4a6f30fd97521e1b0af9d396b88372eb0dc69a952c2a3cc22d2dfe9e8",
       "schema_version": 2,
       "native_abi": 1,
       "capabilities": [
@@ -27,8 +27,8 @@
       "trust": "trusted-native-source",
       "executable_code": true,
       "source_image_sha256": "46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6",
-      "patched_image_sha256": "2c70b928ab400dc28656f51460528f5c1448dc866941aece2b4eba1bb151b317",
-      "bps_sha256": "27446205024b6a9bcfa89ae1a49542d623e6657542df77e10c04ed7facc5d4cb",
+      "patched_image_sha256": "985d25fff81cf1506072869e013e7eabb0b26572061cf6c5aa4b5383091d2b7f",
+      "bps_sha256": "d621b3f75fb7fdb5341243d142135162896428c35aba7514d125e2b3a758bd9d",
       "native_source_sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5",
       "author": "segarecomp SEG-124",
       "license": "not declared by the package",
@@ -38,12 +38,13 @@
       },
       "authoring_revision": "3759022",
       "evidence_tier": "maintainer-attested",
-      "gameplay": "unchanged apart from the relocated HUD",
-      "supported_scope": "Running levels of Green Hill, Labyrinth, Marble, Star Light, Spring Yard, Scrap Brain and Final Zone; HUD relocated in every running level; special-stage background as the VDP's own wrapped plane.",
+      "gameplay": "changes slightly",
+      "supported_scope": "Running levels of Green Hill, Labyrinth, Marble, Star Light, Spring Yard, Scrap Brain and Final Zone: reconstructed scenery, relocated HUD, and extended actor initialisation (the sprite builder's visibility test is widened by 64 pixels per side so objects do not pop in at the edge of the 16:9 picture). Special-stage background is the VDP's own wrapped plane.",
       "limitations": [
         "Only the exact REV00 image is covered.",
-        "Special-stage background is the VDP's own wrapped plane (no reconstruction).",
-        "No extended object activation: objects are not created or kept alive beyond the original window."
+        "Gameplay can differ slightly: objects that wait for the on-screen flag start acting up to 64 pixels earlier than in the original, and a scripted natural-play route through Green Hill 1 did not reproduce identical play.",
+        "The object manager's own load and despawn windows are unchanged, the margin is 64 pixels (the 16:9 strips need 39), and the hardware sprite limits still apply.",
+        "Special-stage background is the VDP's own wrapped plane (no reconstruction)."
       ],
       "default_widescreen": "enhanced_gameplay",
       "default_side_style": "comfort",
@@ -51,6 +52,10 @@
       "asset": {
         "name": "sonic1-native-widescreen.segapatch",
         "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch"
+      },
+      "bps": {
+        "path": "source/sonic1-native-widescreen.bps",
+        "sha256": "d621b3f75fb7fdb5341243d142135162896428c35aba7514d125e2b3a758bd9d"
       }
     }
   ]

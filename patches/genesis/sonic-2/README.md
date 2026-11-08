@@ -70,7 +70,7 @@ The archive, manifest, source image digest and patched image digest were additio
 
 * [`source/provider.c`](source/provider.c): the provider shipped byte-for-byte in the package (SHA-256 `b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0`). License declared in the package manifest: **MIT**.
 * Comments inside the provider point to private authoring notes that are not published. The file is kept unchanged so its digest matches the package.
-* The BPS payload is a delta against a commercial image. It is distributed only inside the release package and is **not committed to Git**. Its redistribution is subject to the publication review in [docs/releases.md](../../../docs/releases.md).
+* The BPS deltas are in `source/` ([`sonic2-native-widescreen.bps`](source/sonic2-native-widescreen.bps), [`sonic2-native-widescreen-rev01.bps`](source/sonic2-native-widescreen-rev01.bps)); each file is byte-identical to the `game.bps` inside its package (SHA-256 in `release.json`).
 
 ## Download
 

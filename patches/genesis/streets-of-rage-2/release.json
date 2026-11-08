@@ -43,6 +43,10 @@
       "asset": {
         "name": "sor2-widescreen.segapatch",
         "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sor2-widescreen.segapatch"
+      },
+      "bps": {
+        "path": "source/sor2-widescreen.bps",
+        "sha256": "79786e7c19d938e87b7378d349261f8976e10937b56f1fc2859a9fb67dcc95ca"
       }
     }
   ]
