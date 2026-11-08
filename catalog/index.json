@@ -1,0 +1,130 @@
+{
+  "catalog_format": 1,
+  "packages": [
+    {
+      "platform": "genesis",
+      "game": "Sonic the Hedgehog",
+      "game_path": "patches/genesis/sonic-1",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v0.1.0",
+      "id": "sonic1-native-widescreen",
+      "version": "1.0.0",
+      "revision": "REV00",
+      "schema_version": 2,
+      "native_abi": 1,
+      "trust": "trusted-native-source",
+      "package_sha256": "a62de6fdd90ded70435d6111bdaa20c9938f5d9834e849fa32dc7c47ef0c1a97",
+      "package_size": 8011,
+      "package_identity": "b02b87437609613bd1831f4c2203598ed0654b83a82b8238e1f945ffefa1e49c",
+      "source_image_sha256": "46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "unchanged apart from the relocated HUD",
+      "license": "not declared by the package",
+      "asset": {
+        "name": "sonic1-native-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch"
+      }
+    },
+    {
+      "platform": "genesis",
+      "game": "Sonic the Hedgehog 2",
+      "game_path": "patches/genesis/sonic-2",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v0.1.0",
+      "id": "sonic2-native-widescreen",
+      "version": "3.0.0",
+      "revision": "World REV00",
+      "schema_version": 2,
+      "native_abi": 1,
+      "trust": "trusted-native-source",
+      "package_sha256": "253d389f09732dd3af06387d8daf7c41eaeeb7388344adb393f5c44bd4c57f7d",
+      "package_size": 9099,
+      "package_identity": "a7fcc017e817499e4f7691d0163ac75106c374b555a4c7e492e71c98785fb54f",
+      "source_image_sha256": "07329f4561044a504923eb0742894485c61fc42ebb0891eebff247ca2e086d61",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "changes slightly",
+      "license": "MIT",
+      "asset": {
+        "name": "sonic2-native-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic2-native-widescreen.segapatch"
+      }
+    },
+    {
+      "platform": "genesis",
+      "game": "Sonic the Hedgehog 2",
+      "game_path": "patches/genesis/sonic-2",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v0.1.0",
+      "id": "sonic2-native-widescreen-rev01",
+      "version": "3.0.0",
+      "revision": "JUE REV01",
+      "schema_version": 2,
+      "native_abi": 1,
+      "trust": "trusted-native-source",
+      "package_sha256": "02434f39d793140fa08c6b75fec2e4fa2248d7e28c4540939ce2883c99ae3f96",
+      "package_size": 9102,
+      "package_identity": "a44e81609ae95b184c365250e2d69f644d0462af2d053a0a67268e7e063fabce",
+      "source_image_sha256": "193bc4064ce0daf27ea9e908ed246d87ec576cc294833badebb590b6ad8e8f6b",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "changes slightly",
+      "license": "MIT",
+      "asset": {
+        "name": "sonic2-native-widescreen-rev01.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic2-native-widescreen-rev01.segapatch"
+      }
+    },
+    {
+      "platform": "genesis",
+      "game": "Sonic 3 & Knuckles",
+      "game_path": "patches/genesis/sonic-3-and-knuckles",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v0.1.0",
+      "id": "sonic3k-native-widescreen",
+      "version": "1.0.0",
+      "revision": "lock-on composite (JUE)",
+      "schema_version": 2,
+      "native_abi": 1,
+      "trust": "trusted-native-source",
+      "package_sha256": "81f5904aea5c7d3ebc1464de4c1826847adab75a0fc58e0ac69181ab6fbc5794",
+      "package_size": 8944,
+      "package_identity": "3d051af8347590defdc19bfe8d2ac77f67c31d7dfb8b87a7a60c1a660e010dbe",
+      "source_image_sha256": "fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "changes slightly",
+      "license": "MIT",
+      "asset": {
+        "name": "sonic3k-native-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic3k-native-widescreen.segapatch"
+      }
+    },
+    {
+      "platform": "genesis",
+      "game": "Streets of Rage 2",
+      "game_path": "patches/genesis/streets-of-rage-2",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v0.1.0",
+      "id": "sor2-widescreen",
+      "version": "1.0.0",
+      "revision": "USA",
+      "schema_version": 1,
+      "native_abi": null,
+      "trust": "data-only",
+      "package_sha256": "fb0f99422fa8c8b5cbf5f9c3c622fe22e786ed3387200dfdf159bb48c47c1eec",
+      "package_size": 656,
+      "package_identity": "413caf861453d03490f44743d1cad70b3856492f17e0dae50a7b42f0ba68b110",
+      "source_image_sha256": "4a314edbfee92282850fe95c4c764921916efd9d3c2277fdec2581279b1369b1",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "none intended",
+      "license": "not applicable (data-only BPS)",
+      "asset": {
+        "name": "sor2-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sor2-widescreen.segapatch"
+      }
+    }
+  ]
+}

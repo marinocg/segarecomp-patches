@@ -1,0 +1,57 @@
+{
+  "release_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Sonic the Hedgehog",
+  "release": "v0.1.0",
+  "packages": [
+    {
+      "id": "sonic1-native-widescreen",
+      "version": "1.0.0",
+      "name": "Sonic 1 Native Widescreen (REV00)",
+      "revision": "REV00",
+      "region": "USA/Europe",
+      "package_file": "sonic1-native-widescreen.segapatch",
+      "package_sha256": "a62de6fdd90ded70435d6111bdaa20c9938f5d9834e849fa32dc7c47ef0c1a97",
+      "package_size": 8011,
+      "package_identity": "b02b87437609613bd1831f4c2203598ed0654b83a82b8238e1f945ffefa1e49c",
+      "schema_version": 2,
+      "native_abi": 1,
+      "capabilities": [
+        "frame.work_ram",
+        "frame.vdp",
+        "scenery.words",
+        "overlay.rgba"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "source_image_sha256": "46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6",
+      "patched_image_sha256": "2c70b928ab400dc28656f51460528f5c1448dc866941aece2b4eba1bb151b317",
+      "bps_sha256": "27446205024b6a9bcfa89ae1a49542d623e6657542df77e10c04ed7facc5d4cb",
+      "native_source_sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5",
+      "author": "segarecomp SEG-124",
+      "license": "not declared by the package",
+      "source": {
+        "path": "source/provider.c",
+        "sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5"
+      },
+      "authoring_revision": "3759022",
+      "evidence_tier": "maintainer-attested",
+      "gameplay": "unchanged apart from the relocated HUD",
+      "supported_scope": "Running levels of Green Hill, Labyrinth, Marble, Star Light, Spring Yard, Scrap Brain and Final Zone; HUD relocated in every running level; special-stage background as the VDP's own wrapped plane.",
+      "limitations": [
+        "Only the exact REV00 image is covered.",
+        "Special-stage background is the VDP's own wrapped plane (no reconstruction).",
+        "No extended object activation: objects are not created or kept alive beyond the original window."
+      ],
+      "default_widescreen": "enhanced_gameplay",
+      "default_side_style": "comfort",
+      "widescreen_width_max": 100,
+      "asset": {
+        "name": "sonic1-native-widescreen.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.1.0/sonic1-native-widescreen.segapatch"
+      }
+    }
+  ]
+}

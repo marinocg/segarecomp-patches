@@ -1,0 +1,26 @@
+name: verify-release
+# Manually (or on publication) compares the published assets with release.json and SHA256SUMS (hashes and sizes). `segarecomp patch inspect` checks need a segarecomp build with the patch installer, which v0.7.0 lacks, so they run locally via --segarecomp until the next product release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify
+        default: v0.1.0
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/assets"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/assets"
+      - name: Verify
+        run: python3 scripts/check_repo.py --assets "$RUNNER_TEMP/assets"
