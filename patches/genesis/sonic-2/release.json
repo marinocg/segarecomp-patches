@@ -32,6 +32,7 @@
       "native_source_sha256": "b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0",
       "author": "segarecomp SEG-122",
       "license": "MIT",
+      "license_declared_in_package": true,
       "source": {
         "path": "source/provider.c",
         "sha256": "b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0"
@@ -41,7 +42,7 @@
       "gameplay": "changes slightly",
       "supported_scope": "Single-player zones with reconstructed scenery, relocated HUD and widened actor coverage.",
       "limitations": [
-        "Only the exact World REV00 image is covered.",
+        "Each package covers only its own exact image: World REV00 or JUE REV01.",
         "Gameplay can differ slightly: additional actors become active or visible in the widened margins.",
         "Hill Top's lower lava background band, Wing Fortress beyond its first sections, the ending and special-stage presentation fall back to the generic renderer.",
         "Two-player mode and 240-line PAL frames are not covered."
@@ -84,6 +85,7 @@
       "native_source_sha256": "b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0",
       "author": "segarecomp SEG-122",
       "license": "MIT",
+      "license_declared_in_package": true,
       "source": {
         "path": "source/provider.c",
         "sha256": "b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0"
@@ -93,7 +95,7 @@
       "gameplay": "changes slightly",
       "supported_scope": "Same provider and scope as the World REV00 package, with this image's own BPS bytes.",
       "limitations": [
-        "Only the exact JUE REV01 image is covered.",
+        "Each package covers only its own exact image: World REV00 or JUE REV01.",
         "Gameplay can differ slightly: additional actors become active or visible in the widened margins.",
         "Hill Top's lower lava background band, Wing Fortress beyond its first sections, the ending and special-stage presentation fall back to the generic renderer.",
         "Two-player mode and 240-line PAL frames are not covered."

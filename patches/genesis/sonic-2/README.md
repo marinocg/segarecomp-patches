@@ -55,7 +55,7 @@ See [docs/installation.md](../../../docs/installation.md) for the full steps. In
 
 ## Known limitations
 
-* Only the exact World REV00 image is covered.
+* Each package covers only its own exact image: World REV00 or JUE REV01.
 * Gameplay can differ slightly: additional actors become active or visible in the widened margins.
 * Hill Top's lower lava background band, Wing Fortress beyond its first sections, the ending and special-stage presentation fall back to the generic renderer.
 * Two-player mode and 240-line PAL frames are not covered.
@@ -68,7 +68,7 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Source and licensing
 
-* [`source/provider.c`](source/provider.c): the provider shipped byte-for-byte in the package (SHA-256 `b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0`). License declared in the package manifest: **MIT**.
+* [`source/provider.c`](source/provider.c): the provider shipped byte-for-byte in the package (SHA-256 `b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0`). License: **MIT**.
 * Comments inside the provider point to private authoring notes that are not published. The file is kept unchanged so its digest matches the package.
 * The BPS deltas are in `source/` ([`sonic2-native-widescreen.bps`](source/sonic2-native-widescreen.bps), [`sonic2-native-widescreen-rev01.bps`](source/sonic2-native-widescreen-rev01.bps)); each file is byte-identical to the `game.bps` inside its package (SHA-256 in `release.json`).
 

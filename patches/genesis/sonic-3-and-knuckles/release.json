@@ -32,6 +32,7 @@
       "native_source_sha256": "881f1e2d702a9ab7af2426b36f6aae285a56419d5b8de119a755901ee24bd5da",
       "author": "segarecomp SEG-122",
       "license": "MIT",
+      "license_declared_in_package": true,
       "source": {
         "path": "source/provider.c",
         "sha256": "881f1e2d702a9ab7af2426b36f6aae285a56419d5b8de119a755901ee24bd5da"

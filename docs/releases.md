@@ -6,6 +6,8 @@ Installable `.segapatch` archives are **GitHub Release assets**, not files in Gi
 
 Every game directory has a `release.json` (format 1) listing its packages with: id, version, revision, schema and native ABI, trust classification (`data-only` or `trusted-native-source`), package SHA-256 and size, package identity (SHA-256 of the manifest), exact source image digest, patched image digest, BPS and native source digests, license, source path, BPS path, evidence tier, supported scope, limitations and the release asset URL. `catalog/index.json` is generated from these files by `scripts/build_catalog.py` and is the static input for a future documentation site. Hashes are never placeholders: they are computed from the actual archives.
 
+`license_declared_in_package` is `false` when the package manifest has no license field and the license (MIT) is established by this repository instead.
+
 `authoring_revision` is an opaque identifier of the private authoring revision that produced the package.
 
 ## Checks
@@ -19,7 +21,7 @@ Rebuilding a package from `source/` needs no game image. Regenerating the BPS fr
 
 ## Creating the draft release
 
-Run the **release** workflow (Actions, *Run workflow*, tag such as `v0.1.0`). It rebuilds the packages from source, checks them against `release.json` (hashes, sizes and a mandatory `SHA256SUMS`), and creates a **draft** GitHub Release with the rebuilt packages, `SHA256SUMS` and `docs/release-notes/<tag>.md`. Nothing is published automatically. The product's `segapatch.py` writer is fetched at the commit pinned in the workflow.
+Run the **release** workflow (Actions, *Run workflow*, tag such as `v0.1.0`). It rebuilds the packages from source, checks them against `release.json` (hashes, sizes and a mandatory `SHA256SUMS`), and creates a **draft** GitHub Release with the rebuilt packages, `SHA256SUMS` and `docs/release-notes/<tag>.md`. Nothing is published automatically. The product's `segapatch.py` writer is fetched at the commit in `scripts/SEGAPATCH_REF`. Pull-request CI performs the same rebuild and verification, so what the release workflow does is already exercised before merge. `dry_run` runs everything except the release creation. Delete any manually created draft of the same tag before running it.
 
 ## Excluded from v0.1.0
 

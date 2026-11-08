@@ -27,6 +27,7 @@
       "native_source_sha256": null,
       "author": null,
       "license": "not applicable (data-only BPS)",
+      "license_declared_in_package": false,
       "source": null,
       "authoring_revision": "3149c84",
       "evidence_tier": "maintainer-attested",

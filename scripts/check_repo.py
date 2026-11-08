@@ -71,6 +71,7 @@ def check(root, errs):
             if not str(p.get("asset", {}).get("url", "")).startswith("https://"): errs.append(f"{n}: asset URL must be HTTPS")
             if p.get("asset", {}).get("name") != p.get("package_file"): errs.append(f"{n}: asset name differs from package_file")
             native = p.get("trust") == "trusted-native-source"
+            if native and (p.get("license") != "MIT" or not (root / "LICENSES" / "MIT.txt").is_file()): errs.append(f"{n}: native provider needs an established license (MIT) and LICENSES/MIT.txt")
             if native != (p.get("schema_version") == 2) or native != bool(p.get("executable_code")):
                 errs.append(f"{n}: schema/trust/executable_code inconsistent")
             mp = d / "source" / f"{p.get('id')}.manifest.json"

@@ -24,7 +24,7 @@ The format is documented in the [product's patch package guide](https://github.c
 segarecomp can widen any supported Genesis game by itself (the pause menu's *Widescreen Mode*, *Widescreen Width* and *Side Presentation* options). That generic presentation can only show what the game already draws; for scenery it repeats or wraps what is on screen. A **game-specific patch** adds knowledge the engine does not have:
 
 * **Native providers** (Sonic 1, Sonic 2, Sonic 3 & Knuckles) rebuild scenery beyond the picture from the game's own level data and redraw the original HUD at the edge of the wide picture. The engine contains no game-specific code; it lives in the package.
-* **Actor-coverage changes** (Sonic 2, Sonic 3 & Knuckles, Streets of Rage 2) make the game submit actors beside the original picture. Each page says whether gameplay can differ.
+* **Actor-coverage changes** (Sonic 1, Sonic 2, Sonic 3 & Knuckles, Streets of Rage 2) make the game submit actors beside the original picture. Each page says whether gameplay can differ.
 
 Patches are distributed separately so the core stays free of game-specific code and patch authors can release independently of the engine.
 
@@ -67,4 +67,6 @@ scripts/                     repository checks (no commercial data needed)
 
 ## License and trademarks
 
-Repository tooling and documentation are under the [MPL-2.0](LICENSE) unless a file says otherwise. Each provider source keeps the license declared in its package manifest (see each game page); this repository does not relicense it. SEGA, Sega Genesis, Mega Drive, Sonic the Hedgehog and Streets of Rage are trademarks of SEGA Corporation. segarecomp and this repository are not affiliated with or endorsed by SEGA.
+Repository tooling and documentation are under the [MPL-2.0](LICENSE) unless a file says otherwise. The native providers (`patches/genesis/*/source/provider.c`) are under the [MIT license](LICENSES/MIT.txt): Sonic 2 and Sonic 3 & Knuckles declare it in their package manifests, and for the Sonic 1 provider (whose package manifest has no license field) this repository establishes MIT explicitly without changing the package bytes. BPS deltas are data-only patches for the exact images they name.
+
+SEGA, Sega Genesis, Mega Drive, Sonic the Hedgehog and Streets of Rage are trademarks of SEGA Corporation. segarecomp and this repository are not affiliated with or endorsed by SEGA.
