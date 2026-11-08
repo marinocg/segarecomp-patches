@@ -82,6 +82,8 @@ def check(root, errs):
                 if (m.get("id"), m.get("version"), m.get("source_sha256"), pl.get("rom", {}).get("sha256"), pl.get("rom", {}).get("target_sha256")) != (
                         p.get("id"), p.get("version"), p.get("source_image_sha256"), p.get("bps_sha256"), p.get("patched_image_sha256")):
                     errs.append(f"{n}: source manifest disagrees with release.json")
+                pd = m.get("presentation_defaults", {})
+                if (pd.get("widescreen"), pd.get("side_style")) != (p.get("default_widescreen"), p.get("default_side_style")): errs.append(f"{n}: manifest presentation defaults disagree with release.json")
                 if pl.get("native", {}).get("sha256") != p.get("native_source_sha256"): errs.append(f"{n}: manifest native digest disagrees")
             bp = p.get("bps"); src = p.get("source")
             if not bp or not (d / bp["path"]).is_file(): errs.append(f"{n}: BPS file missing")

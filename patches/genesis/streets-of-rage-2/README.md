@@ -13,6 +13,7 @@
 | Package schema | 1: data-only BPS (no executable code) |
 | Required segarecomp | A build that includes the patch installer |
 | Supported target | 16:9 (Widescreen Width 100) |
+| Suggested starting presentation | Enhanced Widescreen · 16:9 · Raw Extension (a starting point, not a forced setting; your own choice is kept per installed variant) |
 | Package version | 1.0.0 (collection release `v0.1.0`) |
 | Evidence tier | maintainer-attested |
 

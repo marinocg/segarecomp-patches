@@ -8,14 +8,14 @@
   "packages": [
     {
       "id": "sonic2-native-widescreen",
-      "version": "3.0.0",
+      "version": "3.0.1",
       "name": "Sonic 2 Native Widescreen (World REV00)",
       "revision": "World REV00",
       "region": "World",
       "package_file": "sonic2-native-widescreen.segapatch",
-      "package_sha256": "253d389f09732dd3af06387d8daf7c41eaeeb7388344adb393f5c44bd4c57f7d",
-      "package_size": 9099,
-      "package_identity": "a7fcc017e817499e4f7691d0163ac75106c374b555a4c7e492e71c98785fb54f",
+      "package_sha256": "9763ffe11a2753a6bba49589de40faa4d6b5ee0b8ed9a912026b0fb79fa5bcca",
+      "package_size": 9096,
+      "package_identity": "8692f66ce203e93a503270ce2eaef2b19735b699837d67e8302baa948ec21ee3",
       "schema_version": 2,
       "native_abi": 1,
       "capabilities": [
@@ -48,7 +48,7 @@
         "Two-player mode and 240-line PAL frames are not covered."
       ],
       "default_widescreen": "enhanced_gameplay",
-      "default_side_style": "comfort",
+      "default_side_style": "raw",
       "widescreen_width_max": 100,
       "asset": {
         "name": "sonic2-native-widescreen.segapatch",
@@ -61,14 +61,14 @@
     },
     {
       "id": "sonic2-native-widescreen-rev01",
-      "version": "3.0.0",
+      "version": "3.0.1",
       "name": "Sonic 2 Native Widescreen (JUE REV01)",
       "revision": "JUE REV01",
       "region": "Japan/USA/Europe",
       "package_file": "sonic2-native-widescreen-rev01.segapatch",
-      "package_sha256": "02434f39d793140fa08c6b75fec2e4fa2248d7e28c4540939ce2883c99ae3f96",
-      "package_size": 9102,
-      "package_identity": "a44e81609ae95b184c365250e2d69f644d0462af2d053a0a67268e7e063fabce",
+      "package_sha256": "3466a9482740901b06768c0e448bf11dce04217ab2295d72b8d34154a052a90d",
+      "package_size": 9099,
+      "package_identity": "d2e57164f4d9e1b157e811d0dfa24ab787d7624071aeed3e74b878f72ad1d0cb",
       "schema_version": 2,
       "native_abi": 1,
       "capabilities": [
@@ -101,7 +101,7 @@
         "Two-player mode and 240-line PAL frames are not covered."
       ],
       "default_widescreen": "enhanced_gameplay",
-      "default_side_style": "comfort",
+      "default_side_style": "raw",
       "widescreen_width_max": 100,
       "asset": {
         "name": "sonic2-native-widescreen-rev01.segapatch",

@@ -8,14 +8,14 @@
   "packages": [
     {
       "id": "sonic3k-native-widescreen",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "name": "Sonic 3 & Knuckles Native Widescreen (lock-on)",
       "revision": "lock-on composite (JUE)",
       "region": "Japan/USA/Europe",
       "package_file": "sonic3k-native-widescreen.segapatch",
-      "package_sha256": "81f5904aea5c7d3ebc1464de4c1826847adab75a0fc58e0ac69181ab6fbc5794",
-      "package_size": 8944,
-      "package_identity": "3d051af8347590defdc19bfe8d2ac77f67c31d7dfb8b87a7a60c1a660e010dbe",
+      "package_sha256": "8d08e4dbf13642331ba821fc46e29d576d8c6c6c017bbaea17f5f52771bf995a",
+      "package_size": 8941,
+      "package_identity": "6ef4f17a9ccd46eac666ca8034a3fe1730d08bfe74630037089fd87671c72ff0",
       "schema_version": 2,
       "native_abi": 1,
       "capabilities": [
@@ -50,7 +50,7 @@
         "Sprite budget and per-line limits can be reached sooner in busy scenes."
       ],
       "default_widescreen": "enhanced_gameplay",
-      "default_side_style": "comfort",
+      "default_side_style": "raw",
       "widescreen_width_max": 100,
       "asset": {
         "name": "sonic3k-native-widescreen.segapatch",

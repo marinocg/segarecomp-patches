@@ -50,7 +50,9 @@ Each prints one JSON object (`"ok":true` or `"ok":false` plus an error) and exit
 
 ## Widescreen settings
 
-Open the pause menu (**Esc**) and choose **Widescreen Mode** (Enhanced Widescreen), **Widescreen Width** 100 (16:9) and a **Side Presentation**. Packages carry a suggested starting setting; you can change it. The patches are validated for 16:9 only.
+Open the pause menu (**Esc**) and choose **Widescreen Mode** (Enhanced Widescreen), **Widescreen Width** 100 (16:9) and a **Side Presentation**. The native Sonic packages suggest **Enhanced Widescreen · 16:9 · Raw Extension** as the starting presentation (Streets of Rage 2 suggests the same). It is not forced: a fresh install of the patched variant starts there, and anything you choose later (Comfort, Borders, another width, Original) is saved for that installed variant and wins on later launches. Settings precedence is: global viewer settings, the original game's settings, the package's suggested defaults, then the variant's own saved settings. The patches are validated for 16:9 only.
+
+**Already installed an earlier build?** Packages keep the identity and defaults they were installed with, and segarecomp never rewrites your settings or carries approval across package identities. The corrected builds are `sonic1-native-widescreen` 2.0.1, `sonic2-native-widescreen[-rev01]` 3.0.1 and `sonic3k-native-widescreen` 1.0.1: install one (a new package approval is required for the native ones) to get the Raw Extension start automatically, or just select **Side Presentation: Raw Extension** in the viewer. Remove the old patch first if you want a clean variant profile.
 
 ## Troubleshooting
 

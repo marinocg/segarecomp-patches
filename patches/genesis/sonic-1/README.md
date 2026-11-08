@@ -14,7 +14,8 @@
 | Native SDK ABI | 1 (capabilities: frame.work_ram, frame.vdp, scenery.words, overlay.rgba) |
 | Required segarecomp | A build that includes the patch installer and native patch SDK (not part of v0.7.0; first shipped in the next release) |
 | Supported target | 16:9 (Widescreen Width 100) |
-| Package version | 2.0.0 (collection release `v0.1.0`) |
+| Suggested starting presentation | Enhanced Widescreen · 16:9 · Raw Extension (a starting point, not a forced setting; your own choice is kept per installed variant) |
+| Package version | 2.0.1 (collection release `v0.1.0`) |
 | Evidence tier | maintainer-attested |
 
 ## Original image
@@ -23,7 +24,7 @@ The patch only applies to the exact image below; anything else is refused by dig
 
 | Package | Revision | Original image SHA-256 | Package SHA-256 |
 |---|---|---|---|
-| `sonic1-native-widescreen.segapatch` | REV00 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392` |
+| `sonic1-native-widescreen.segapatch` | REV00 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | `636342c8a44516cc86bed4325c7f75d5721f0b38de8e852e2964a015566a5921` |
 
 You must supply the original image yourself. No game data is included in this repository or in the packages.
 
@@ -74,7 +75,7 @@ The archive, manifest, source image digest and patched image digest were additio
 
 ## Download
 
-* `sonic1-native-widescreen.segapatch`: 8039 bytes, SHA-256 `0f5efbe4fa7cf74f72cbfd7af74c2e4fdf7ec479e0701d2645dd48f2547c2392`
+* `sonic1-native-widescreen.segapatch`: 8037 bytes, SHA-256 `636342c8a44516cc86bed4325c7f75d5721f0b38de8e852e2964a015566a5921`
 
 Download it from the [Releases page](https://github.com/marinocg/segarecomp-patches/releases) (collection `v0.1.0`) and check it against `SHA256SUMS`.
 

@@ -2,7 +2,7 @@
   "format": "segarecomp-patch",
   "schema_version": 2,
   "id": "sonic2-native-widescreen",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "name": "Sonic 2 Native Widescreen (World REV00)",
   "platform": "genesis",
   "purpose": "widescreen",
@@ -33,6 +33,6 @@
   "widescreen_width_max": 100,
   "presentation_defaults": {
     "widescreen": "enhanced_gameplay",
-    "side_style": "comfort"
+    "side_style": "raw"
   }
 }

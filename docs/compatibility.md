@@ -4,10 +4,10 @@ A patch applies to exact images only. Support is described per package; "maintai
 
 | Game | Package | Version | Exact original image SHA-256 | Schema | Scope | Gameplay |
 |---|---|---|---|---|---|---|
-| Sonic the Hedgehog (REV00) | `sonic1-native-widescreen` | 2.0.0 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | 2 | Running levels, HUD, actors | Changes slightly |
-| Sonic the Hedgehog 2 (World REV00) | `sonic2-native-widescreen` | 3.0.0 | `07329f4561044a504923eb0742894485c61fc42ebb0891eebff247ca2e086d61` | 2 | Single-player zones, HUD, actors | Changes slightly |
-| Sonic the Hedgehog 2 (JUE REV01) | `sonic2-native-widescreen-rev01` | 3.0.0 | `193bc4064ce0daf27ea9e908ed246d87ec576cc294833badebb590b6ad8e8f6b` | 2 | Same as REV00 | Changes slightly |
-| Sonic 3 & Knuckles (lock-on composite) | `sonic3k-native-widescreen` | 1.0.0 | `fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23` | 2 | Sonic campaign, HUD, actors (playable widescreen, maintainer-tested) | Changes slightly |
+| Sonic the Hedgehog (REV00) | `sonic1-native-widescreen` | 2.0.1 | `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` | 2 | Running levels, HUD, actors | Changes slightly |
+| Sonic the Hedgehog 2 (World REV00) | `sonic2-native-widescreen` | 3.0.1 | `07329f4561044a504923eb0742894485c61fc42ebb0891eebff247ca2e086d61` | 2 | Single-player zones, HUD, actors | Changes slightly |
+| Sonic the Hedgehog 2 (JUE REV01) | `sonic2-native-widescreen-rev01` | 3.0.1 | `193bc4064ce0daf27ea9e908ed246d87ec576cc294833badebb590b6ad8e8f6b` | 2 | Same as REV00 | Changes slightly |
+| Sonic 3 & Knuckles (lock-on composite) | `sonic3k-native-widescreen` | 1.0.1 | `fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23` | 2 | Sonic campaign, HUD, actors (playable widescreen, maintainer-tested) | Changes slightly |
 | Streets of Rage 2 (USA) | `sor2-widescreen` | 1.0.0 | `4a314edbfee92282850fe95c4c764921916efd9d3c2277fdec2581279b1369b1` | 1 | Extra enemies in the margins | None intended |
 
 ## Common limits
