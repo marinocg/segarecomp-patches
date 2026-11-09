@@ -29,7 +29,7 @@ const glint = Array.from({ length: 7 }, (_, i) => ({ x: SUN.cx - 10 + (i % 3) * 
 ---
 
 <section class="relative isolate overflow-hidden border-b-4 border-night-950 bg-night-950">
-  <svg class="block h-44 w-full lg:absolute lg:inset-0 lg:-z-10 lg:h-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
+  <svg class="block aspect-[5/2] w-full lg:absolute lg:inset-0 lg:-z-10 lg:aspect-auto lg:h-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
     {bands.map((b) => <rect x="0" y={b.y} width={W} height={b.h} fill={b.fill} />)}
     {sun.map((r) => <rect x={r.x} y={r.y} width={r.w} height="1" fill="#ffe680" />)}
     {columns(far).map((c) => <rect x={c.x} y={c.y} width="1" height={c.h} fill="#4a2a8c" />)}
