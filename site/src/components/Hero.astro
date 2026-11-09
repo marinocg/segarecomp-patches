@@ -1,0 +1,62 @@
+---
+// Landing hero: an original pixel-art sunset drawn as crisp SVG rects (no image files), with the copy on a pixel panel.
+// Replaces Starlight's Hero through the `components` override. Layout is Tailwind utilities; colours are theme tokens.
+const { data } = Astro.locals.starlightRoute.entry;
+const { title = data.title, tagline, actions = [] } = data.hero || {};
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const href = (l: string) => (l.startsWith('/') && !l.startsWith('//') ? base + l : l);
+
+const W = 160, H = 64, HORIZON = 40;
+const sky = ['#150f4d', '#1f1766', '#2f2380', '#4332a1', '#6a2f9e', '#9b2f9a', '#c7237a', '#ee3a6a', '#ff5a4a', '#ff7a35', '#ff9a2b', '#ffb83a'];
+const bands = sky.map((fill, i) => ({ y: Math.round((i * HORIZON) / sky.length), h: Math.ceil(HORIZON / sky.length) + 1, fill }));
+
+// sun: filled pixel disc, with the lower rows cut into stripes
+const SUN = { cx: 104, cy: 29, r: 11 };
+const sun: { x: number; y: number; w: number }[] = [];
+for (let dy = -SUN.r; dy <= SUN.r; dy++) {
+  if (dy > 1 && (dy + SUN.r) % 3 === 0) continue;
+  const hw = Math.floor(Math.sqrt(SUN.r * SUN.r - dy * dy));
+  sun.push({ x: SUN.cx - hw, y: SUN.cy + dy, w: hw * 2 + 1 });
+}
+
+// stepped mountain silhouettes (column heights), deterministic
+const ridge = (seed: number, base: number, amp: number) =>
+  Array.from({ length: W }, (_, x) => Math.round(base + amp * (Math.sin((x + seed) / 9) * 0.6 + Math.sin((x + seed * 2) / 4.3) * 0.4)));
+const far = ridge(7, 6, 4), near = ridge(31, 9, 5);
+const columns = (h: number[]) => h.map((v, x) => ({ x, y: HORIZON - Math.max(v, 1), h: Math.max(v, 1) }));
+
+// water: dark rows with sunset reflection stripes under the sun
+const water = Array.from({ length: H - HORIZON }, (_, i) => ({ y: HORIZON + i, fill: i % 2 ? '#1f1766' : '#2f2380' }));
+const glint = Array.from({ length: 7 }, (_, i) => ({ x: SUN.cx - 10 + (i % 3) * 3, y: HORIZON + 2 + i * 3, w: 14 - i * 1.5 }));
+---
+
+<section class="relative isolate overflow-hidden border-b-4 border-night-950 bg-night-950">
+  <svg class="block aspect-[5/2] w-full lg:absolute lg:inset-0 lg:-z-10 lg:aspect-auto lg:h-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
+    {bands.map((b) => <rect x="0" y={b.y} width={W} height={b.h} fill={b.fill} />)}
+    {sun.map((r) => <rect x={r.x} y={r.y} width={r.w} height="1" fill="#ffe680" />)}
+    {columns(far).map((c) => <rect x={c.x} y={c.y} width="1" height={c.h} fill="#4a2a8c" />)}
+    {columns(near).map((c) => <rect x={c.x} y={c.y} width="1" height={c.h} fill="#2a1a72" />)}
+    {water.map((r) => <rect x="0" y={r.y} width={W} height="1" fill={r.fill} />)}
+    {glint.map((r) => <rect x={r.x} y={r.y} width={r.w} height="1" fill="#ffb83a" opacity="0.85" />)}
+    <!-- grass-topped checkerboard ledges, bottom corners -->
+    {[0, 1, 2, 3].map((i) => <rect x="0" y={H - 12 + i * 3} width="14" height="3" fill={i === 0 ? '#3fb23f' : '#8a4b1f'} />)}
+    {[0, 1, 2, 3].map((i) => <rect x={W - 14} y={H - 12 + i * 3} width="14" height="3" fill={i === 0 ? '#3fb23f' : '#8a4b1f'} />)}
+    {[1, 2, 3].flatMap((row) => [0, 1, 2].map((col) => (row + col) % 2 === 0 ? <rect x={col * 4 + 1} y={H - 12 + row * 3} width="4" height="3" fill="#5a3012" /> : null))}
+  </svg>
+
+  <div class="flex max-w-xl flex-col items-start px-0 py-0 lg:ml-14 lg:py-24">
+    <div class="w-full border-night-950 bg-night-950 p-5 text-left lg:border-4 lg:bg-night-950/90 lg:shadow-pixel sm:p-8">
+      <p class="font-pixel text-sm tracking-wide text-sun-400">&gt; PRESS START</p>
+      <h1 id="_top" class="mt-3 font-pixel text-[1.75rem] leading-tight text-paper sm:text-5xl">{title}</h1>
+      {tagline && <p class="mt-4 max-w-prose text-base leading-relaxed text-night-100 sm:text-lg">{tagline}</p>}
+      {actions.length > 0 && (
+        <div class="mt-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+          {actions.map(({ text, link, variant }) => (
+            <a href={href(link)} class:list={['pixel-button inline-flex items-center justify-center px-5 py-2 text-sm no-underline',
+              variant === 'primary' ? 'bg-sun-400 text-night-950 hover:bg-sun-300' : 'bg-night-800 text-paper hover:bg-night-700']}>{text}</a>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+</section>

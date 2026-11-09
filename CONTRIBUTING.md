@@ -18,3 +18,13 @@ This repository distributes working patches, not experiments. A change is welcom
 Work on a branch and open a pull request; `main` is not pushed directly. Run `python3 scripts/check_repo.py` before opening it. `source/<package-id>.manifest.json` is the exact manifest shipped in the package. A new patch needs `README.md`, `release.json` (see [docs/releases.md](docs/releases.md)) and, if it has native code, `source/provider.c` whose SHA-256 equals the package's native source digest. Regenerate `catalog/index.json` with `python3 scripts/build_catalog.py`.
 
 Commercial verification is recorded only as aggregate, maintainer-attested outcomes (for example "verified against the exact image, all listed scope"), never as logs or captures.
+
+## Policy documents
+
+- [Publication restrictions](docs/publication-restrictions.md): what may and may never be committed.
+- [Trust classes and licensing](docs/policy.md): what each kind of package can do, who is trusted, and the licence of each directory.
+- [Layout and versioning](docs/layout-and-versioning.md): the project layout `scripts/lint_layout.py` enforces and the versioning rules.
+- [Repository settings](docs/repository-settings.md): branch protection and required checks.
+- [Code of conduct](CODE_OF_CONDUCT.md).
+
+CI also scans every text file for credentials and fails on forbidden file types.

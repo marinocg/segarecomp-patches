@@ -70,3 +70,9 @@ scripts/                     repository checks (no commercial data needed)
 Repository tooling and documentation are under the [MPL-2.0](LICENSE) unless a file says otherwise. The Sonic 1 provider is under the repository's [MPL-2.0](LICENSE): its package manifest has no license field, so this repository establishes it without changing the package bytes. The Sonic 2 and Sonic 3 & Knuckles providers keep the [MIT license](LICENSES/MIT.txt) that their package manifests declare. BPS deltas are data-only patches for the exact images they name.
 
 SEGA, Sega Genesis, Mega Drive, Sonic the Hedgehog and Streets of Rage are trademarks of SEGA Corporation. segarecomp and this repository are not affiliated with or endorsed by SEGA.
+
+## Documentation site
+
+Published at https://marinocg.github.io/segarecomp-patches/ (GitHub Pages, deployed from `main` by `.github/workflows/pages.yml`).
+
+`site/` is an Astro + Starlight project (static output, built-in Pagefind search). Build it with `cd site && npm ci && npm run build`; CI also runs the link checker, a search test and every code sample of the [getting-started guide](site/src/content/docs/getting-started.md). Imported product documentation follows the pinned-revision rule in [docs/product-docs.md](docs/product-docs.md). Repository policy: [trust and licensing](docs/policy.md), [layout and versioning](docs/layout-and-versioning.md), [publication restrictions](docs/publication-restrictions.md), [repository settings](docs/repository-settings.md).

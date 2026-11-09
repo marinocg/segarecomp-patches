@@ -1,0 +1,8 @@
+---
+// A pixel panel for landing-page highlights. Colours come from Starlight variables so it follows the light/dark theme.
+const { title } = Astro.props;
+---
+<section class="border-2 border-[var(--sl-color-hairline)] bg-[var(--sl-color-gray-6)] p-4 shadow-[4px_4px_0_0_var(--pixel-shadow)] sm:p-5">
+  <h2 class="m-0! border-0! pb-0! font-pixel text-base text-[var(--sl-color-text-accent)]">{title}</h2>
+  <div class="mt-2 text-[var(--sl-color-gray-1)] [&>p]:m-0"><slot /></div>
+</section>

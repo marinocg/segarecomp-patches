@@ -1,0 +1,213 @@
+/*
+ * segarecomp patches: retro design system on Tailwind CSS v4.
+ *
+ * Tokens live in @theme (Tailwind utilities such as bg-night-800, text-sun-400, font-pixel, shadow-pixel come from them);
+ * the Starlight variables are then mapped onto those tokens in one place below. 16-bit sunset palette, hard 2px edges, no
+ * border radius, hard offset shadows, Silkscreen (SIL OFL, LICENSES/Silkscreen-OFL.txt) for headings and labels only.
+ * Body text stays a system sans for readability. Dark is the default look; light is a "paper" variant of the same palette.
+ */
+@layer base, starlight, theme, components, utilities;
+@import '@astrojs/starlight-tailwind';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@font-face {
+  font-family: 'Silkscreen';
+  src: url('/fonts/Silkscreen-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Silkscreen';
+  src: url('/fonts/Silkscreen-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+@theme static {
+  --font-pixel: 'Silkscreen', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* night: deep indigo sky and water */
+  --color-night-50: #f1eeff;
+  --color-night-100: #e2dcff;
+  --color-night-200: #c9bdff;
+  --color-night-300: #a998f5;
+  --color-night-400: #8470e0;
+  --color-night-500: #5f4bc4;
+  --color-night-600: #4332a1;
+  --color-night-700: #2f2380;
+  --color-night-800: #1f1766;
+  --color-night-900: #150f4d;
+  --color-night-950: #0d0933;
+  /* sunset: orange to ember */
+  --color-sunset-50: #fff3e6;
+  --color-sunset-100: #ffe2c2;
+  --color-sunset-200: #ffc88a;
+  --color-sunset-300: #ffab55;
+  --color-sunset-400: #ff8a2b;
+  --color-sunset-500: #f26a0f;
+  --color-sunset-600: #d1500a;
+  --color-sunset-700: #a63d0c;
+  --color-sunset-800: #7e2f10;
+  --color-sunset-900: #5c260f;
+  --color-sunset-950: #33120a;
+  --color-magenta-400: #ff5fa8;
+  --color-magenta-600: #c7237a;
+  --color-sun-300: #ffe680;
+  --color-sun-400: #ffd84a;
+  --color-grass-400: #5fd35a;
+  --color-grass-600: #2f8f33;
+  --color-dirt-600: #8a4b1f;
+  --color-dirt-800: #5a3012;
+  --color-paper: #fff6e5;
+
+  /* Starlight-Tailwind reads these two scales */
+  --color-gray-50: var(--color-night-50);
+  --color-gray-100: var(--color-night-100);
+  --color-gray-200: var(--color-night-200);
+  --color-gray-300: var(--color-night-300);
+  --color-gray-400: var(--color-night-400);
+  --color-gray-500: var(--color-night-500);
+  --color-gray-600: var(--color-night-600);
+  --color-gray-700: var(--color-night-700);
+  --color-gray-800: var(--color-night-800);
+  --color-gray-900: var(--color-night-900);
+  --color-gray-950: var(--color-night-950);
+  --color-accent-50: var(--color-sunset-50);
+  --color-accent-100: var(--color-sunset-100);
+  --color-accent-200: var(--color-sunset-200);
+  --color-accent-300: var(--color-sunset-300);
+  --color-accent-400: var(--color-sunset-400);
+  --color-accent-500: var(--color-sunset-500);
+  --color-accent-600: var(--color-sunset-600);
+  --color-accent-700: var(--color-sunset-700);
+  --color-accent-800: var(--color-sunset-800);
+  --color-accent-900: var(--color-sunset-900);
+  --color-accent-950: var(--color-sunset-950);
+
+  --shadow-pixel: 4px 4px 0 0 var(--color-night-950);
+  --shadow-pixel-sm: 2px 2px 0 0 var(--color-night-950);
+}
+
+/* ---- Starlight variables mapped onto the tokens (dark = default) ---- */
+:root {
+  --sl-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --sl-font-system-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --sl-color-white: #fff6e5;
+  --sl-color-gray-1: var(--color-night-100);
+  --sl-color-gray-2: var(--color-night-200);
+  --sl-color-gray-3: var(--color-night-300);
+  --sl-color-gray-4: var(--color-night-500);
+  --sl-color-gray-5: var(--color-night-600);
+  --sl-color-gray-6: var(--color-night-800);
+  --sl-color-gray-7: var(--color-night-900);
+  --sl-color-black: var(--color-night-950);
+  --sl-color-accent-low: var(--color-sunset-950);
+  --sl-color-accent: var(--color-sunset-400);
+  --sl-color-accent-high: var(--color-sunset-200);
+  --sl-color-text-accent: var(--color-sun-400);
+  --sl-color-bg-nav: var(--color-night-900);
+  --sl-color-bg-sidebar: var(--color-night-900);
+  --sl-color-hairline: var(--color-night-400);
+  --sl-color-hairline-light: var(--color-night-400);
+  --sl-color-hairline-shade: var(--color-night-950);
+  --sl-nav-height: 3.75rem;
+}
+:root[data-theme='light'] {
+  --sl-color-white: var(--color-night-900);
+  --sl-color-gray-1: #2a1f66;
+  --sl-color-gray-2: #3a2d7a;
+  --sl-color-gray-3: #55468a;
+  --sl-color-gray-4: #8b7bb8;
+  --sl-color-gray-5: #cdb98c;
+  --sl-color-gray-6: #f1e0bd;
+  --sl-color-gray-7: #f8ebd0;
+  --sl-color-black: var(--color-paper);
+  --sl-color-accent-low: var(--color-sunset-100);
+  --sl-color-accent: var(--color-sunset-700);
+  --sl-color-accent-high: #7a2c06;
+  --sl-color-text-accent: #7a2c06;
+  --sl-color-bg-nav: #f8ebd0;
+  --sl-color-bg-sidebar: #f8ebd0;
+  --sl-color-hairline: #8a7650;
+  --sl-color-hairline-light: #8a7650;
+  --sl-color-hairline-shade: #b49e6e;
+  --pixel-shadow: #b49e6e;
+}
+:root { --pixel-shadow: var(--color-night-950); }
+
+/* ---- Global retro treatment ---- */
+html { color-scheme: dark; }
+html[data-theme='light'] { color-scheme: light; }
+body { overflow-wrap: break-word; }
+/* CRT scanlines: a faint static overlay, off in light mode and when more contrast is requested */
+:root[data-theme='dark'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99;
+  background: repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.1) 0 1px, transparent 1px 3px);
+}
+@media (prefers-contrast: more) { :root body::after { display: none; } }
+::selection { background: var(--color-sun-400); color: var(--color-night-950); }
+:focus-visible { outline: 3px solid var(--color-sun-400); outline-offset: 2px; }
+:root[data-theme='light'] :focus-visible { outline-color: var(--color-night-700); }
+
+.site-title, .sl-markdown-content :is(h1, h2, h3, h4), .right-sidebar h2, nav.sidebar .large, summary .large, .pixel {
+  font-family: var(--font-pixel);
+  letter-spacing: 0.02em;
+}
+.site-title { font-size: 0.8rem; color: var(--sl-color-text-accent); text-shadow: 2px 2px 0 var(--pixel-shadow); }
+.sl-markdown-content h1 { font-size: clamp(1.6rem, 6vw, 2.2rem); line-height: 1.2; }
+.sl-markdown-content h2 { font-size: clamp(1.3rem, 4.5vw, 1.6rem); border-bottom: 3px solid var(--sl-color-hairline); padding-bottom: 0.25rem; }
+.sl-markdown-content h3 { font-size: 1.15rem; }
+@media (min-width: 30rem) { .site-title { font-size: 1.05rem; } }
+h1#_top { font-family: var(--font-pixel); font-size: clamp(1.6rem, 6vw, 2.4rem); line-height: 1.2; text-shadow: 3px 3px 0 var(--pixel-shadow); }
+
+/* square, hard-edged components */
+.sl-markdown-content :is(pre, code, table, img, aside, .expressive-code .frame, .expressive-code .frame pre),
+.starlight-aside, site-search button, #starlight__search, .sl-link-button, select, input, details, .card {
+  border-radius: 0 !important;
+}
+.sl-markdown-content .starlight-aside, .starlight-aside {
+  border: 2px solid var(--sl-color-hairline);
+  border-inline-start-width: 8px;
+  box-shadow: 4px 4px 0 0 var(--pixel-shadow);
+}
+.expressive-code .frame { box-shadow: 4px 4px 0 0 var(--pixel-shadow); border: 2px solid var(--sl-color-hairline); }
+.sl-markdown-content :not(pre) > code { overflow-wrap: anywhere; border: 1px solid var(--sl-color-hairline); }
+.sl-markdown-content table { border: 2px solid var(--sl-color-hairline); }
+.sl-markdown-content :is(th, td) { border-color: var(--sl-color-hairline); }
+.sl-markdown-content th { font-family: var(--font-pixel); font-size: 0.8rem; background: var(--sl-color-gray-6); }
+.sl-markdown-content a { text-underline-offset: 0.2em; text-decoration-thickness: 2px; }
+
+/* header, search, sidebar, pagination */
+header.header { border-bottom: 3px solid var(--sl-color-hairline); }
+#starlight__sidebar, .sidebar-pane { border-inline-end: 3px solid var(--sl-color-hairline); }
+site-search button { border: 2px solid var(--sl-color-hairline); box-shadow: var(--shadow-pixel-sm); min-height: 2.5rem; }
+nav.sidebar a { border-radius: 0; min-height: 2.25rem; }
+nav.sidebar a[aria-current='page'] { background: var(--sl-color-accent); color: var(--color-night-950); font-weight: 700; }
+:root[data-theme='light'] nav.sidebar a[aria-current='page'] { color: var(--color-paper); }
+.pagination-links a { border: 2px solid var(--sl-color-hairline); border-radius: 0; box-shadow: var(--shadow-pixel-sm); }
+.pagination-links a:hover { border-color: var(--sl-color-accent); }
+footer .meta a, footer .meta { font-size: 0.85rem; }
+
+/* buttons (Starlight LinkButton and the hero) */
+.sl-link-button, .pixel-button {
+  font-family: var(--font-pixel);
+  border: 2px solid var(--pixel-shadow);
+  box-shadow: 4px 4px 0 0 var(--pixel-shadow);
+  min-height: 2.75rem;
+  transition: transform 80ms steps(2), box-shadow 80ms steps(2);
+}
+.sl-link-button:active, .pixel-button:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 0 var(--pixel-shadow); }
+@media (prefers-reduced-motion: reduce) { .sl-link-button, .pixel-button { transition: none; } }
+
+/* mobile: keep long words and wide content inside the viewport */
+.sl-markdown-content { overflow-wrap: break-word; }
+.sl-markdown-content a { overflow-wrap: anywhere; }
+.sl-markdown-content :is(pre, table) { max-width: 100%; }
+
+/* tap targets: the phone menu toggle must be at least 44px */
+.sl-menu-button { min-width: 2.75rem; min-height: 2.75rem; }

@@ -8,14 +8,28 @@
 """
 import argparse, hashlib, json, pathlib, re, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import build_catalog
+import build_catalog, lint_layout
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN_EXT = {".bin", ".gen", ".smd", ".sms", ".gg", ".iso", ".cue", ".img", ".rom", ".sfc", ".nes", ".z64", ".ips",
-                 ".segapatch", ".zip", ".7z", ".rar", ".gz", ".tar", ".png.raw", ".vram", ".dump", ".sav", ".srm"}
+                 ".segapatch", ".zip", ".7z", ".rar", ".gz", ".tar", ".png.raw", ".vram", ".dump", ".sav", ".srm",
+                 ".exe", ".dll", ".so", ".dylib", ".o", ".a", ".nsp", ".xci", ".pk3", ".wad"}
 FORBIDDEN_TEXT = ["private-corpus", ".worktrees", "segarecomp-harness", "/root/dev"]
-TEXT_EXT = {".md", ".json", ".py", ".yml", ".yaml", ".txt"}
+TEXT_EXT = {".md", ".json", ".py", ".yml", ".yaml", ".txt", ".toml", ".mjs", ".js", ".ts", ".astro", ".mdx", ".css", ".c", ".h", ".sh", ".cfg"}
 MAX_BYTES = 512 * 1024
+LOCKFILE_MAX_BYTES = 2 * 1024 * 1024   # the only larger tracked file: the site's npm lockfile (text, integrity hashes)
+LOCKFILES = {"site/package-lock.json"}
+# Credential-shaped strings. A tripwire for accidents; a leaked credential must still be revoked.
+SECRET_PATTERNS = [
+    ("private key block", re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY")),
+    ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b")),
+    ("npm token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
+    ("Slack token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
+    ("AWS access key id", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("credential assignment", re.compile(r"(?i)\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|cloudflare_api_token)\b\s*[:=]\s*[\"'][^\"'\s$<{]{16,}[\"']")),
+]
+REQUIRED_CHECKS = ("check / repository", "site / build", "site / samples")
 REQ_PKG = ["id", "version", "revision", "region", "package_file", "package_sha256", "package_size", "package_identity", "schema_version",
            "trust", "executable_code", "source_image_sha256", "patched_image_sha256", "bps_sha256", "license", "evidence_tier",
            "supported_scope", "limitations", "gameplay", "asset"]
@@ -34,24 +48,36 @@ def tracked(root):
 
 
 def check(root, errs):
-    for f in ("README.md", "LICENSE", "CONTRIBUTING.md", "SECURITY.md", "docs/installation.md", "docs/compatibility.md",
-              "docs/creating-patches.md", "docs/releases.md", "catalog/index.json"):
+    for f in ("README.md", "LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/CODEOWNERS",
+              ".github/PULL_REQUEST_TEMPLATE.md", ".github/ISSUE_TEMPLATE/config.yml", ".github/workflows/check.yml",
+              "docs/installation.md", "docs/compatibility.md", "docs/creating-patches.md", "docs/releases.md", "docs/policy.md",
+              "docs/repository-settings.md", "docs/publication-restrictions.md", "docs/layout-and-versioning.md", "catalog/index.json"):
         if not (root / f).is_file(): errs.append(f"missing {f}")
     for p in tracked(root):
         if not p.is_file(): continue
         rel = p.relative_to(root).as_posix()
         if rel.startswith(".github/") and p.suffix not in {".yml", ".yaml"}: pass
-        if p.suffix.lower() in FORBIDDEN_EXT or p.stat().st_size > MAX_BYTES or (p.suffix == ".bps" and not re.fullmatch(r"patches/[^/]+/[^/]+/source/[a-z0-9-]+\.bps", rel)):
+        too_big = p.stat().st_size > (LOCKFILE_MAX_BYTES if rel in LOCKFILES else MAX_BYTES)
+        if p.suffix.lower() in FORBIDDEN_EXT or too_big or (p.suffix == ".bps" and not re.fullmatch(r"patches/[^/]+/[^/]+/source/[a-z0-9-]+\.bps", rel)):
             errs.append(f"forbidden file type or size: {rel}")
         if p.suffix in TEXT_EXT and rel not in ("scripts/check_repo.py", "tests/test_check_repo.py"):
             t = p.read_text(errors="replace")
             for m in FORBIDDEN_TEXT:
                 if m in t: errs.append(f"private/harness marker {m!r} in {rel}")
+            for what, rx in SECRET_PATTERNS:
+                if rx.search(t): errs.append(f"possible secret ({what}) in {rel}")
             if p.suffix == ".md":
                 for target in re.findall(r"\]\(([^)\s]+)\)", t):
                     if target.startswith(("http://",)): errs.append(f"non-HTTPS link in {rel}: {target}")
                     if target.startswith(("https://", "#", "mailto:")): continue
+                    # Site-root routes (/security/) are validated against the built site by scripts/check_site_links.py.
+                    if target.startswith("/") and rel.startswith("site/src/content/docs/"): continue
                     if not (p.parent / target.split("#")[0]).exists(): errs.append(f"broken link in {rel}: {target}")
+    settings = root / "docs/repository-settings.md"
+    if settings.is_file():
+        for name in REQUIRED_CHECKS:
+            if name not in settings.read_text(): errs.append(f"docs/repository-settings.md does not name required check {name!r}")
+    lint_layout.lint(root, errs)
     seen = set()
     for rj in sorted((root / "patches").glob("*/*/release.json")):
         d = rj.parent; rel = json.loads(rj.read_text())

@@ -1,0 +1,9 @@
+{
+  "provider_sha256": "2ad87a59be4299702a57e95e6327df680b26cbb7eeb203c2159785181b31d953",
+  "schema1_bps_roundtrip_sha256": "53e4dedd710dce309d9f6c271004509dd1806a2e618e65f5d19b16c51fe7d697",
+  "schema1_package_sha256": "7f8b3be187821963e77d0ac8c58109caa14f923065d29c8735a01157a8d3e9d3",
+  "schema2_package_sha256": "74b8f18918dba56a2e9b832a8bf0e4b35fd59dd530bb0937bef23ed453fa7db0",
+  "source_sha256": "72e88e2978559f47a365efffd67804f8f141ac6423a90243fbe4ce2c54b0501f",
+  "target_sha256": "53e4dedd710dce309d9f6c271004509dd1806a2e618e65f5d19b16c51fe7d697",
+  "wrong_image_refused": true
+}

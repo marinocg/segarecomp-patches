@@ -10,7 +10,7 @@ class Checks(unittest.TestCase):
     def copy(self):
         d = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d)
         for p in ROOT.rglob("*"):
-            if p.is_file() and ".git" not in p.parts:
+            if p.is_file() and not ({".git", "node_modules", "dist", ".astro", "__pycache__"} & set(p.parts)):
                 t = d / p.relative_to(ROOT); t.parent.mkdir(parents=True, exist_ok=True); shutil.copy(p, t)
         return d
 
@@ -44,6 +44,36 @@ class Checks(unittest.TestCase):
     def test_private_marker(self):
         d = self.copy(); (d / "docs/x.md").write_text("see private-corpus/")
         self.assertTrue(any("marker" in e for e in self.errs(d)))
+
+    def test_secret_scan(self):
+        # Credential-shaped strings are assembled at run time so this file itself never contains one.
+        cases = {"private key block": "-----BEGIN " + "RSA PRIVATE KEY-----", "GitHub token": "gh" + "p_" + "a1B2" * 9,
+                 "AWS access key id": "AKIA" + "ABCDEFGHIJKLMNOP", "npm token": "npm_" + "x" * 36,
+                 "credential assignment": 'api_key = "' + "k" * 20 + '"'}
+        for what, text in cases.items():
+            d = self.copy(); (d / "docs/leak.md").write_text("notes\n" + text + "\n")
+            self.assertTrue(any("possible secret" in e and what in e for e in self.errs(d)), what)
+
+    def test_secret_scan_ignores_placeholders(self):
+        d = self.copy(); (d / "docs/ok.md").write_text('token = "${{ secrets.TOKEN }}"\npassword = "<your-password>"\nsecret: "short"\n')
+        self.assertEqual(self.errs(d), [])
+
+    def test_forbidden_binary_and_large_file(self):
+        d = self.copy(); (d / "docs/tool.exe").write_bytes(b"MZ"); (d / "docs/big.json").write_text("x" * (512 * 1024 + 1))
+        e = self.errs(d); self.assertTrue(any("tool.exe" in x for x in e) and any("big.json" in x for x in e))
+
+    def test_governance_files_required(self):
+        for rel in ("CODE_OF_CONDUCT.md", ".github/CODEOWNERS", "docs/repository-settings.md", "docs/publication-restrictions.md"):
+            d = self.copy(); (d / rel).unlink()
+            self.assertTrue(any(f"missing {rel}" in e for e in self.errs(d)), rel)
+
+    def test_required_checks_documented(self):
+        d = self.copy(); f = d / "docs/repository-settings.md"; f.write_text(f.read_text().replace("site / build", "site"))
+        self.assertTrue(any("required check" in e for e in self.errs(d)))
+
+    def test_layout_violation_fails_repo_check(self):
+        d = self.copy(); (d / "patches/genesis/sonic-1/mod.toml").write_text("x = 1\n")
+        self.assertTrue(any("mod.toml" in e for e in self.errs(d)))
 
     def test_sums_required(self):
         d = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d); e = []
