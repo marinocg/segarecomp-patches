@@ -208,3 +208,6 @@ footer .meta a, footer .meta { font-size: 0.85rem; }
 .sl-markdown-content { overflow-wrap: break-word; }
 .sl-markdown-content a { overflow-wrap: anywhere; }
 .sl-markdown-content :is(pre, table) { max-width: 100%; }
+
+/* tap targets: the phone menu toggle must be at least 44px */
+.sl-menu-button { min-width: 2.75rem; min-height: 2.75rem; }

@@ -1,5 +1,5 @@
 ---
-title: "Patch packages (`.segapatch`, schema 1 and 2)"
+title: "Patch packages (.segapatch, schema 1 and 2)"
 description: "Imported copy of the product document docs/product/patch-packages.md at revision 8fa9f66f839b."
 editUrl: false
 ---

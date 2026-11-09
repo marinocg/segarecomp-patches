@@ -48,6 +48,9 @@ class Import(unittest.TestCase):
         page = ipd.render(PIN, PIN["files"][0], "# T \"q\"\n\nbody\n")
         self.assertIn('title: "T \\"q\\""', page); self.assertIn("Imported product documentation", page); self.assertTrue(page.endswith("body\n"))
 
+    def test_title_has_no_markdown_backticks(self):
+        self.assertIn('title: "Patch packages (.segapatch)"', ipd.render(PIN, PIN["files"][0], "# Patch packages (`.segapatch`)\n\nx\n"))
+
     def test_committed_pages_match_fresh_render_structure(self):
         pin = ipd.load_pin()
         for f in pin["files"]:

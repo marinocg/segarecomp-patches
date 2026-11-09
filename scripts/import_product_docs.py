@@ -56,7 +56,7 @@ def rewrite_links(text, source, pin):
 def render(pin, entry, text):
     lines = text.splitlines()
     if not lines or not lines[0].startswith("# "): raise SystemExit(f"{entry['source']}: expected a leading '# Title'")
-    title = lines[0][2:].strip(); body = "\n".join(lines[1:]).lstrip("\n")
+    title = lines[0][2:].strip().replace("`", ""); body = "\n".join(lines[1:]).lstrip("\n")
     body = rewrite_links(body, entry["source"], pin)
     short = pin["pinned_commit"][:12]; src_url = f"https://github.com/{pin['repository']}/blob/{pin['pinned_commit']}/{entry['source']}"
     desc = f"Imported copy of the product document {entry['source']} at revision {short}."

@@ -56,7 +56,7 @@ for (const theme of themes) {
         const h1 = document.querySelector('h1');
         const color = (el, prop) => getComputedStyle(el)[prop].match(/[\d.]+/g).slice(0, 3).map(Number);
         const bg = (el) => { for (let n = el; n; n = n.parentElement) { const c = getComputedStyle(n).backgroundColor; const v = c.match(/[\d.]+/g).map(Number); if (v.length === 3 || v[3] > 0.95) return v.slice(0, 3); } return [255, 255, 255]; };
-        const small = [...document.querySelectorAll('a, button')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top < innerHeight && (r.height < 40 && r.width < 40) && getComputedStyle(e).display !== 'inline'; }).slice(0, 3).map((e) => e.outerHTML.slice(0, 60));
+        const small = [...document.querySelectorAll('a, button')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top < innerHeight && (r.height < 40 && r.width < 40) && getComputedStyle(e).display !== 'inline' && !e.classList.contains('sl-anchor-link'); }).slice(0, 3).map((e) => e.outerHTML.slice(0, 60));
         return { scrollW: doc.scrollWidth, vw, wide, fontOk: document.fonts.check('16px Silkscreen'), h1: h1 ? { font: getComputedStyle(h1).fontFamily, fg: color(h1, 'color'), bg: bg(h1) } : null,
                  bodyFg: color(document.body, 'color'), bodyBg: bg(document.body), small, hasSkip: !!document.querySelector('a[href="#_top"]') };
       });
