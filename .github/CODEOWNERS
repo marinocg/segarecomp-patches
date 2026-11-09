@@ -1,0 +1,8 @@
+# Every path needs maintainer review (see docs/repository-settings.md: "Require review from Code Owners").
+*                       @marinocg
+# Executable-code and supply-chain surfaces are named explicitly so a later co-maintainer split cannot drop them.
+/patches/               @marinocg
+/scripts/               @marinocg
+/.github/               @marinocg
+/LICENSE                @marinocg
+/LICENSES/              @marinocg
