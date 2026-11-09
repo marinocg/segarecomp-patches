@@ -14,6 +14,15 @@ def tmp(test):
 
 
 class Links(unittest.TestCase):
+    def setUp(self):
+        self._base = check_site_links.BASE; check_site_links.BASE = ""; self.addCleanup(setattr, check_site_links, "BASE", self._base)
+
+    def test_base_path_enforced(self):
+        d = tmp(self) / "dist"; (d / "a").mkdir(parents=True); (d / "404.html").write_text("x")
+        (d / "index.html").write_text('<a href="/site/a/">ok</a><a href="/a/">unprefixed</a>'); (d / "a/index.html").write_text("<p>a</p>")
+        check_site_links.BASE = "/site"; e = check_site_links.check(d)
+        self.assertEqual(len(e), 1); self.assertIn("outside the base path", e[0])
+
     def site(self, extra=""):
         d = tmp(self) / "dist"; (d / "a").mkdir(parents=True)
         (d / "index.html").write_text('<a href="/a/">a</a><img src="/logo.svg"><a href="https://example.com/x">ext</a>' + extra)

@@ -8,16 +8,19 @@ import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
 const dist = path.resolve(process.argv[2] ?? 'dist');
+const SITE_BASE = (process.env.SITE_BASE ?? '/segarecomp-patches').replace(/\/+$/, '');
 const out = path.resolve('screenshots');
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.png': 'image/png', '.wasm': 'application/wasm' };
 
 const server = http.createServer(async (req, res) => {
   let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  if (SITE_BASE && p !== SITE_BASE && !p.startsWith(SITE_BASE + '/')) { res.statusCode = 404; res.end('outside the site base path'); return; }
+  p = p.slice(SITE_BASE.length) || '/';
   if (p.endsWith('/')) p += 'index.html';
   try { res.setHeader('content-type', types[path.extname(p)] ?? 'application/octet-stream'); res.end(await readFile(path.join(dist, p))); }
   catch { res.statusCode = 404; res.end(await readFile(path.join(dist, '404.html')).catch(() => 'not found')); }
 }).listen(0);
-const base = `http://127.0.0.1:${server.address().port}`;
+const base = `http://127.0.0.1:${server.address().port}${SITE_BASE}`;
 
 const viewports = [['phone', 360, 740], ['phone-large', 414, 896], ['tablet', 768, 1024], ['desktop', 1280, 800], ['wide', 1920, 1080]];
 const pages = ['/', '/getting-started/', '/security/', '/product/patch-packages/', '/product/native-patch-sdk/', '/support/', '/repository/', '/nope-404/'];
@@ -75,7 +78,7 @@ for (const theme of themes) {
       const page = await ctx.newPage(); await page.goto(base + '/getting-started/', { waitUntil: 'networkidle' });
       try {
         await page.click('button.sl-menu-button', { timeout: 5000 });
-        await page.waitForSelector('#starlight__sidebar a[href="/security/"]', { state: 'visible', timeout: 5000 });
+        await page.waitForSelector('#starlight__sidebar a[href$="/security/"]', { state: 'visible', timeout: 5000 });
         await page.screenshot({ path: path.join(out, 'dark-phone-menu-open.png') });
         await page.click('button.sl-menu-button', { timeout: 5000 });
       } catch (e) { problems.push('dark/phone: mobile menu did not open: ' + String(e).split('\n')[0]); }

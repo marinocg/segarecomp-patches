@@ -73,4 +73,6 @@ SEGA, Sega Genesis, Mega Drive, Sonic the Hedgehog and Streets of Rage are trade
 
 ## Documentation site
 
+Published at https://marinocg.github.io/segarecomp-patches/ (GitHub Pages, deployed from `main` by `.github/workflows/pages.yml`).
+
 `site/` is an Astro + Starlight project (static output, built-in Pagefind search). Build it with `cd site && npm ci && npm run build`; CI also runs the link checker, a search test and every code sample of the [getting-started guide](site/src/content/docs/getting-started.md). Imported product documentation follows the pinned-revision rule in [docs/product-docs.md](docs/product-docs.md). Repository policy: [trust and licensing](docs/policy.md), [layout and versioning](docs/layout-and-versioning.md), [publication restrictions](docs/publication-restrictions.md), [repository settings](docs/repository-settings.md).

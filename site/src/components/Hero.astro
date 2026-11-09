@@ -3,6 +3,8 @@
 // Replaces Starlight's Hero through the `components` override. Layout is Tailwind utilities; colours are theme tokens.
 const { data } = Astro.locals.starlightRoute.entry;
 const { title = data.title, tagline, actions = [] } = data.hero || {};
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const href = (l: string) => (l.startsWith('/') && !l.startsWith('//') ? base + l : l);
 
 const W = 160, H = 64, HORIZON = 40;
 const sky = ['#150f4d', '#1f1766', '#2f2380', '#4332a1', '#6a2f9e', '#9b2f9a', '#c7237a', '#ee3a6a', '#ff5a4a', '#ff7a35', '#ff9a2b', '#ffb83a'];
@@ -50,7 +52,7 @@ const glint = Array.from({ length: 7 }, (_, i) => ({ x: SUN.cx - 10 + (i % 3) * 
       {actions.length > 0 && (
         <div class="mt-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
           {actions.map(({ text, link, variant }) => (
-            <a href={link} class:list={['pixel-button inline-flex items-center justify-center px-5 py-2 text-sm no-underline',
+            <a href={href(link)} class:list={['pixel-button inline-flex items-center justify-center px-5 py-2 text-sm no-underline',
               variant === 'primary' ? 'bg-sun-400 text-night-950 hover:bg-sun-300' : 'bg-night-800 text-paper hover:bg-night-700']}>{text}</a>
           ))}
         </div>

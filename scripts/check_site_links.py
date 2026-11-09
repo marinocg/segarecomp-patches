@@ -3,11 +3,13 @@
 
   check_site_links.py site/dist
 
-Every internal href/src/srcset target must exist in the build output, and every `#fragment` must name an id in the target page.
+Every internal href/src/srcset (site-absolute ones must start with the base path, SITE_BASE, default /segarecomp-patches) target must exist in the build output, and every `#fragment` must name an id in the target page.
 External links (https:) are not fetched: CI must not depend on third-party availability. The scripts/check_repo.py link rules still
 require HTTPS for external links in repository Markdown.
 """
-import html.parser, pathlib, re, sys, urllib.parse
+import html.parser, os, pathlib, re, sys, urllib.parse
+
+BASE = os.environ.get("SITE_BASE", "/segarecomp-patches").rstrip("/")
 
 
 class Page(html.parser.HTMLParser):
@@ -29,6 +31,10 @@ def target(dist, page, link):
     if u.scheme or u.netloc:
         return None if u.scheme in {"https", "http", "mailto", "data"} else "unsupported scheme"
     path = urllib.parse.unquote(u.path)
+    if path.startswith("/") and BASE:
+        # A site-absolute link must carry the deployment base path, otherwise it works locally and 404s on GitHub Pages.
+        if path != BASE and not path.startswith(BASE + "/"): return f"site-absolute link outside the base path {BASE}"
+        path = path[len(BASE):] or "/"
     base = dist if path.startswith("/") else page.parent
     t = (base / path.lstrip("/")) if path else page
     try: t = t.resolve(); t.relative_to(dist.resolve())

@@ -1,0 +1,44 @@
+name: pages
+# Publishes the documentation site to GitHub Pages (https://marinocg.github.io/segarecomp-patches/) from main only.
+# One-time repository setting: Settings -> Pages -> Source = "GitHub Actions" (recorded in docs/repository-settings.md).
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'docs/product-docs.pin.json', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - working-directory: site
+        run: npm ci && npm run build
+      - name: Link check and search test on exactly what will be published
+        run: |
+          python3 scripts/check_site_links.py site/dist
+          (cd site && npm run test:search)
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

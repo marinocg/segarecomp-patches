@@ -11,6 +11,7 @@ GitHub settings are not versioned by git. This document is the checked-in record
 | Licence | MPL-2.0 |
 | Merge method | Squash merge only; delete head branches on merge |
 | Issues | Enabled, blank issues disabled (see `.github/ISSUE_TEMPLATE/config.yml`) |
+| GitHub Pages | Source: **GitHub Actions** (`.github/workflows/pages.yml`); site at https://marinocg.github.io/segarecomp-patches/ ; environment `github-pages` deploys from `main` only; HTTPS enforced |
 | Private vulnerability reporting | Enabled (referenced by `SECURITY.md`) |
 | Secret scanning and push protection | Enabled |
 | Dependabot alerts | Enabled |
@@ -32,6 +33,10 @@ GitHub settings are not versioned by git. This document is the checked-in record
 `check / repository` is the job `repository` in `.github/workflows/check.yml` (repository checks, catalog freshness, unit tests, synthetic fixture, package rebuild). `site / build` (static build, link check, search test) and `site / samples` (pinned-docs import and drift checks, claim lint, execution of every guide sample) are the jobs `build` and `samples` in `.github/workflows/site.yml`.
 
 The `site / visual` job (browser rendering, screenshots uploaded as an artifact) is informational and deliberately **not** required: it depends on a downloaded browser, so a CDN outage must not block merges. Review its screenshots on design changes.
+
+## Publishing
+
+`pages.yml` builds `site/` on every push to `main` that touches the site, re-runs the link and search checks on the exact build output and deploys it with `actions/deploy-pages`. Only `main` may deploy (environment protection). The site base path is `/segarecomp-patches` (`SITE_BASE`, read by `site/astro.config.mjs` and the checks in `scripts/` and `site/scripts/`); a custom domain later means setting `SITE_URL`/`SITE_BASE=` and nothing else.
 
 ## Workflow permissions
 
