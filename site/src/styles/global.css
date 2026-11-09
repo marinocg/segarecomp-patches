@@ -158,10 +158,11 @@ body { overflow-wrap: break-word; }
   font-family: var(--font-pixel);
   letter-spacing: 0.02em;
 }
-.site-title { font-size: 1.05rem; color: var(--sl-color-text-accent); text-shadow: 2px 2px 0 var(--pixel-shadow); }
+.site-title { font-size: 0.8rem; color: var(--sl-color-text-accent); text-shadow: 2px 2px 0 var(--pixel-shadow); }
 .sl-markdown-content h1 { font-size: clamp(1.6rem, 6vw, 2.2rem); line-height: 1.2; }
 .sl-markdown-content h2 { font-size: clamp(1.3rem, 4.5vw, 1.6rem); border-bottom: 3px solid var(--sl-color-hairline); padding-bottom: 0.25rem; }
 .sl-markdown-content h3 { font-size: 1.15rem; }
+@media (min-width: 30rem) { .site-title { font-size: 1.05rem; } }
 h1#_top { font-family: var(--font-pixel); font-size: clamp(1.6rem, 6vw, 2.4rem); line-height: 1.2; text-shadow: 3px 3px 0 var(--pixel-shadow); }
 
 /* square, hard-edged components */

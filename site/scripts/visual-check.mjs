@@ -73,13 +73,18 @@ for (const theme of themes) {
     // interactive checks on phone: mobile menu opens and search dialog finds a known page
     if (vname === 'phone' && theme === 'dark') {
       const page = await ctx.newPage(); await page.goto(base + '/getting-started/', { waitUntil: 'networkidle' });
-      await page.click('starlight-menu-button button'); await page.waitForSelector('#starlight__sidebar a[href="/security/"]', { state: 'visible' });
-      await page.screenshot({ path: path.join(out, 'dark-phone-menu-open.png') });
-      await page.click('starlight-menu-button button');
-      await page.click('site-search button'); await page.fill('input[type=search], .pagefind-ui__search-input, #starlight__search input', 'sandboxed').catch(() => {});
-      await page.waitForTimeout(1500); await page.screenshot({ path: path.join(out, 'dark-phone-search.png') });
-      const hits = await page.locator('dialog a[href*="security"], .pagefind-ui__result a').count();
-      if (hits === 0) problems.push('dark/phone: search dialog showed no result for "sandboxed"');
+      try {
+        await page.click('button.sl-menu-button', { timeout: 5000 });
+        await page.waitForSelector('#starlight__sidebar a[href="/security/"]', { state: 'visible', timeout: 5000 });
+        await page.screenshot({ path: path.join(out, 'dark-phone-menu-open.png') });
+        await page.click('button.sl-menu-button', { timeout: 5000 });
+      } catch (e) { problems.push('dark/phone: mobile menu did not open: ' + String(e).split('\n')[0]); }
+      try {
+        await page.click('site-search button[data-open-modal]:not([disabled])', { timeout: 5000 });
+        await page.fill('dialog input', 'sandboxed', { timeout: 5000 });
+        await page.waitForSelector('dialog a[href*="security"]', { timeout: 8000 });
+        await page.screenshot({ path: path.join(out, 'dark-phone-search.png') });
+      } catch (e) { problems.push('dark/phone: search did not return the security page for "sandboxed": ' + String(e).split('\n')[0]); await page.screenshot({ path: path.join(out, 'dark-phone-search-failed.png') }); }
       await page.close();
     }
     await ctx.close();
