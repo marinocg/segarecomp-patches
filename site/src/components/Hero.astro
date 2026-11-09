@@ -29,7 +29,7 @@ const glint = Array.from({ length: 7 }, (_, i) => ({ x: SUN.cx - 10 + (i % 3) * 
 ---
 
 <section class="relative isolate overflow-hidden border-b-4 border-night-950 bg-night-950">
-  <svg class="block h-44 w-full sm:absolute sm:inset-0 sm:-z-10 sm:h-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
+  <svg class="block h-44 w-full lg:absolute lg:inset-0 lg:-z-10 lg:h-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
     {bands.map((b) => <rect x="0" y={b.y} width={W} height={b.h} fill={b.fill} />)}
     {sun.map((r) => <rect x={r.x} y={r.y} width={r.w} height="1" fill="#ffe680" />)}
     {columns(far).map((c) => <rect x={c.x} y={c.y} width="1" height={c.h} fill="#4a2a8c" />)}
@@ -42,8 +42,8 @@ const glint = Array.from({ length: 7 }, (_, i) => ({ x: SUN.cx - 10 + (i % 3) * 
     {[1, 2, 3].flatMap((row) => [0, 1, 2].map((col) => (row + col) % 2 === 0 ? <rect x={col * 4 + 1} y={H - 12 + row * 3} width="4" height="3" fill="#5a3012" /> : null))}
   </svg>
 
-  <div class="flex max-w-xl flex-col items-start px-0 py-0 sm:ml-8 sm:py-20 lg:ml-14 lg:py-24">
-    <div class="w-full border-night-950 bg-night-950 p-5 text-left sm:border-4 sm:bg-night-950/90 sm:p-8 sm:shadow-pixel">
+  <div class="flex max-w-xl flex-col items-start px-0 py-0 lg:ml-14 lg:py-24">
+    <div class="w-full border-night-950 bg-night-950 p-5 text-left lg:border-4 lg:bg-night-950/90 lg:shadow-pixel sm:p-8">
       <p class="font-pixel text-sm tracking-wide text-sun-400">&gt; PRESS START</p>
       <h1 id="_top" class="mt-3 font-pixel text-[1.75rem] leading-tight text-paper sm:text-5xl">{title}</h1>
       {tagline && <p class="mt-4 max-w-prose text-base leading-relaxed text-night-100 sm:text-lg">{tagline}</p>}
