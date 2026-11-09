@@ -1,0 +1,61 @@
+name: site
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install (lockfile only)
+        working-directory: site
+        run: npm ci
+      - name: Build the static site
+        working-directory: site
+        run: npm run build
+      - name: Link check (every internal link and asset in the built site)
+        run: python3 scripts/check_site_links.py site/dist
+      - name: Search test (Pagefind finds a known page in the built site)
+        working-directory: site
+        run: npm run test:search
+  # Documentation drift and executable samples. Same job id family as the build so the required check "site / build" covers all of it.
+  samples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Imported product docs equal a fresh import at the pinned revision
+        run: python3 scripts/import_product_docs.py --check
+      - name: Pinned product docs revision is not behind the declared minimum
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/import_product_docs.py --drift
+      - name: Authored pages make no unsupported claims
+        run: python3 scripts/check_site_content.py
+      - name: Fetch the pinned product tools (segapatch.py, SDK header, shipped CLI release)
+        run: |
+          set -euo pipefail
+          REF=$(cat scripts/SEGAPATCH_REF); RAW="https://raw.githubusercontent.com/marinocg/segarecomp/$REF"
+          mkdir -p "$RUNNER_TEMP/tools" && cd "$RUNNER_TEMP/tools"
+          curl -fsSL "$RAW/tools/segapatch.py" -o segapatch.py
+          curl -fsSL "$RAW/platforms/genesis/sdk/segarecomp_genesis_patch.h" -o segarecomp_genesis_patch.h
+          REL=$(python3 -c "import json;print(json.load(open('$GITHUB_WORKSPACE/docs/product-docs.pin.json'))['executable_sample_tooling']['cli_release'])")
+          V=${REL#v}; A="segarecomp-$V-linux-x86_64.tar.gz"
+          curl -fsSL "https://github.com/marinocg/segarecomp/releases/download/$REL/$A" -o "$A"
+          curl -fsSL "https://github.com/marinocg/segarecomp/releases/download/$REL/SHA256SUMS.txt" -o SHA256SUMS.txt
+          grep "  $A\$" SHA256SUMS.txt | sha256sum -c -
+          tar xzf "$A"
+          echo "SEGAPATCH=$PWD/segapatch.py" >> "$GITHUB_ENV"
+          echo "SDK_INCLUDE=$PWD" >> "$GITHUB_ENV"
+          echo "SEGARECOMP=$PWD/Segarecomp/bin/segarecomp" >> "$GITHUB_ENV"
+      - name: Execute every code sample of the getting-started guide
+        run: |
+          export WORK="$(mktemp -d)"
+          python3 scripts/run_guide_samples.py

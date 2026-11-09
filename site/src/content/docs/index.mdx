@@ -1,0 +1,31 @@
+---
+title: segarecomp patches
+description: Reviewed, working patches for games recompiled by segarecomp, and the documentation to write your own.
+template: splash
+hero:
+  tagline: Reviewed widescreen patches for segarecomp, with the format, SDK and trust documentation behind them.
+  actions:
+    - text: Getting started
+      link: /getting-started/
+      icon: right-arrow
+    - text: Security model
+      link: /security/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="Exact images only" icon="approve-check">
+    A patch targets exact image SHA-256 digests, never a title or region. Nothing here contains a game image.
+  </Card>
+  <Card title="Native code is not sandboxed" icon="warning">
+    A schema 2 patch is C source compiled into the Patched program. Read the [security page](/security/) before installing one.
+  </Card>
+  <Card title="Write one" icon="pencil">
+    The [getting-started guide](/getting-started/) builds, packs and verifies a synthetic provider; every command in it is run by CI.
+  </Card>
+  <Card title="What is supported" icon="information">
+    Support claims are made only by the product [compatibility ledger](/support/).
+  </Card>
+</CardGrid>
