@@ -27,6 +27,11 @@ class Links(unittest.TestCase):
     def test_escape(self): self.assertTrue(any("escapes" in e for e in check_site_links.check(self.site('<a href="../../etc/passwd">x</a>'))))
     def test_needs_404(self):
         d = self.site(); (d / "404.html").unlink(); self.assertTrue(any("404" in e for e in check_site_links.check(d)))
+    def test_css_url_checked(self):
+        d = self.site(); (d / "a.css").write_text("@font-face{src:url(/fonts/x.ttf)} .b{background:url('data:image/png;base64,AA')}")
+        self.assertTrue(any("x.ttf" in e for e in check_site_links.check(d)))
+        (d / "fonts").mkdir(); (d / "fonts/x.ttf").write_text("f"); self.assertEqual(check_site_links.check(d), [])
+
     def test_unbuilt(self): self.assertTrue(check_site_links.check(tmp(self)))
 
 

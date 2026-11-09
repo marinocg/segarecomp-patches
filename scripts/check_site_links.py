@@ -7,7 +7,7 @@ Every internal href/src/srcset target must exist in the build output, and every 
 External links (https:) are not fetched: CI must not depend on third-party availability. The scripts/check_repo.py link rules still
 require HTTPS for external links in repository Markdown.
 """
-import html.parser, pathlib, sys, urllib.parse
+import html.parser, pathlib, re, sys, urllib.parse
 
 
 class Page(html.parser.HTMLParser):
@@ -53,6 +53,12 @@ def check(dist):
             if frag and t.suffix == ".html":
                 tp = pages.get(t.resolve())
                 if tp is not None and urllib.parse.unquote(frag) not in tp.ids: errs.append(f"{rel}: {link}: no such anchor")
+    # CSS url(...) references (fonts, images): every site-local one must exist in the build output
+    for css in sorted(dist.rglob("*.css")):
+        for u in re.findall(r"url\(\s*['\"]?([^'\")]+?)['\"]?\s*\)", css.read_text(errors="replace")):
+            if u.startswith(("data:", "#")): continue
+            t = target(dist, css, u)
+            if isinstance(t, str): errs.append(f"{css.relative_to(dist).as_posix()}: url({u}): {t}")
     return errs
 
 

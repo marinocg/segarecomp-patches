@@ -59,3 +59,29 @@ jobs:
         run: |
           export WORK="$(mktemp -d)"
           python3 scripts/run_guide_samples.py
+  # Real-browser rendering at phone/tablet/desktop widths in dark and light themes. Screenshots are always uploaded so the result can be
+  # reviewed by eye (Actions run -> Artifacts -> site-screenshots); layout assertions fail the job. Not a required check (see docs/repository-settings.md).
+  visual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - working-directory: site
+        run: npm ci && npm run build
+      - name: Install the browser
+        working-directory: site
+        run: npx playwright install --with-deps chromium
+      - name: Render and check every page
+        working-directory: site
+        run: npm run test:visual
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-screenshots
+          path: site/screenshots/
+          retention-days: 14

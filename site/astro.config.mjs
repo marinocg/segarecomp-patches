@@ -1,10 +1,12 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import tailwindcss from '@tailwindcss/vite';
 
 // Static output only: `npm run build` writes dist/ (HTML, CSS, JS and the Pagefind search index).
 // No server, no runtime backend and no network fetch at runtime. Deployment target is decided separately (SEG-134-T006).
 export default defineConfig({
+  vite: { plugins: [tailwindcss()] },
   integrations: [
     starlight({
       title: 'segarecomp patches',
@@ -12,6 +14,8 @@ export default defineConfig({
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/marinocg/segarecomp-patches' }],
       editLink: { baseUrl: 'https://github.com/marinocg/segarecomp-patches/edit/main/site/' },
       lastUpdated: false,
+      customCss: ['./src/styles/global.css'],
+      components: { Hero: './src/components/Hero.astro' },
       sidebar: [
         { label: 'Start here', items: [{ slug: 'getting-started' }, { slug: 'security' }, { slug: 'support' }] },
         {

@@ -3,29 +3,29 @@ title: segarecomp patches
 description: Reviewed, working patches for games recompiled by segarecomp, and the documentation to write your own.
 template: splash
 hero:
-  tagline: Reviewed widescreen patches for segarecomp, with the format, SDK and trust documentation behind them.
+  tagline: Reviewed patches for segarecomp, with the package format, SDK and trust documentation behind them.
   actions:
     - text: Getting started
       link: /getting-started/
-      icon: right-arrow
+      variant: primary
     - text: Security model
       link: /security/
-      variant: minimal
+      variant: secondary
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import Panel from '../../components/Panel.astro';
 
-<CardGrid>
-  <Card title="Exact images only" icon="approve-check">
+<div class="mx-auto my-8 grid max-w-5xl grid-cols-1 gap-5 px-4 sm:grid-cols-2 sm:px-6">
+  <Panel title="EXACT IMAGES ONLY">
     A patch targets exact image SHA-256 digests, never a title or region. Nothing here contains a game image.
-  </Card>
-  <Card title="Native code is not sandboxed" icon="warning">
+  </Panel>
+  <Panel title="NATIVE CODE IS NOT SANDBOXED">
     A schema 2 patch is C source compiled into the Patched program. Read the [security page](/security/) before installing one.
-  </Card>
-  <Card title="Write one" icon="pencil">
-    The [getting-started guide](/getting-started/) builds, packs and verifies a synthetic provider; every command in it is run by CI.
-  </Card>
-  <Card title="What is supported" icon="information">
+  </Panel>
+  <Panel title="WRITE ONE">
+    The [getting-started guide](/getting-started/) builds, packs and verifies a synthetic provider; CI runs every command in it.
+  </Panel>
+  <Panel title="WHAT IS SUPPORTED">
     Support claims are made only by the product [compatibility ledger](/support/).
-  </Card>
-</CardGrid>
+  </Panel>
+</div>

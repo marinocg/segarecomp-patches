@@ -26,6 +26,7 @@ Rules that follow:
 | `docs/` and `site/src/content/docs/` prose | MPL-2.0 (the repository default) | A separate documentation licence (for example CC-BY-4.0) is **not** adopted; adopting one is a maintainer decision recorded here first. |
 | `patches/<platform>/<game>/source/provider.c` | The licence the package declares in `release.json` (`MIT` or `MPL-2.0`); text in `LICENSES/MIT.txt` or `LICENSE` | Never relicense a provider because the repository is MPL-2.0 (CONTRIBUTING rule 5). |
 | `patches/<platform>/<game>/source/*.bps` | Covered by the package licence; contains no game content | See [publication restrictions](publication-restrictions.md). |
+| `site/public/fonts/Silkscreen-*.ttf` | SIL Open Font License 1.1 (`LICENSES/Silkscreen-OFL.txt`) | Used for headings and labels of the documentation site; copied unmodified from the product launcher assets. |
 | Imported product documentation under `site/src/content/docs/product/` | MPL-2.0 per the product repository | The product repository stays authoritative; see [docs/product-docs.md](product-docs.md). |
 
 Commercial games, firmware and assets are never covered by any licence here because they are never committed.

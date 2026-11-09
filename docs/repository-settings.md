@@ -31,6 +31,8 @@ GitHub settings are not versioned by git. This document is the checked-in record
 
 `check / repository` is the job `repository` in `.github/workflows/check.yml` (repository checks, catalog freshness, unit tests, synthetic fixture, package rebuild). `site / build` (static build, link check, search test) and `site / samples` (pinned-docs import and drift checks, claim lint, execution of every guide sample) are the jobs `build` and `samples` in `.github/workflows/site.yml`.
 
+The `site / visual` job (browser rendering, screenshots uploaded as an artifact) is informational and deliberately **not** required: it depends on a downloaded browser, so a CDN outage must not block merges. Review its screenshots on design changes.
+
 ## Workflow permissions
 
 Default `GITHUB_TOKEN` permission is read-only (`contents: read`); every workflow declares its permissions explicitly. Pull requests from forks never receive secrets. Workflows that publish (release) run only on manual dispatch.
