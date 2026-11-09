@@ -1,0 +1,13 @@
+{
+  "pin_format": 1,
+  "repository": "marinocg/segarecomp",
+  "pinned_commit": "8fa9f66f839bbd750fb9171ac0d67016ca2b08d4",
+  "minimum_commit": "8fa9f66f839bbd750fb9171ac0d67016ca2b08d4",
+  "authority": "The product repository is authoritative. Imported pages are mechanical copies at pinned_commit; fix wording upstream, then move the pin.",
+  "files": [
+    {"source": "docs/product/patch-packages.md", "page": "product/patch-packages"},
+    {"source": "docs/product/native-patch-sdk.md", "page": "product/native-patch-sdk"},
+    {"source": "docs/product/widescreen-and-patches.md", "page": "product/widescreen-and-patches"}
+  ],
+  "executable_sample_tooling": {"segapatch_ref_file": "scripts/SEGAPATCH_REF", "cli_release": "v0.8.0"}
+}
