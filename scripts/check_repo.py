@@ -126,6 +126,38 @@ def check(root, errs):
     except Exception as e: errs.append(f"catalog: {e}")
 
 
+def _cli(cli, *args):
+    r = subprocess.run([cli, *map(str, args)], capture_output=True, text=True)
+    try: return r.returncode, json.loads(r.stdout)
+    except ValueError: return r.returncode, {"ok": False, "error": (r.stdout + r.stderr)[:200]}
+
+
+def pack_mod_project(cli, d, out, extra=()):
+    """The product's own `segarecomp mod build` (with a compiler and the SDK dir) or `mod pack` is the only package builder: returns (ok, info, bytes)."""
+    rc, doc = _cli(cli, "mod", "build" if extra else "pack", d, "--out", out, *extra)   # `mod build` = check + the host-compiled native units (strict flags) + pack; `mod pack` needs no compiler
+    return rc == 0 and doc.get("ok") is True, doc, (pathlib.Path(out).read_bytes() if pathlib.Path(out).is_file() else b"")
+
+
+def check_mod_projects(root, cli, errs, extra=()):
+    """Unpublished schema 3 projects against the shipped product tool: `mod check` accepts them, `mod pack` is deterministic, and an optional `tests/package.json`
+    ({"package_identity": ..., "package_sha256": ...}) pins the expected identity so a changed source byte fails. Nothing here is a release: no asset, no catalog entry, no SHA256SUMS line."""
+    import tempfile
+    for d in lint_layout.mod_projects(root):
+        n = d.relative_to(root).as_posix()
+        rc, doc = _cli(cli, "mod", "check", d, *extra)
+        if rc != 0 or doc.get("ok") is not True: errs.append(f"{n}: segarecomp mod check refused the project: {doc.get('error', doc)}"); continue
+        with tempfile.TemporaryDirectory() as t:
+            ok1, i1, b1 = pack_mod_project(cli, d, pathlib.Path(t) / "a.segapatch", extra)
+            ok2, i2, b2 = pack_mod_project(cli, d, pathlib.Path(t) / "b.segapatch", extra)
+        if not (ok1 and ok2): errs.append(f"{n}: the product build failed: {i1.get('error', i2.get('error', ''))}"); continue
+        if b1 != b2 or i1.get("package_identity") != i2.get("package_identity"): errs.append(f"{n}: package rebuild is not deterministic")
+        pin = d / "tests" / "package.json"
+        if pin.is_file():
+            want = json.loads(pin.read_text())
+            if want.get("package_identity") != i1.get("package_identity"): errs.append(f"{n}: package identity differs from tests/package.json (the sources changed)")
+            if want.get("package_sha256") and want["package_sha256"] != hashlib.sha256(b1).hexdigest(): errs.append(f"{n}: package SHA-256 differs from tests/package.json")
+
+
 def check_assets(root, assets, cli, errs):
     sums = {}
     sf = assets / "SHA256SUMS"
@@ -159,10 +191,12 @@ def check_assets(root, assets, cli, errs):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(); ap.add_argument("--assets"); ap.add_argument("--segarecomp"); ap.add_argument("--root", default=str(build_catalog.ROOT))
+    ap = argparse.ArgumentParser(); ap.add_argument("--assets"); ap.add_argument("--segarecomp"); ap.add_argument("--sdk-dir"); ap.add_argument("--cc"); ap.add_argument("--root", default=str(build_catalog.ROOT))
     a = ap.parse_args(argv); root = pathlib.Path(a.root); errs = []
     check(root, errs)
     if a.assets: check_assets(root, pathlib.Path(a.assets), a.segarecomp, errs)
+    if a.segarecomp and lint_layout.mod_projects(root):   # schema 3 projects need the shipped product tool (mod check / mod pack), compiled with its own host-owned flags
+        check_mod_projects(root, a.segarecomp, errs, [x for k, v in (("--cc", a.cc), ("--sdk-dir", a.sdk_dir)) if v for x in (k, v)])
     for e in errs: print("FAIL:", e, file=sys.stderr)
     print("ok" if not errs else f"{len(errs)} problem(s)")
     return 1 if errs else 0

@@ -7,14 +7,19 @@ Checks the structure of every `patches/<platform>/<game>/` directory and the ver
 Digest, license, catalog and forbidden-content checks stay in check_repo.py, which calls `lint()` so a pull request cannot skip it.
 """
 import argparse, json, pathlib, re, sys
+try: import tomllib
+except ImportError: tomllib = None   # Python < 3.11: schema 3 projects cannot be linted there (reported as a problem, never skipped)
 
 PLATFORMS = {"genesis", "master-system", "game-gear", "sega-cd"}
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
 COLLECTION = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-SCHEMAS = {1, 2}          # .segapatch schemas this repository publishes; 3 (mod.toml) is reserved, not accepted
+SCHEMAS = {1, 2}          # .segapatch schemas this repository PUBLISHES (release.json). A schema 3 `mod.toml` project is accepted as an UNPUBLISHED, locally buildable source project only (see _mod_project).
 NATIVE_ABIS = {1}
 PROJECT_ENTRIES = {"README.md", "release.json", "source", "tests"}
+MOD_ENTRIES = {"README.md", "mod.toml", "src", "scripts", "edits", "tests"}   # an unpublished schema 3 project: no release.json, so it can never reach the catalog or a release
+MOD_SOURCE_EXT = {"native-c11": {".c", ".h"}, "luau-source": {".luau"}, "rom-edit-set": {".edits"}}   # what a schema 3 project may commit as source: text only, never a binary payload
+MOD_NATIVE_ABI = 2
 
 
 def lint(root, errs):
@@ -34,12 +39,66 @@ def lint(root, errs):
             _project(game, platform.name, where, errs)
 
 
-def _project(d, platform, where, errs):
+def mod_projects(root):
+    """Every `patches/<platform>/<game>/` directory that holds a `mod.toml` (schema 3, unpublished)."""
+    return sorted(p.parent for p in pathlib.Path(root).glob("patches/*/*/mod.toml"))
+
+
+def _safe_relpath(value):
+    return isinstance(value, str) and value != "" and "\\" not in value and not value.startswith("/") and ".." not in value.split("/") and not re.match(r"^[A-Za-z]:", value)
+
+
+def _mod_project(d, platform, where, errs):
+    """Schema 3 source project (docs/layout-and-versioning.md): `mod.toml` plus the files it declares. The product's `segarecomp mod check/pack` is the authority for the manifest and package;
+    this lint only checks what the repository itself promises: layout, declared files, safe paths, text-only sources and the schema/ABI combination. No release.json: nothing here is published."""
     if not SLUG.match(d.name): errs.append(f"layout: {where}: directory name must be a lowercase slug")
     for e in sorted(d.iterdir()):
-        if e.name == "mod.toml":
-            errs.append(f"layout: {where}/mod.toml is reserved for schema 3 and is not accepted yet")
-        elif e.name not in PROJECT_ENTRIES:
+        if e.name == "release.json": errs.append(f"layout: {where}: release.json cannot accompany mod.toml (a schema 3 project is unpublished source; published schema 3 releases are not supported yet)")
+        elif e.name not in MOD_ENTRIES: errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, mod.toml, src/, scripts/, edits/, tests/)")
+    if not (d / "README.md").is_file(): errs.append(f"layout: {where}: missing README.md")
+    tests = d / "tests"
+    if tests.is_dir():
+        for f in tests.rglob("*"):
+            if f.is_file() and f.suffix not in {".json", ".md"}: errs.append(f"layout: {where}/tests/{f.name}: only synthetic .json/.md expectations are allowed")
+    if tomllib is None:
+        errs.append(f"layout: {where}: Python 3.11+ is required to lint a schema 3 project"); return
+    try: m = tomllib.loads((d / "mod.toml").read_text(encoding="utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        errs.append(f"layout: {where}/mod.toml is malformed: {e}"); return
+    if (m.get("target") or {}).get("platform") != platform: errs.append(f"layout: {where}: mod.toml target platform differs from directory {platform!r}")
+    sources = m.get("source") or []
+    if not isinstance(sources, list) or not sources:
+        errs.append(f"layout: {where}: mod.toml declares no [[source]]"); return
+    declared, kinds = set(), set()
+    for src in sources:
+        kind, path = (src or {}).get("kind"), (src or {}).get("path")
+        if not _safe_relpath(path): errs.append(f"layout: {where}: unsafe or empty source path {path!r}"); continue
+        kinds.add(kind)
+        if kind not in MOD_SOURCE_EXT: errs.append(f"layout: {where}: source kind {kind!r} is not accepted in a repository project (allowed: {', '.join(sorted(MOD_SOURCE_EXT))})"); continue
+        if pathlib.PurePosixPath(path).suffix not in MOD_SOURCE_EXT[kind]: errs.append(f"layout: {where}/{path}: disallowed file type for {kind}")
+        top = pathlib.PurePosixPath(path).parts[0]
+        if top not in {"src", "scripts", "edits"}: errs.append(f"layout: {where}/{path}: sources live under src/, scripts/ or edits/")
+        if not (d / path).is_file(): errs.append(f"layout: {where}: declared source {path} is missing")
+        declared.add(path)
+    abi = (m.get("abi") or {}).get("native")
+    if "native-c11" in kinds and abi != MOD_NATIVE_ABI: errs.append(f"layout: {where}: native-c11 source requires [abi] native = {MOD_NATIVE_ABI} (got {abi!r})")
+    if "native-c11" not in kinds and abi is not None: errs.append(f"layout: {where}: [abi] native is declared but no native-c11 source is")
+    for top in ("src", "scripts", "edits"):
+        base = d / top
+        if not base.exists(): continue
+        for f in sorted(base.rglob("*")):
+            if not f.is_file(): continue
+            rel = f.relative_to(d).as_posix()
+            if f.is_symlink(): errs.append(f"layout: {where}/{rel}: links are not allowed")
+            elif rel not in declared: errs.append(f"layout: {where}/{rel}: not a declared source file (declare it as a [[source]] in mod.toml or remove it)")
+
+
+def _project(d, platform, where, errs):
+    if (d / "mod.toml").exists():
+        _mod_project(d, platform, where, errs); return
+    if not SLUG.match(d.name): errs.append(f"layout: {where}: directory name must be a lowercase slug")
+    for e in sorted(d.iterdir()):
+        if e.name not in PROJECT_ENTRIES:
             errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, release.json, source/, tests/)")
     for need, kind in (("README.md", "is_file"), ("release.json", "is_file"), ("source", "is_dir")):
         if not getattr(d / need, kind)(): errs.append(f"layout: {where}: missing {need}")
