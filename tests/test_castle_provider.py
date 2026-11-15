@@ -31,6 +31,7 @@ static int mwrite(uint32_t space, uint32_t off, uint32_t w, uint32_t v) {
   if (space != SEGA_GEN_SPACE_M68K_WORK_RAM || !in_range(off, w, 1) || nstaged >= 64) { fault = 1; return SEGA_MOD_E_RANGE; }
   staged[nstaged].off = off; staged[nstaged].w = w; staged[nstaged].v = v; ++nstaged; return 0; }
 static int minput(uint32_t port, uint32_t *b) { if (port != 1U) return 1; *b = pad1; return 0; }
+static int mset(uint32_t port, uint32_t b) { printf("setpad %u %x\n", port, b); return 0; }
 static void mlog(const char *s, uint32_t n) { (void)s; (void)n; }
 static int a_layer(uint32_t a, uint32_t b, uint32_t c, int32_t d, int32_t e, uint32_t f, uint32_t g, uint32_t h) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h; return 0; }
 static int a_target(uint32_t i) { (void)i; return 0; }
@@ -44,7 +45,7 @@ static int a_window(uint32_t plane, int32_t x0, int32_t y0, uint32_t cols, uint3
 static void commit(void) { int i; for (i = 0; i < nstaged; ++i) { uint32_t k; for (k = 0; k < staged[i].w; ++k) ram[staged[i].off + k] = (uint8_t)(staged[i].v >> (8U * (staged[i].w - 1U - k))); printf("write %x %u %x\n", staged[i].off, staged[i].w, staged[i].v); } nstaged = 0; }
 int main(int argc, char **argv) {
   const SegaModProvider *p; void *state = NULL; char line[256]; uint64_t frame = 0; uint8_t blob[64]; uint32_t bloblen = 0; (void)argc; (void)argv;
-  host.size = sizeof host; host.abi_major = 2; host.platform = SEGA_MOD_PLATFORM; host.platform_features = &features; host.read = mread; host.write = mwrite; host.input_get = minput; host.log = mlog;
+  host.size = sizeof host; host.abi_major = 2; host.platform = SEGA_MOD_PLATFORM; host.platform_features = &features; host.read = mread; host.write = mwrite; host.input_get = minput; host.input_set = mset; host.log = mlog;
   features.size = sizeof features; features.render = &api;
   api.size = sizeof api; api.overlay_layer = a_layer; api.overlay_target = a_target; api.overlay_rect = a_rect; api.overlay_text = a_text; api.scene = a_scene; api.virtual_sprites = a_sprites; api.scenery_window = a_window;
   p = segarecomp_mod_provider(&state);
@@ -57,7 +58,7 @@ int main(int argc, char **argv) {
     else if (strncmp(line, "init", 4) == 0) printf("init %d\n", p->init(state, &host));
     else if (strncmp(line, "phase ", 6) == 0) {
       host.frame = frame; fault = 0;
-      host.phase = strncmp(line + 6, "reset", 5) == 0 ? SEGA_MOD_PHASE_RESET : strncmp(line + 6, "post-input", 10) == 0 ? SEGA_MOD_PHASE_POST_INPUT : strncmp(line + 6, "frame-end", 9) == 0 ? SEGA_MOD_PHASE_FRAME_END : SEGA_MOD_PHASE_RENDER;
+      host.phase = strncmp(line + 6, "reset", 5) == 0 ? SEGA_MOD_PHASE_RESET : strncmp(line + 6, "input", 5) == 0 ? SEGA_MOD_PHASE_INPUT : strncmp(line + 6, "post-input", 10) == 0 ? SEGA_MOD_PHASE_POST_INPUT : strncmp(line + 6, "frame-end", 9) == 0 ? SEGA_MOD_PHASE_FRAME_END : SEGA_MOD_PHASE_RENDER;
       p->phase(state, &host); if (fault) printf("FAULT\n"); commit();
     }
     else if (strncmp(line, "save", 4) == 0) { uint32_t i; if (p->save_state(state, blob, sizeof blob, &bloblen) != 0) printf("SAVE-FAILED\n"); else { printf("state"); for (i = 0; i < bloblen; ++i) printf(" %02x", blob[i]); printf("\n"); } }
@@ -155,7 +156,7 @@ class Provider(unittest.TestCase):
         return lines
 
     def frame(self, ram, pad=0, frame=1, extra=()):
-        return self.load(ram) + ["pad %x" % pad, "frame %d" % frame, *extra, "phase post-input", "phase frame-end", "phase render"]
+        return self.load(ram) + ["pad %x" % pad, "frame %d" % frame, *extra, "phase input", "phase post-input", "phase frame-end", "phase render"]
 
     # ---- widescreen scenery ----
     def check_scene(self, ram, scene):
@@ -237,15 +238,24 @@ class Provider(unittest.TestCase):
         ram = Ram(cam=100); ram.w(POWER, 2, 2)
         first = self.run_script(["init"] + self.frame(ram, pad=CHORD, frame=1) + ["save"])
         blob = next(l for l in first if l.startswith("state")).split()[1:]
-        self.assertEqual(len(blob), 12)
+        self.assertEqual(len(blob), 16)
         # a NEW process: load the state, keep holding the chord (no repeat), release, press again with damage taken (fires and counts 2)
         again = self.run_script(["init", "load " + " ".join(blob)] + self.frame(ram, pad=CHORD, frame=2) + self.frame(ram, pad=0, frame=3) + self.frame(ram, pad=CHORD, frame=4) + ["save"])
         self.assertEqual(len(self.writes(again)), 7)
         self.assertEqual(next(l for l in again if l.startswith("state")).split()[5:9], ["00", "00", "00", "02"], "the counter continued from the saved state")
         self.assertIn("load 0", again)
 
+    def test_the_chord_is_taken_from_the_game_only_in_a_verified_level(self):
+        ram = Ram(cam=100)
+        out = self.run_script(["init"] + self.frame(ram, pad=CHORD | 0x08))
+        self.assertIn("setpad 1 8", out, "A+B+C is removed from the sample, the other buttons stay")
+        out = self.run_script(["init"] + self.frame(ram, pad=0x50 | 0x08) + self.frame(ram, pad=0x60, frame=2))
+        self.assertFalse([l for l in out if l.startswith("setpad")], "a partial chord is the game's")
+        bad = Ram(cam=100); bad.w(REC_A + 10, 2, 0)
+        self.assertFalse([l for l in self.run_script(["init"] + self.frame(bad, pad=CHORD)) if l.startswith("setpad")], "outside a verified level nothing is intercepted")
+
     def test_rejects_a_corrupt_state(self):
-        out = self.run_script(["init", "load 00 00 00 05 00 00 00 00 00 00 00 00", "echo done"])
+        out = self.run_script(["init", "load 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00", "echo done"])
         self.assertIn("load 1", out)
 
 

@@ -8,7 +8,8 @@
  *
  * Practice+ (the ONLY guest-affecting code, kept apart below): the game keeps Mickey's power at 0xF322 (0 = dead, 1..5 alive, 5 = full; its own routines cap it at 5). Pressing A+B+C together (an edge, never a held repeat) while a verified level runs and the
  * power is 1..4 restores it to 5 EXACTLY the way the game's own refresh routine leaves its state: the power word, the five HUD slot words (0xF244..0xF24D) and the HUD-upload flag (bit 0 of 0xF409), so the on-screen power row updates too. Lives (tries)
- * and everything else are never touched. */
+ * and everything else are never touched. The chord is also taken away from the game while a verified level runs (input.intercept, phase `input`): the game never sees A+B+C as a jump or an attack. Buttons that arrive before the chord is
+ * complete still reach the game, and a chord outside a verified level is not touched. */
 #include <segarecomp_mod_genesis.h>
 
 #define REC_A 0xFA80U
@@ -46,6 +47,7 @@ typedef struct ModState {
   uint32_t chord_held;    /* the chord was down at the latest post-input (an edge needs it up first) */
   uint32_t restores;      /* completed restorations since reset */
   uint32_t flash;         /* frames left of the "POWER" notice */
+  uint32_t chord_now;     /* the chord is down in this frame's sample (set at `input`, read at `post-input`) */
 } ModState;
 static ModState st;
 static uint32_t scene_id;          /* 0 = nothing verified this frame, 1 = Enchanted Forest, 2 = castle interior */
@@ -132,12 +134,20 @@ static void provider_frame_end(const SegaModHost *h) {
 }
 
 /* ---- Practice+: the only code that changes the game. Every write goes through a declared read-write range of mod.toml. ---- */
-static void practice(const SegaModHost *h) {
-  uint32_t pad = 0U, power = 0U, flags = 0U, i, chord;
+/* `input`: the sample of player 1. A complete chord is removed from what the guest reads, but only inside a verified level. */
+static void intercept(const SegaModHost *h) {
+  uint32_t pad = 0U;
   Plane a, b;
+  st.chord_now = 0U;
   if (h->input_get(1U, &pad) != 0) return;
-  chord = (pad & CHORD) == CHORD ? 1U : 0U;
-  if (chord != 0U && st.chord_held == 0U && classify(h, &a, &b) != 0U && rd(h, POWER, 2U, &power) == 0 && power >= 1U && power < POWER_MAX && rd(h, HUD_FLAGS, 1U, &flags) == 0) {
+  st.chord_now = (pad & CHORD) == CHORD ? 1U : 0U;
+  if (st.chord_now != 0U && classify(h, &a, &b) != 0U) (void)h->input_set(1U, pad & ~CHORD);
+}
+
+static void practice(const SegaModHost *h) {
+  uint32_t power = 0U, flags = 0U, i;
+  Plane a, b;
+  if (st.chord_now != 0U && st.chord_held == 0U && classify(h, &a, &b) != 0U && rd(h, POWER, 2U, &power) == 0 && power >= 1U && power < POWER_MAX && rd(h, HUD_FLAGS, 1U, &flags) == 0) {
     int ok = h->write(SEGA_GEN_SPACE_M68K_WORK_RAM, POWER, 2U, POWER_MAX) == 0;
     for (i = 0U; ok && i < POWER_MAX; ++i) ok = h->write(SEGA_GEN_SPACE_M68K_WORK_RAM, HUD_SLOTS + 2U * i, 2U, HUD_SLOT_FILLED) == 0;
     if (ok && h->write(SEGA_GEN_SPACE_M68K_WORK_RAM, HUD_FLAGS, 1U, flags | 1U) == 0) {
@@ -145,7 +155,7 @@ static void practice(const SegaModHost *h) {
       st.flash = FLASH_FRAMES;
     }
   }
-  st.chord_held = chord;   /* updated every frame, valid scene or not: a chord that was already down never fires later */
+  st.chord_held = st.chord_now;   /* updated every frame, valid scene or not: a chord that was already down never fires later */
 }
 
 static void draw_number(const SegaGenesisRenderApi *render, int32_t x, int32_t y, uint32_t value, uint32_t rgba) {
@@ -185,31 +195,33 @@ static int provider_init(void *state, const SegaModHost *host) {
 
 static void provider_phase(void *state, const SegaModHost *host) {
   (void)state;
-  if (host->phase == SEGA_MOD_PHASE_RESET) { ready = scene_id = 0U; st.chord_held = st.restores = st.flash = 0U; }
+  if (host->phase == SEGA_MOD_PHASE_RESET) { ready = scene_id = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
+  else if (host->phase == SEGA_MOD_PHASE_INPUT) intercept(host);
   else if (host->phase == SEGA_MOD_PHASE_POST_INPUT) practice(host);
   else if (host->phase == SEGA_MOD_PHASE_FRAME_END) provider_frame_end(host);
   else if (host->phase == SEGA_MOD_PHASE_RENDER) provider_render(host);
 }
 
 static int provider_save(void *state, uint8_t *out, uint32_t cap, uint32_t *len) {
-  const uint32_t values[3] = {st.chord_held, st.restores, st.flash};
+  const uint32_t values[4] = {st.chord_held, st.restores, st.flash, st.chord_now};
   uint32_t i;
   (void)state;
-  if (cap < 12U) return 1;
-  for (i = 0U; i < 12U; ++i) out[i] = (uint8_t)(values[i / 4U] >> (24U - 8U * (i % 4U)));
-  *len = 12U;
+  if (cap < 16U) return 1;
+  for (i = 0U; i < 16U; ++i) out[i] = (uint8_t)(values[i / 4U] >> (24U - 8U * (i % 4U)));
+  *len = 16U;
   return 0;
 }
 
 static int provider_load(void *state, const uint8_t *in, uint32_t len) {
-  uint32_t values[3], i;
+  uint32_t values[4], i;
   (void)state;
-  if (len != 12U) return 1;
-  for (i = 0U; i < 3U; ++i) values[i] = ((uint32_t)in[4U * i] << 24U) | ((uint32_t)in[4U * i + 1U] << 16U) | ((uint32_t)in[4U * i + 2U] << 8U) | (uint32_t)in[4U * i + 3U];
-  if (values[0] > 1U || values[2] > FLASH_FRAMES) return 1;
+  if (len != 16U) return 1;
+  for (i = 0U; i < 4U; ++i) values[i] = ((uint32_t)in[4U * i] << 24U) | ((uint32_t)in[4U * i + 1U] << 16U) | ((uint32_t)in[4U * i + 2U] << 8U) | (uint32_t)in[4U * i + 3U];
+  if (values[0] > 1U || values[2] > FLASH_FRAMES || values[3] > 1U) return 1;
   st.chord_held = values[0];
   st.restores = values[1];
   st.flash = values[2];
+  st.chord_now = values[3];
   ready = scene_id = 0U;   /* rebuilt from guest RAM at the next frame-end; nothing of an earlier frame is drawn */
   return 0;
 }
