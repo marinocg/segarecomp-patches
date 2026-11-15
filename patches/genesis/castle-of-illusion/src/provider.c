@@ -14,8 +14,9 @@
 
 #define REC_A 0xFA80U
 #define REC_B 0xFAC0U
-#define MAP_A 0x2000U
+#define MAP_A 0x2000U   /* the lowest address plane A's map can have; its own address is in the record */
 #define MAP_B 0x5000U
+#define MAP_B_LOW 0x4800U   /* plane B's map is here in the scenes whose plane A map is small */
 #define TABLE_A 0x0000U
 #define TABLE_B 0x0800U
 #define POWER 0xF322U
@@ -26,7 +27,7 @@
 #define HUD_FLAGS 0xF409U        /* bit 0: the HUD row must be uploaded again */
 #define CHORD 0x70U              /* A (0x40) + B (0x10) + C (0x20) of player 1, all together; Start is never used */
 #define FLASH_FRAMES 90U
-#define B_STRIDE 32U      /* plane B's map is 32 blocks wide in both verified levels (its record's own column field is not a stride in every scene) */
+#define B_MAP_END 0x7000U
 #define A_BLOCKS 256U
 #define B_BLOCKS 256U
 #define WCOLS 128U        /* the widest window the host accepts: 32:9 needs about 30 cells each side of the picture, the rest absorbs the camera's motion since the frame-end read */
@@ -36,7 +37,9 @@ typedef struct Plane {
   int32_t cam;            /* the game's horizontal scroll value (camera x, pixels) */
   int32_t vscroll;
   uint32_t rows, cols;    /* map size in blocks (the map record's own fields) */
-  int32_t shift_cells;    /* world cell - window plane cell: a multiple of 128 while the VDP's 10-bit scroll has wrapped */
+  uint32_t map;           /* the map's work-RAM address (plane A: the record's own, plane B: fixed) */
+  int32_t shift_cells;    /* world cell - window plane cell (x): a multiple of 128 while the VDP's 10-bit scroll has wrapped */
+  int32_t shift_rows;     /* the same for y */
   int32_t cell_x0, cell_y0;
   uint32_t window_rows;
 } Plane;
@@ -50,7 +53,7 @@ typedef struct ModState {
   uint32_t chord_now;     /* the chord is down in this frame's sample (set at `input`, read at `post-input`) */
 } ModState;
 static ModState st;
-static uint32_t scene_id;          /* 0 = nothing verified this frame, 1 = Enchanted Forest, 2 = castle interior */
+static uint32_t scene_id;          /* 0 = nothing verified this frame, else 1 + the index in `scenes` */
 static uint32_t ready;             /* a window was built at the latest frame-end for the next render */
 
 static int rd(const SegaModHost *h, uint32_t offset, uint32_t width, uint32_t *value) { return h->read(SEGA_GEN_SPACE_M68K_WORK_RAM, offset, width, value); }
@@ -60,7 +63,9 @@ static int record(const SegaModHost *h, uint32_t base, uint32_t map, uint32_t ta
   if (rd(h, base, 2U, &v) || rd(h, base + 4U, 2U, &cam) || rd(h, base + 8U, 2U, &ptr_hi) || rd(h, base + 10U, 2U, &ptr_lo) || rd(h, base + 12U, 2U, &rows) || rd(h, base + 14U, 2U, &cols) ||
       rd(h, base + 16U, 2U, &tbl_hi) || rd(h, base + 18U, 2U, &tbl_lo))
     return 0;
-  if (ptr_hi != 0xFFU || ptr_lo != map || tbl_hi != 0xFFU || tbl_lo != table) return 0;   /* the record of a running scrolling level, not a menu, cutscene or transition (those leave it zeroed) */
+  if (ptr_hi != 0xFFU || tbl_hi != 0xFFU || tbl_lo != table) return 0;   /* the record of a running scrolling level, not a menu, cutscene or transition (those leave it zeroed) */
+  if (map != 0U ? (ptr_lo != MAP_B && ptr_lo != MAP_B_LOW) : (ptr_lo < MAP_A || ptr_lo >= MAP_B_LOW)) return 0;   /* plane B's map is at one of two addresses; plane A's own address is read from the record (inside the declared range) */
+  p->map = ptr_lo;
   p->vscroll = (int32_t)v;
   p->cam = (int32_t)cam;
   p->rows = rows;
@@ -68,16 +73,15 @@ static int record(const SegaModHost *h, uint32_t base, uint32_t map, uint32_t ta
   return 1;
 }
 
-/* The VDP applies a 10-bit scroll: -camera wraps into [-512, 511]; the host's plane coordinate is screen x - that value. */
-static void place(Plane *p, uint32_t max_rows_cells) {
-  int32_t hs = -p->cam;
+/* The VDP applies a 10-bit scroll: -camera wraps into [-512, 511] (and the vertical value into the same range); the host's plane coordinate is screen position minus that value. The window is in plane cells, the maps in world cells. */
+static void place(Plane *p) {
+  int32_t hs = -p->cam, vs = ((p->vscroll + 512) & 1023) - 512;
   hs = ((hs + 512) & 1023) - 512;
   p->shift_cells = (p->cam + hs) / 8;                    /* exact: cam + hs is a multiple of 1024 */
+  p->shift_rows = (p->vscroll - vs) / 8;
   p->cell_x0 = (p->cam / 8 - 40) - p->shift_cells;      /* 40 cells of slack on the left: more than the widest side style needs */
-  p->cell_y0 = p->vscroll / 8 - 1;
-  if (p->cell_y0 < 0) p->cell_y0 = 0;
-  p->window_rows = WROWS;
-  if ((uint32_t)p->cell_y0 + p->window_rows > max_rows_cells) p->window_rows = (uint32_t)p->cell_y0 >= max_rows_cells ? 0U : max_rows_cells - (uint32_t)p->cell_y0;
+  p->cell_y0 = (vs >> 3) - 1;                           /* one row of slack above the visible rows (floor division) */
+  p->window_rows = WROWS;                               /* rows outside the map are the game's own empty block, as the VDP planes hold them */
 }
 
 static int build_plane(const SegaModHost *h, const Plane *p, uint32_t map, uint32_t table, uint32_t stride, uint32_t blocks, int wrap, uint16_t *out) {
@@ -86,7 +90,7 @@ static int build_plane(const SegaModHost *h, const Plane *p, uint32_t map, uint3
   uint32_t r, c, i;
   for (i = 0U; i < blocks; ++i) have[i] = 0U;
   for (r = 0U; r < p->window_rows; ++r) {
-    const int32_t wy = p->cell_y0 + (int32_t)r;
+    const int32_t wy = p->cell_y0 + (int32_t)r + p->shift_rows;
     for (c = 0U; c < WCOLS; ++c) {
       const int32_t wx = p->cell_x0 + (int32_t)c + p->shift_cells;
       uint32_t b = 0U, word = 0U;
@@ -109,16 +113,25 @@ static int build_plane(const SegaModHost *h, const Plane *p, uint32_t map, uint3
   return 1;
 }
 
-/* The verified scenes: 0 = none (a menu, cutscene, load, transition or an unverified level), 1 = Enchanted Forest, 2 = castle interior. Fills both planes from the live records. */
+/* The verified scenes, by the map sizes (blocks) of the running level: plane A rows x columns and plane B rows. Each was flown through end to end with a private debug build and compared against the VDP (see README). */
+typedef struct Scene { uint32_t a_rows, a_cols, b_rows, b_stride; const char *name; } Scene;
+static const Scene scenes[] = {
+  {16U, 240U, 16U, 32U, "a16x240-b16"}, {48U, 160U, 16U, 32U, "a48x160-b16"}, {48U, 128U, 48U, 32U, "a48x128-b48"}, {16U, 32U, 16U, 32U, "a16x32-b16"},
+  {192U, 48U, 192U, 32U, "a192x48-b192"}, {32U, 112U, 32U, 32U, "a32x112-b32"}, {14U, 320U, 14U, 32U, "a14x320-b14"}, {17U, 32U, 17U, 32U, "a17x32-b17"},
+  {80U, 80U, 80U, 80U, "a80x80-b80x80"}, {32U, 128U, 32U, 128U, "a32x128-b32x128"}, {96U, 64U, 96U, 32U, "a96x64-b96"},
+};
+#define SCENE_COUNT (sizeof scenes / sizeof scenes[0])
+
+/* 0 = none (a menu, cutscene, load, transition or an unverified level), else 1 + the index in `scenes`. Fills both planes from the live records. */
 static uint32_t classify(const SegaModHost *h, Plane *a, Plane *b) {
-  uint32_t cols_a = 0U, cols_b = 0U, id = 0U;
-  if (!record(h, REC_A, MAP_A, TABLE_A, a, &cols_a) || !record(h, REC_B, MAP_B, TABLE_B, b, &cols_b)) return 0U;
+  uint32_t cols_a = 0U, cols_b = 0U, id = 0U, i;
+  if (!record(h, REC_A, 0U, TABLE_A, a, &cols_a) || !record(h, REC_B, 1U, TABLE_B, b, &cols_b)) return 0U;
   a->cols = cols_a;
-  b->cols = B_STRIDE;
-  if (a->rows == 16U && a->cols == 240U && b->rows == 16U) id = 1U;        /* Enchanted Forest */
-  else if (a->rows == 32U && a->cols == 112U && b->rows == 32U) id = 2U;   /* the castle interior of the attract demo */
+  for (i = 0U; i < SCENE_COUNT; ++i)
+    if (a->rows == scenes[i].a_rows && a->cols == scenes[i].a_cols && b->rows == scenes[i].b_rows) { id = i + 1U; b->cols = scenes[i].b_stride; }
   if (id == 0U) return 0U;
-  if (a->vscroll > 511 || b->vscroll > 511 || a->cam < 0 || b->cam < 0 || a->cam >= (int32_t)a->cols * 16 || b->cam >= (int32_t)a->cols * 16) return 0U;
+  if (a->map + a->rows * a->cols > b->map || b->map + b->rows * b->cols > B_MAP_END) return 0U;
+  if (a->vscroll >= (int32_t)a->rows * 16 || b->vscroll >= (int32_t)b->rows * 16 + 512 || a->cam < 0 || b->cam < 0 || a->cam >= (int32_t)a->cols * 16 || b->cam >= (int32_t)a->cols * 16) return 0U;
   return id;
 }
 
@@ -127,9 +140,9 @@ static void provider_frame_end(const SegaModHost *h) {
   scene_id = classify(h, &plane_a, &plane_b);
   if (st.flash != 0U) --st.flash;
   if (scene_id == 0U) return;
-  place(&plane_a, plane_a.rows * 2U);
-  place(&plane_b, plane_b.rows * 2U);
-  if (!build_plane(h, &plane_a, MAP_A, TABLE_A, plane_a.cols, A_BLOCKS, 0, words_a) || !build_plane(h, &plane_b, MAP_B, TABLE_B, B_STRIDE, B_BLOCKS, 1, words_b)) { scene_id = 0U; return; }
+  place(&plane_a);
+  place(&plane_b);
+  if (!build_plane(h, &plane_a, plane_a.map, TABLE_A, plane_a.cols, A_BLOCKS, 0, words_a) || !build_plane(h, &plane_b, plane_b.map, TABLE_B, plane_b.cols, B_BLOCKS, plane_b.cols == 32U, words_b)) { scene_id = 0U; return; }
   ready = 1U;
 }
 
@@ -173,7 +186,7 @@ static void provider_render(const SegaModHost *h) {
   const SegaGenesisRenderApi *render;
   if (features == NULL || features->size < sizeof(SegaGenesisFeatures) || features->render == NULL || scene_id == 0U) return;
   render = features->render;
-  (void)render->scene(scene_id == 1U ? "enchanted-forest" : "castle-interior", scene_id == 1U ? 16U : 15U);
+  { const char *n = scenes[scene_id - 1U].name; uint32_t len = 0U; while (n[len] != 0) ++len; (void)render->scene(n, len); }
   if (ready != 0U) {
     if (plane_a.window_rows != 0U) (void)render->scenery_window(0U, plane_a.cell_x0, plane_a.cell_y0, WCOLS, plane_a.window_rows, words_a);
     if (plane_b.window_rows != 0U) (void)render->scenery_window(1U, plane_b.cell_x0, plane_b.cell_y0, WCOLS, plane_b.window_rows, words_b);

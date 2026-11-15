@@ -76,18 +76,18 @@ POWER, HUD_SLOTS, HUD_FLAGS, CHORD = 0xF322, 0xF244, 0xF409, 0x70
 
 class Ram:
     """Fabricated work RAM: a block-table, two maps and the two scroll records, with the shape of a running level (never the content of one)."""
-    def __init__(self, rows=16, cols=240, brows=16, cam=0, v=32, cam_b=0, v_b=28):
+    def __init__(self, rows=16, cols=240, brows=16, cam=0, v=32, cam_b=0, v_b=28, bstride=32, bptr=MAP_B):
         self.b = bytearray(65536)
-        self.rows, self.cols, self.brows = rows, cols, brows
+        self.rows, self.cols, self.brows, self.bstride, self.bptr = rows, cols, brows, bstride, bptr
         for blk in range(256):
             for k in range(4): self.w(TBL_A + 8 * blk + 2 * k, 2, (0x4000 + blk * 16 + k) & 0xFFFF)            # synthetic words, one distinct word per (block, cell)
             for k in range(4): self.w(TBL_B + 8 * blk + 2 * k, 2, (0x6000 + blk * 16 + 8 + k) & 0xFFFF)
         for r in range(rows):
             for c in range(cols): self.b[MAP_A + r * cols + c] = (r * 31 + c * 7) % 251
         for r in range(brows):
-            for c in range(32): self.b[MAP_B + r * 32 + c] = (r * 13 + c * 5) % 241
+            for c in range(bstride): self.b[bptr + r * bstride + c] = (r * 13 + c * 5) % 241
         self.record(REC_A, v, cam, MAP_A, rows, cols, TBL_A)
-        self.record(REC_B, v_b, cam_b, MAP_B, brows, 0x70, TBL_B)   # plane B's own column field is not a stride (the provider must not use it)
+        self.record(REC_B, v_b, cam_b, bptr, brows, 0x70, TBL_B)   # plane B's own column field is not a stride (the provider must not use it)
         self.w(POWER, 2, 3); self.w(0xF324, 2, 3)
 
     def w(self, off, width, val):
@@ -109,18 +109,20 @@ def expect_window(ram, base, mapaddr, table, rows, stride, wrap):
     hs = ((-cam + 512) & 1023) - 512
     shift = (cam + hs) // 8
     x0 = cam // 8 - 40 - shift
-    y0 = max(v // 8 - 1, 0)
-    n = min(32, rows * 2 - y0) if y0 < rows * 2 else 0
+    vs = ((v + 512) & 1023) - 512
+    shift_y = (v - vs) // 8
+    first = (vs >> 3) - 1
+    n = 32
     words = []
     for r in range(n):
-        wy = y0 + r
+        wy = first + r + shift_y
         for c in range(128):
             wx = x0 + c + shift
             bx, by = wx >> 1, wy >> 1
             if wrap: bx &= stride - 1
             blk = ram.b[mapaddr + by * stride + bx] if 0 <= bx < stride and 0 <= by < rows else 0
             words.append(ram.r(table + 8 * blk + 2 * ((wy & 1) * 2 + (wx & 1))))
-    return x0, y0, n, words
+    return x0, first, n, words
 
 
 @unittest.skipUnless(SDK, "set SEGARECOMP_SDK_DIR to the product's platforms directory to compile the provider against the ABI 2 header")
@@ -149,7 +151,7 @@ class Provider(unittest.TestCase):
     def load(ram):
         """Script lines that put every byte of the fabricated RAM the provider may read into the mock."""
         lines = []
-        for lo, hi in ((0, 0x1000), (0x2000, 0x3000), (0x5000, 0x5400), (0xF200, 0xF500), (0xFA80, 0xFAE0)):
+        for lo, hi in ((0, 0x1000), (0x2000, 0x4800), (0x4800, 0x7000), (0xF200, 0xF500), (0xFA80, 0xFAE0)):
             for off in range(lo, hi, 4):
                 v = int.from_bytes(ram.b[off:off + 4], "big")
                 if v: lines.append("ram %x 4 %x" % (off, v))
@@ -166,23 +168,42 @@ class Provider(unittest.TestCase):
         self.assertIn("scene " + scene, out)
         wins = [l.split() for l in out if l.startswith("window")]
         self.assertEqual([w[1] for w in wins], ["0", "1"], "one window per plane, plane A first")
-        for w, (base, mp, tbl, rows, stride, wrap) in zip(wins, ((REC_A, MAP_A, TBL_A, ram.rows, ram.cols, False), (REC_B, MAP_B, TBL_B, ram.brows, 32, True))):
+        for w, (base, mp, tbl, rows, stride, wrap) in zip(wins, ((REC_A, MAP_A, TBL_A, ram.rows, ram.cols, False), (REC_B, ram.bptr, TBL_B, ram.brows, ram.bstride, ram.bstride == 32))):
             x0, y0, n, words = expect_window(ram, base, mp, tbl, rows, stride, wrap)
             self.assertEqual((int(w[2]), int(w[3]), int(w[4]), int(w[5])), (x0, y0, 128, n))
             self.assertEqual([int(x, 16) for x in w[6:]], words, "window words equal the independent block lookup")
 
     def test_forest_shaped_scenes_across_cameras(self):
         for cam in (0, 5, 343, 511, 512, 600, 1500, 3800):
-            self.check_scene(Ram(cam=cam, cam_b=cam // 2), "enchanted-forest")
+            self.check_scene(Ram(cam=cam, cam_b=cam // 2), "a16x240-b16")
 
     def test_castle_shaped_scene_and_vertical_scroll(self):
         for v in (0, 7, 218, 288):
-            self.check_scene(Ram(rows=32, cols=112, brows=32, cam=900, v=v, cam_b=450, v_b=v - v // 8), "castle-interior")
+            self.check_scene(Ram(rows=32, cols=112, brows=32, cam=900, v=v, cam_b=450, v_b=v - v // 8), "a32x112-b32")
+
+    def test_vertical_level_with_wrapped_vertical_scroll(self):
+        for v in (0, 300, 511, 512, 800, 1000):
+            self.check_scene(Ram(rows=192, cols=48, brows=192, cam=200, v=v, cam_b=100, v_b=v // 2), "a192x48-b192")
+
+    def test_scenes_with_a_wider_plane_b_map_or_a_lower_address(self):
+        self.check_scene(Ram(rows=80, cols=80, brows=80, cam=600, v=700, cam_b=300, v_b=300, bstride=80), "a80x80-b80x80")
+        self.check_scene(Ram(rows=32, cols=128, brows=32, cam=1500, v=100, cam_b=1000, v_b=50, bstride=128), "a32x128-b32x128")
+        self.check_scene(Ram(rows=96, cols=64, brows=96, cam=500, v=900, cam_b=250, v_b=450, bptr=0x4800), "a96x64-b96")
+
+    def test_a_map_address_read_from_the_record(self):
+        ram = Ram(rows=14, cols=320, brows=14, cam=1000, v=0, cam_b=500, v_b=0)
+        moved = Ram(rows=14, cols=320, brows=14, cam=1000, v=0, cam_b=500, v_b=0)
+        moved.b[0x2280:0x2280 + 14 * 320] = ram.b[0x2000:0x2000 + 14 * 320]; moved.b[0x2000:0x2280] = bytes(0x280)
+        moved.w(REC_A + 10, 2, 0x2280)
+        out = self.run_script(["init"] + self.frame(moved))
+        wins = [l.split() for l in out if l.startswith("window")]
+        x0, y0, n, words = expect_window(ram, REC_A, 0x2000, TBL_A, 14, 320, False)
+        self.assertEqual([int(x, 16) for x in wins[0][6:]], words)
 
     def test_declines_anything_but_the_verified_shape(self):
-        for what, edit in (("map address", lambda r: r.w(REC_A + 10, 2, 0x2100)), ("table address", lambda r: r.w(REC_B + 18, 2, 0x0900)), ("map size", lambda r: r.w(REC_A + 14, 2, 100)),
+        for what, edit in (("map address outside the range", lambda r: r.w(REC_A + 10, 2, 0x5100)), ("table address", lambda r: r.w(REC_B + 18, 2, 0x0900)), ("map size", lambda r: r.w(REC_A + 14, 2, 100)),
                            ("zeroed record (a menu or cutscene)", lambda r: [r.w(REC_A + k, 2, 0) or r.w(REC_B + k, 2, 0) for k in range(0, 20, 2)]), ("camera beyond the map", lambda r: r.w(REC_A + 4, 2, 240 * 16)),
-                           ("vertical scroll beyond the plane", lambda r: r.w(REC_A, 2, 600))):
+                           ("vertical scroll beyond the plane", lambda r: r.w(REC_A, 2, 2000))):
             ram = Ram(cam=100); edit(ram)
             out = self.run_script(["init"] + self.frame(ram))
             self.assertFalse([l for l in out if l.startswith(("window", "scene", "write"))], what)

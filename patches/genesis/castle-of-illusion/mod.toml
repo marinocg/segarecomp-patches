@@ -35,20 +35,20 @@ offset = 0
 length = 4096
 access = "read"
 
-# Plane A's block map.
+# Plane A's block map (from 0x2000, up to 0x4800).
 [[memory]]
 revision = "usa-europe"
 space = "m68k.work_ram"
 offset = 8192
-length = 4096
+length = 10240
 access = "read"
 
-# Plane B's block map.
+# Plane B's block map (at 0x4800 or 0x5000, up to 0x7000).
 [[memory]]
 revision = "usa-europe"
 space = "m68k.work_ram"
-offset = 20480
-length = 1024
+offset = 18432
+length = 10240
 access = "read"
 
 # Practice+: the five HUD slot words (0xF244..0xF24D), the only guest memory besides power and the HUD flag byte the package writes.
@@ -87,9 +87,45 @@ access = "read"
 aspect_max = "32:9"
 
 [[scene]]
-id = "enchanted-forest"
+id = "a16x240-b16"
 components = ["scenery", "hud"]
 
 [[scene]]
-id = "castle-interior"
+id = "a48x160-b16"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a48x128-b48"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a16x32-b16"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a192x48-b192"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a32x112-b32"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a14x320-b14"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a17x32-b17"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a80x80-b80x80"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a32x128-b32x128"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "a96x64-b96"
 components = ["scenery", "hud"]
