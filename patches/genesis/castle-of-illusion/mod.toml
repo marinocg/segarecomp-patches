@@ -1,0 +1,71 @@
+# Castle of Illusion starring Mickey Mouse (Genesis, USA/Europe): authored widescreen scenery (and, in the Practice+ step, a power restore) as ONE schema 3 / native ABI 2 package.
+# Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
+[mod]
+id = "castle-of-illusion-widescreen-practice"
+author = "segarecomp-patches contributors"
+version = "0.1.0"
+name = "Castle of Illusion widescreen"
+license = "MIT"
+
+[target]
+platform = "genesis"
+
+[[target.revision]]
+label = "usa-europe"
+sha256 = "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
+
+[[source]]
+kind = "native-c11"
+path = "src/provider.c"
+
+[abi]
+native = 2
+
+[capabilities]
+required = ["memory.read.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+
+[state]
+schema = 1
+
+# The block-expansion tables of both planes (A at 0x0000, B at 0x0800; each holds up to 256 blocks of 8 bytes).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 0
+length = 4096
+access = "read"
+
+# Plane A's block map.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 8192
+length = 4096
+access = "read"
+
+# Plane B's block map.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 20480
+length = 1024
+access = "read"
+
+# The scroll records of both planes (0xFA80 and 0xFAC0).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 64128
+length = 96
+access = "read"
+
+[geometry]
+aspect_max = "32:9"
+
+[[scene]]
+id = "enchanted-forest"
+components = ["scenery"]
+
+[[scene]]
+id = "castle-interior"
+components = ["scenery"]
