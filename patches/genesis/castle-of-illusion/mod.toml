@@ -1,10 +1,10 @@
-# Castle of Illusion starring Mickey Mouse (Genesis, USA/Europe): authored widescreen scenery (and, in the Practice+ step, a power restore) as ONE schema 3 / native ABI 2 package.
+# Castle of Illusion starring Mickey Mouse (Genesis, USA/Europe): authored widescreen scenery and Practice+ (a user-invoked power restore) as ONE schema 3 / native ABI 2 package.
 # Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
 [mod]
 id = "castle-of-illusion-widescreen-practice"
 author = "segarecomp-patches contributors"
 version = "0.1.0"
-name = "Castle of Illusion widescreen"
+name = "Castle of Illusion widescreen + Practice+"
 license = "MIT"
 
 [target]
@@ -22,7 +22,7 @@ path = "src/provider.c"
 native = 2
 
 [capabilities]
-required = ["memory.read.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+required = ["input.read", "memory.read.m68k.work_ram", "memory.write.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
 
 [state]
 schema = 1
@@ -51,6 +51,30 @@ offset = 20480
 length = 1024
 access = "read"
 
+# Practice+: the five HUD slot words (0xF244..0xF24D), the only guest memory besides power and the HUD flag byte the package writes.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62020
+length = 10
+access = "read-write"
+
+# Practice+: Mickey's power word (0xF322).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62242
+length = 2
+access = "read-write"
+
+# Practice+: the HUD-upload flag byte (0xF409; bit 0 asks the game to upload the HUD row again).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62473
+length = 1
+access = "read-write"
+
 # The scroll records of both planes (0xFA80 and 0xFAC0).
 [[memory]]
 revision = "usa-europe"
@@ -64,8 +88,8 @@ aspect_max = "32:9"
 
 [[scene]]
 id = "enchanted-forest"
-components = ["scenery"]
+components = ["scenery", "hud"]
 
 [[scene]]
 id = "castle-interior"
-components = ["scenery"]
+components = ["scenery", "hud"]
