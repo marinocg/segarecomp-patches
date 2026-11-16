@@ -197,7 +197,7 @@ static void submit_actors(const SegaGenesisRenderApi *render) {
     if (p->x < -900 || p->x > 900 || p->y < -900 || p->y > 900) continue;
     { uint8_t *z = (uint8_t *)c; uint32_t b; for (b = 0U; b < (uint32_t)sizeof *c; ++b) z[b] = 0U; }
     c->provenance = (uint8_t)GENESIS_VSPRITE_GAME_STATE_VERIFIED;
-    c->layer = (uint8_t)GENESIS_VSPRITE_LAYER_ABOVE_ALL;
+    c->layer = (uint8_t)((p->attr & 0x8000U) != 0U ? GENESIS_VSPRITE_LAYER_ABOVE_ALL : GENESIS_VSPRITE_LAYER_BETWEEN);   /* the piece's own priority bit (bit 15 of the attribute word): a priority-0 piece sits behind high-priority planes, as the hardware draws it */
     c->width_cells = (uint8_t)(((p->size >> 2) & 3U) + 1U);
     c->height_cells = (uint8_t)((p->size & 3U) + 1U);
     c->palette = (uint8_t)((p->attr >> 13) & 3U);

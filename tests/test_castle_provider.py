@@ -311,10 +311,21 @@ class Provider(unittest.TestCase):
     def test_a_dropped_piece_becomes_one_game_art_virtual_sprite(self):
         out = self.actors([self.piece(0x1F6)])
         self.assertIn("vsprites space 1 budget 1 count 1", out)
-        # provenance 1 (game state verified), layer 2 (above all), x = 0x1F6 - 128, y = 0xA8 - 128, a 4 x 4 cell piece, tile 0x90, palette 2, no flips, no clip
-        self.assertEqual(self.sprites(out), [["vs", "1", "2", "374", "40", "4", "4", "144", "2", "0", "0", "0", "0", "0", "0", "0"]])
+        # provenance 1 (game state verified), layer 1 (between: the attribute word 0x4090 has priority 0), x = 0x1F6 - 128, y = 0xA8 - 128, a 4 x 4 cell piece, tile 0x90, palette 2, no flips, no clip
+        self.assertEqual(self.sprites(out), [["vs", "1", "1", "374", "40", "4", "4", "144", "2", "0", "0", "0", "0", "0", "0", "0"]])
         self.assertEqual(self.writes(out), [], "presentation only: no guest write")
         self.assertNotIn("FAULT", out)
+
+    def test_the_pieces_own_priority_bit_selects_the_layer(self):
+        # ADR 0312: a priority-0 piece (bit 15 clear) sits behind high-priority planes (BETWEEN, 1); a priority-1 piece is above everything (ABOVE_ALL, 2); nothing else about the command depends on it
+        low = self.sprites(self.actors([self.piece(0x1F6, attr=0x4090)]))
+        high = self.sprites(self.actors([self.piece(0x1F6, attr=0xC090)]))
+        self.assertEqual((low[0][2], high[0][2]), ("1", "2"))
+        self.assertEqual(low[0][:2] + low[0][3:], high[0][:2] + high[0][3:], "only the layer differs; the palette bits 14..13 and the tile are the same")
+        mixed = self.sprites(self.actors([self.piece(0x1F6, attr=0x0090), self.piece(0x1F8, attr=0x8091), self.piece(0x1FA, attr=0x7FFF), self.piece(0x1FC, attr=0xFFFF)]))
+        self.assertEqual([m[2] for m in mixed], ["1", "2", "1", "2"], "one set mixes both layers, in submission order")
+        edge = self.sprites(self.actors([self.piece(0x1C0 + 4, attr=0x0090)]))
+        self.assertEqual((edge[0][2], edge[0][11:]), ("1", ["1", "320", "0", "1024", "224"]), "a clipped edge piece keeps its clip and takes its own layer")
 
     def test_the_games_own_clip_range_is_respected_exactly(self):
         # a 4 x 4 cell piece (32 px wide): dropped by the game outside 0x60..0x1DF (drawn whole), kept inside; a kept piece that lies fully inside the 320 px raster is the hardware's alone
