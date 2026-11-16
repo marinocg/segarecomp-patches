@@ -96,8 +96,10 @@ static int build_plane(const SegaModHost *h, const Plane *p, uint32_t map, uint3
       uint32_t b = 0U, word = 0U;
       int32_t bx = wx >> 1;
       const int32_t by = wy >> 1;
+      /* Beyond a level's first or last column the game has no scenery. A tiling (wrapped) background plane keeps tiling, as the game's own plane does; the level plane repeats its edge column outward, so a floor continues flat and the sides stay coherent instead of showing a void. */
       if (wrap) bx = bx & (int32_t)(stride - 1U);
-      else if (bx < 0 || (uint32_t)bx >= stride) { out[r * WCOLS + c] = 0U; continue; }   /* beside the level: nothing (the other plane shows through) */
+      else if (bx < 0) bx = 0;
+      else if ((uint32_t)bx >= stride) bx = (int32_t)stride - 1;
       if (bx >= 0 && (uint32_t)bx < stride && by >= 0 && (uint32_t)by < p->rows) {
         if (rd(h, map + (uint32_t)by * stride + (uint32_t)bx, 1U, &b) != 0 || b >= blocks) return 0;
       }
