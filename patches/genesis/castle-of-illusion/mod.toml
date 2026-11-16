@@ -157,3 +157,19 @@ components = ["scenery", "hud", "actors"]
 [[scene]]
 id = "a96x64-b96"
 components = ["scenery", "hud", "actors"]
+
+[[scene]]
+id = "a48x160-b48"
+components = ["scenery", "hud", "actors"]
+
+[[scene]]
+id = "a48x256-b48"
+components = ["scenery", "hud", "actors"]
+
+[[scene]]
+id = "a16x160-b16"
+components = ["scenery", "hud", "actors"]
+
+[[scene]]
+id = "a32x32-b32"
+components = ["scenery", "hud", "actors"]

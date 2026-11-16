@@ -198,6 +198,12 @@ class Provider(unittest.TestCase):
         self.check_scene(Ram(rows=32, cols=128, brows=32, cam=1500, v=100, cam_b=1000, v_b=50, bstride=128), "a32x128-b32x128")
         self.check_scene(Ram(rows=96, cols=64, brows=96, cam=500, v=900, cam_b=250, v_b=450, bptr=0x4800), "a96x64-b96")
 
+    def test_band_scrolled_stage_shapes(self):
+        self.check_scene(Ram(rows=48, cols=160, brows=48, cam=900, v=336, cam_b=450, v_b=336), "a48x160-b48")
+        self.check_scene(Ram(rows=48, cols=256, brows=48, cam=1500, v=100, cam_b=750, v_b=50), "a48x256-b48")
+        self.check_scene(Ram(rows=16, cols=160, brows=16, cam=700, v=0, cam_b=350, v_b=0), "a16x160-b16")
+        self.check_scene(Ram(rows=32, cols=32, brows=32, cam=100, v=60, cam_b=50, v_b=30), "a32x32-b32")
+
     def test_a_map_address_read_from_the_record(self):
         ram = Ram(rows=14, cols=320, brows=14, cam=1000, v=0, cam_b=500, v_b=0)
         moved = Ram(rows=14, cols=320, brows=14, cam=1000, v=0, cam_b=500, v_b=0)

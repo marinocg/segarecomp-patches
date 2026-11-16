@@ -50,8 +50,12 @@ A scene is a map shape (plane A rows x columns, plane B rows and its row stride)
 | `a80x80-b80x80` | 80 x 80 | 80 x 80 | (3,0) to (3,4) |
 | `a32x128-b32x128` | 32 x 128 | 32 x 128 | (4,1) |
 | `a96x64-b96` | 96 x 64 | 96 x 32 | (4,2) |
+| `a48x160-b48` | 48 x 160 | 48 x 32 | (0,1) |
+| `a48x256-b48` | 48 x 256 | 48 x 32 | (2,0), (2,1) |
+| `a16x160-b16` | 16 x 160 | 16 x 32 | (2,2) |
+| `a32x32-b32` | 32 x 32 | 32 x 32 | (2,3) |
 
-**Found but not supported (declined, shown by the host's generic extension):** stages that scroll plane B (or A) in bands, whose per-band scroll is not in the records the provider reads, namely (0,1), (2,0), (2,1), (2,3); stages (2,2) and (3,5), whose records do not follow the verified layout in flight; any stage not listed. Stage indices above 4 do not load a level. The first sub-stage of level 4 and the other stages reached by the attract loop were covered as far as the table shows; **boss arenas and cutscenes not named here were not examined individually**, so "every level" is not claimed: the claim is exactly the table above.
+**Band-scrolled stages (0,1), (2,0), (2,1), (2,2), (2,3):** plane B is drawn with a different horizontal scroll in bands (a top band up to 60 px off the main band, and the status-bar band at 0). The provider's window is in plane cells and the host applies each line's own scroll, so the window needs no per-band knowledge: a private check against the VDP with the real per-line scroll table (mode 3) matched every visible cell of both planes (A 960/960, B 960/960 or 840/840, 885/885 where the map has fewer rows than the screen), including the 50-60 px band offsets, in 8 frames per stage. The bottom status-bar band of plane B is scrolled to 0 by these stages; at 32:9 its cells span more than the 128-cell window, so those lines (the lowest 32) are answered by the host's generic extension and the other rows stay authored. Stage (3,5) and any stage not listed are declined (shown by the host's generic extension); stage indices above 4 do not load a level. Boss arenas and cutscenes not named here were not examined individually, so "every level" is claimed only for the table above.
 
 ## Coverage (local runs on the exact image, aggregates only)
 
