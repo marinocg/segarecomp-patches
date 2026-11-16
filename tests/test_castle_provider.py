@@ -203,6 +203,8 @@ class Provider(unittest.TestCase):
         self.check_scene(Ram(rows=48, cols=256, brows=48, cam=1500, v=100, cam_b=750, v_b=50), "a48x256-b48")
         self.check_scene(Ram(rows=16, cols=160, brows=16, cam=700, v=0, cam_b=350, v_b=0), "a16x160-b16")
         self.check_scene(Ram(rows=32, cols=32, brows=32, cam=100, v=60, cam_b=50, v_b=30), "a32x32-b32")
+        self.check_scene(Ram(rows=80, cols=128, brows=80, cam=900, v=300, cam_b=450, v_b=150, bstride=128, bptr=0x4800), "a80x128-b80x128")
+        self.check_scene(Ram(rows=16, cols=64, brows=16, cam=535, v=32, cam_b=535, v_b=32), "a16x64-b16")
 
     def test_a_map_address_read_from_the_record(self):
         ram = Ram(rows=14, cols=320, brows=14, cam=1000, v=0, cam_b=500, v_b=0)
