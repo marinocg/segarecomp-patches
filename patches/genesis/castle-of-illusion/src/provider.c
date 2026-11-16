@@ -152,30 +152,39 @@ static uint32_t classify(const SegaModHost *h, Plane *a, Plane *b) {
 #define OBJECT_LO 0xA000U
 #define SPRITE_BUFFER_LO 0xF506U /* the buffer position of an x slot (entry base + 6 .. ) inside the buffer at 0xF500 */
 #define SPRITE_BUFFER_HI 0xF800U
-typedef struct Piece { int16_t x, y; uint16_t attr; uint8_t size; } Piece;
+typedef struct Piece { int16_t x, y; uint16_t attr; uint8_t size; uint8_t edge; } Piece;   /* edge: 0 = draw whole (the game dropped it), 1 = only the part right of the raster, 2 = only the part left of it (the game keeps the piece, the hardware cannot show that part) */
+#define RASTER_W 320
+#define RASTER_H 224
 static Piece collected[PIECE_MAX], served[PIECE_MAX];
 static uint32_t collected_n, served_n;
 static GenesisVirtualSpriteSet vset;
 
 static int provider_hook(void *state, const SegaModHost *h, uint32_t hook_id) {
-  uint32_t d0 = 0U, a0 = 0U, a2 = 0U, yw = 0U, size = 0U, attr = 0U, flags = 0U;
+  uint32_t d0 = 0U, a0 = 0U, a2 = 0U, yw = 0U, size = 0U, attr = 0U, flags = 0U, edge = 0U;
   int32_t x;
   (void)state;
   (void)hook_id;
   if (collected_n >= PIECE_MAX) return 0;
   if (h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 0U, 4U, &d0) != 0 || h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 8U, 4U, &a0) != 0 || h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 10U, 4U, &a2) != 0) return 0;
   x = (int32_t)(int16_t)(uint16_t)(d0 & 0xFFFFU);
-  if (x >= PIECE_X_LO && x < PIECE_X_HI) return 0;                   /* the game keeps it (and the host's own sprite layer shows it) */
   a2 &= 0xFFFFU;
   if (a2 < SPRITE_BUFFER_LO || a2 >= SPRITE_BUFFER_HI) return 0;
   a0 &= 0xFFFFU;
   if (a0 < OBJECT_LO || a0 + OBJECT_FLAGS >= SPRITE_BUFFER_HI) return 0;   /* only objects inside the declared range are read (anything else is not a verified object) */
-  if (rd(h, a0 + OBJECT_FLAGS, 1U, &flags) != 0 || (flags & 0x20U) != 0U) return 0;   /* never-clipped objects are kept by the game */
+  if (rd(h, a0 + OBJECT_FLAGS, 1U, &flags) != 0) return 0;
+  if ((flags & 0x20U) != 0U && (x < PIECE_X_LO || x >= PIECE_X_HI)) return 0;   /* a never-clipped object is kept by the game at any x: outside the sprite table's range the hardware wraps it, which is not reproduced here */
   if (rd(h, a2 - 6U, 2U, &yw) != 0 || rd(h, a2 - 4U, 1U, &size) != 0 || rd(h, a2 - 2U, 2U, &attr) != 0) return 0;
+  if (x >= PIECE_X_LO && x < PIECE_X_HI) {
+    /* The game keeps this piece and the hardware sprite layer draws it, but the raster is only 320 wide: the part of a kept piece left of 0 or right of 319 (the 32 columns beside the picture the sprite table can address) is drawn by nobody. Only that part is submitted (clipped), so no native pixel is drawn twice. */
+    const int32_t sx = x - 128, w = (int32_t)(((size >> 2) & 3U) + 1U) * 8;
+    if (sx >= 0 && sx + w <= RASTER_W) return 0;
+    edge = sx < 0 ? 2U : 1U;
+  }
   collected[collected_n].x = (int16_t)(x - 128);
   collected[collected_n].y = (int16_t)((int32_t)(int16_t)(uint16_t)yw - 128);
   collected[collected_n].attr = (uint16_t)attr;
   collected[collected_n].size = (uint8_t)size;
+  collected[collected_n].edge = (uint8_t)edge;
   ++collected_n;
   return 0;
 }
@@ -195,13 +204,14 @@ static void submit_actors(const SegaGenesisRenderApi *render) {
     c->h_flip = (uint8_t)((p->attr >> 11) & 1U);
     c->v_flip = (uint8_t)((p->attr >> 12) & 1U);
     c->tile_index = (uint16_t)(p->attr & 0x7FFU);
+    if (p->edge != 0U) { c->has_clip = 1U; c->clip_y = 0; c->clip_h = RASTER_H; c->clip_w = 1024U; c->clip_x = (int16_t)(p->edge == 1U ? RASTER_W : -1024); }
     c->x = p->x;
     c->y = p->y;
     ++n;
   }
   if (n == 0U) return;
   vset.space = (uint8_t)GENESIS_VSPRITE_SPACE_PRESENTATION;
-  vset.budget_mode = (uint8_t)GENESIS_VSPRITE_BUDGET_LIMIT;
+  vset.budget_mode = (uint8_t)GENESIS_VSPRITE_BUDGET_EXTENDED;
   vset.count = n;
   (void)render->virtual_sprites(&vset);
 }

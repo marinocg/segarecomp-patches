@@ -42,7 +42,7 @@ static int a_text(int32_t x, int32_t y, const char *t, uint32_t n, uint32_t c) {
 static int a_scene(const char *id, uint32_t n) { printf("scene %.*s\n", (int)n, id); return 0; }
 static int a_sprites(const GenesisVirtualSpriteSet *s) {
   uint32_t i; printf("vsprites space %u budget %u count %u\n", s->space, s->budget_mode, s->count);
-  for (i = 0; i < s->count; ++i) { const GenesisVirtualSprite *c = &s->sprites[i]; printf("vs %u %u %d %d %u %u %u %u %u %u %u\n", c->provenance, c->layer, c->x, c->y, c->width_cells, c->height_cells, c->tile_index, c->palette, c->h_flip, c->v_flip, c->has_clip); }
+  for (i = 0; i < s->count; ++i) { const GenesisVirtualSprite *c = &s->sprites[i]; printf("vs %u %u %d %d %u %u %u %u %u %u %u %d %d %u %u\n", c->provenance, c->layer, c->x, c->y, c->width_cells, c->height_cells, c->tile_index, c->palette, c->h_flip, c->v_flip, c->has_clip, c->clip_x, c->clip_y, c->clip_w, c->clip_h); }
   return 0; }
 static int a_window(uint32_t plane, int32_t x0, int32_t y0, uint32_t cols, uint32_t rows, const uint16_t *w) {
   uint32_t i; if (cols == 0 || rows == 0 || cols > 128 || rows > 64 || cols * rows > 4096) { printf("BAD-WINDOW\n"); return SEGA_MOD_E_RANGE; }
@@ -310,24 +310,44 @@ class Provider(unittest.TestCase):
 
     def test_a_dropped_piece_becomes_one_game_art_virtual_sprite(self):
         out = self.actors([self.piece(0x1F6)])
-        self.assertIn("vsprites space 1 budget 0 count 1", out)
+        self.assertIn("vsprites space 1 budget 1 count 1", out)
         # provenance 1 (game state verified), layer 2 (above all), x = 0x1F6 - 128, y = 0xA8 - 128, a 4 x 4 cell piece, tile 0x90, palette 2, no flips, no clip
-        self.assertEqual(self.sprites(out), [["vs", "1", "2", "374", "40", "4", "4", "144", "2", "0", "0", "0"]])
+        self.assertEqual(self.sprites(out), [["vs", "1", "2", "374", "40", "4", "4", "144", "2", "0", "0", "0", "0", "0", "0", "0"]])
         self.assertEqual(self.writes(out), [], "presentation only: no guest write")
         self.assertNotIn("FAULT", out)
 
     def test_the_games_own_clip_range_is_respected_exactly(self):
-        for d0, dropped in ((0x5F, True), (0x60, False), (0x100, False), (0x1DF, False), (0x1E0, True), (0xFF00, True), (0x400, True)):
+        # a 4 x 4 cell piece (32 px wide): dropped by the game outside 0x60..0x1DF (drawn whole), kept inside; a kept piece that lies fully inside the 320 px raster is the hardware's alone
+        for d0, drawn in ((0x5F, True), (0x80, False), (0x100, False), (0x1DF, True), (0x1E0, True), (0xFF00, True), (0x400, True)):
             out = self.actors([self.piece(d0)])
-            self.assertEqual(len(self.sprites(out)), 1 if dropped else 0, hex(d0))
+            self.assertEqual(len(self.sprites(out)), 1 if drawn else 0, hex(d0))
         self.assertEqual(self.sprites(self.actors([self.piece(0xFF00)]))[0][3], str(-256 - 128), "a negative x keeps its sign")
+
+    def test_a_kept_piece_beside_the_raster_is_drawn_only_outside_it(self):
+        # the sprite table can address 32 columns each side of the 320 px raster; the game keeps those pieces but nothing displays them
+        right = self.sprites(self.actors([self.piece(0x1C0 + 0)]))    # screen x 320, 32 px wide: wholly right of the raster
+        self.assertEqual(len(right), 1)
+        self.assertEqual(right[0][11:], ["1", "320", "0", "1024", "224"], "clip: only x >= 320")
+        straddle = self.sprites(self.actors([self.piece(0x1A0 + 0x10)]))   # screen x 304: 16 px in the picture, 16 beside it
+        self.assertEqual(len(straddle), 1); self.assertEqual(straddle[0][11:], ["1", "320", "0", "1024", "224"])
+        left = self.sprites(self.actors([self.piece(0x60 + 0x10)]))     # screen x -16: 16 px beside the raster, 16 in it
+        self.assertEqual(len(left), 1); self.assertEqual(left[0][11:], ["1", "-1024", "0", "1024", "224"]); self.assertEqual(left[0][3], "-16")
+        inside = self.actors([self.piece(0x80 + 288)])                 # screen x 288, exactly flush with the right edge (288 + 32 = 320)
+        self.assertEqual(self.sprites(inside), [], "a kept piece wholly inside the raster is drawn by the hardware only")
+        small = self.sprites(self.actors([self.piece(0x80 + 312, size=0x00)]))   # 1 x 1 cell piece at 312: 8 px, flush with the edge
+        self.assertEqual(small, [])
+        small = self.sprites(self.actors([self.piece(0x80 + 313, size=0x00)]))
+        self.assertEqual(len(small), 1, "one pixel beyond the edge")
 
     def test_attribute_bits_become_tile_palette_flips(self):
         out = self.actors([self.piece(0x1F6, attr=0x8000 | (3 << 13) | 0x1000 | 0x0800 | 0x123, size=0x05)])
-        self.assertEqual(self.sprites(out), [["vs", "1", "2", "374", "40", "2", "2", "291", "3", "1", "1", "0"]])
+        self.assertEqual(self.sprites(out), [["vs", "1", "2", "374", "40", "2", "2", "291", "3", "1", "1", "0", "0", "0", "0", "0"]])
 
     def test_never_clipped_objects_foreign_addresses_and_other_scenes_submit_nothing(self):
-        self.assertEqual(self.sprites(self.actors([self.piece(0x1F6, flags=0x20)])), [], "an object the game never clips is kept by the game")
+        self.assertEqual(self.sprites(self.actors([self.piece(0x1F6, flags=0x20)])), [], "an object the game never clips is kept by the game (outside the table's range the hardware wraps it: not reproduced)")
+        edge = self.sprites(self.actors([self.piece(0x1C0 + 4, flags=0x20)]))
+        self.assertEqual(len(edge), 1, "a never-clipped object's piece beside the raster is still drawn there (clipped to the part outside the raster)"); self.assertEqual(edge[0][11:], ["1", "320", "0", "1024", "224"])
+        self.assertEqual(self.sprites(self.actors([self.piece(0x100, flags=0x20)])), [], "a never-clipped piece inside the raster is the hardware's")
         self.assertEqual(self.sprites(self.actors([self.piece(0x1F6, a0=0x9000)])), [], "an object outside the declared range is not a verified object")
         self.assertEqual(self.sprites(self.actors([self.piece(0x1F6, a2=0xF900)])), [], "a position outside the sprite buffer is not a piece")
         out = self.actors([self.piece(0x1F6)], scene_ok=False)
