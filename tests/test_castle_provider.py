@@ -120,6 +120,8 @@ def expect_window(ram, base, mapaddr, table, rows, stride, wrap):
             wx = x0 + c + shift
             bx, by = wx >> 1, wy >> 1
             if wrap: bx &= stride - 1
+            if not wrap and not 0 <= bx < stride:
+                words.append(0); continue
             blk = ram.b[mapaddr + by * stride + bx] if 0 <= bx < stride and 0 <= by < rows else 0
             words.append(ram.r(table + 8 * blk + 2 * ((wy & 1) * 2 + (wx & 1))))
     return x0, first, n, words

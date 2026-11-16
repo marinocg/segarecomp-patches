@@ -97,6 +97,7 @@ static int build_plane(const SegaModHost *h, const Plane *p, uint32_t map, uint3
       int32_t bx = wx >> 1;
       const int32_t by = wy >> 1;
       if (wrap) bx = bx & (int32_t)(stride - 1U);
+      else if (bx < 0 || (uint32_t)bx >= stride) { out[r * WCOLS + c] = 0U; continue; }   /* beside the level: nothing (the other plane shows through) */
       if (bx >= 0 && (uint32_t)bx < stride && by >= 0 && (uint32_t)by < p->rows) {
         if (rd(h, map + (uint32_t)by * stride + (uint32_t)bx, 1U, &b) != 0 || b >= blocks) return 0;
       }

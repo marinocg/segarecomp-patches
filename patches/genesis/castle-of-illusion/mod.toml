@@ -18,6 +18,10 @@ sha256 = "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
 kind = "native-c11"
 path = "src/provider.c"
 
+[[source]]
+kind = "rom-edit-set"
+path = "edits/main.edits"
+
 [abi]
 native = 2
 

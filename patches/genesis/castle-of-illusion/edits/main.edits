@@ -1,0 +1,4 @@
+# Sprite x-clip of the object sprite builder: a sprite piece whose VDP x coordinate is below 0x60 or at/above 0x1E0 (screen x -32 .. 351) is dropped, so actors pop in and out 32 pixels beside the picture.
+# Widened to the full range the VDP's 9-bit sprite x can express without the x = 0 masking value: 0x01 .. 0x1FF (screen x -127 .. 383).
+usa-europe u16 0x00001c3e 0x0060 0x0001
+usa-europe u16 0x00001c44 0x01e0 0x0200
