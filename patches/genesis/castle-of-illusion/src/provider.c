@@ -136,7 +136,79 @@ static uint32_t classify(const SegaModHost *h, Plane *a, Plane *b) {
   return id;
 }
 
+
+/* ---- Actors beyond the hardware sprite range (presentation only; no guest write) ----
+ * The game's object sprite builder assembles each sprite piece's hardware entry (y, size, link, attribute) in its work-RAM sprite buffer, then asks one routine whether the piece's x is inside the range it keeps
+ * (sprite x 0x60 .. 0x1DF, i.e. screen -32 .. 351) and silently drops it otherwise, unless its object is flagged never-clipped. A `before` function hook on that routine observes every piece at that moment (d0 = x, a0 =
+ * the object, a2 = the buffer position just after the attribute), BEFORE the decision, so the dropped pieces can be drawn as virtual sprites with the game's own art (tile, palette, flips from the attribute word,
+ * read from the frame's own VRAM/CRAM by the host). Nothing is written to the guest, and a piece the game keeps is never drawn twice: only pieces outside the kept range are collected. */
+#define PIECE_MAX 48U
+#define PIECE_X_LO 0x60
+#define PIECE_X_HI 0x1E0
+#define OBJECT_FLAGS 0xEU        /* byte at object + 0xE: bit 5 = never clipped */
+#define OBJECT_LO 0xA000U
+#define SPRITE_BUFFER_LO 0xF506U /* the buffer position of an x slot (entry base + 6 .. ) inside the buffer at 0xF500 */
+#define SPRITE_BUFFER_HI 0xF800U
+typedef struct Piece { int16_t x, y; uint16_t attr; uint8_t size; } Piece;
+static Piece collected[PIECE_MAX], served[PIECE_MAX];
+static uint32_t collected_n, served_n;
+static GenesisVirtualSpriteSet vset;
+
+static int provider_hook(void *state, const SegaModHost *h, uint32_t hook_id) {
+  uint32_t d0 = 0U, a0 = 0U, a2 = 0U, yw = 0U, size = 0U, attr = 0U, flags = 0U;
+  int32_t x;
+  (void)state;
+  (void)hook_id;
+  if (collected_n >= PIECE_MAX) return 0;
+  if (h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 0U, 4U, &d0) != 0 || h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 8U, 4U, &a0) != 0 || h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 10U, 4U, &a2) != 0) return 0;
+  x = (int32_t)(int16_t)(uint16_t)(d0 & 0xFFFFU);
+  if (x >= PIECE_X_LO && x < PIECE_X_HI) return 0;                   /* the game keeps it (and the host's own sprite layer shows it) */
+  a2 &= 0xFFFFU;
+  if (a2 < SPRITE_BUFFER_LO || a2 >= SPRITE_BUFFER_HI) return 0;
+  a0 &= 0xFFFFU;
+  if (a0 < OBJECT_LO || a0 + OBJECT_FLAGS >= SPRITE_BUFFER_HI) return 0;   /* only objects inside the declared range are read (anything else is not a verified object) */
+  if (rd(h, a0 + OBJECT_FLAGS, 1U, &flags) != 0 || (flags & 0x20U) != 0U) return 0;   /* never-clipped objects are kept by the game */
+  if (rd(h, a2 - 6U, 2U, &yw) != 0 || rd(h, a2 - 4U, 1U, &size) != 0 || rd(h, a2 - 2U, 2U, &attr) != 0) return 0;
+  collected[collected_n].x = (int16_t)(x - 128);
+  collected[collected_n].y = (int16_t)((int32_t)(int16_t)(uint16_t)yw - 128);
+  collected[collected_n].attr = (uint16_t)attr;
+  collected[collected_n].size = (uint8_t)size;
+  ++collected_n;
+  return 0;
+}
+
+static void submit_actors(const SegaGenesisRenderApi *render) {
+  uint32_t i, n = 0U;
+  for (i = 0U; i < served_n && n < GENESIS_VSPRITE_MAX; ++i) {
+    GenesisVirtualSprite *c = &vset.sprites[n];
+    const Piece *p = &served[i];
+    if (p->x < -900 || p->x > 900 || p->y < -900 || p->y > 900) continue;
+    { uint8_t *z = (uint8_t *)c; uint32_t b; for (b = 0U; b < (uint32_t)sizeof *c; ++b) z[b] = 0U; }
+    c->provenance = (uint8_t)GENESIS_VSPRITE_GAME_STATE_VERIFIED;
+    c->layer = (uint8_t)GENESIS_VSPRITE_LAYER_ABOVE_ALL;
+    c->width_cells = (uint8_t)(((p->size >> 2) & 3U) + 1U);
+    c->height_cells = (uint8_t)((p->size & 3U) + 1U);
+    c->palette = (uint8_t)((p->attr >> 13) & 3U);
+    c->h_flip = (uint8_t)((p->attr >> 11) & 1U);
+    c->v_flip = (uint8_t)((p->attr >> 12) & 1U);
+    c->tile_index = (uint16_t)(p->attr & 0x7FFU);
+    c->x = p->x;
+    c->y = p->y;
+    ++n;
+  }
+  if (n == 0U) return;
+  vset.space = (uint8_t)GENESIS_VSPRITE_SPACE_PRESENTATION;
+  vset.budget_mode = (uint8_t)GENESIS_VSPRITE_BUDGET_LIMIT;
+  vset.count = n;
+  (void)render->virtual_sprites(&vset);
+}
+
+static uint32_t scene_id_valid_for_actors(const SegaModHost *h) { Plane a, b; return classify(h, &a, &b) != 0U; }
+
 static void provider_frame_end(const SegaModHost *h) {
+  served_n = scene_id_valid_for_actors(h) ? collected_n : 0U;
+  { uint32_t k; for (k = 0U; k < served_n; ++k) served[k] = collected[k]; }
+  collected_n = 0U;
   ready = 0U;
   scene_id = classify(h, &plane_a, &plane_b);
   if (st.flash != 0U) --st.flash;
@@ -192,6 +264,7 @@ static void provider_render(const SegaModHost *h) {
     if (plane_a.window_rows != 0U) (void)render->scenery_window(0U, plane_a.cell_x0, plane_a.cell_y0, WCOLS, plane_a.window_rows, words_a);
     if (plane_b.window_rows != 0U) (void)render->scenery_window(1U, plane_b.cell_x0, plane_b.cell_y0, WCOLS, plane_b.window_rows, words_b);
   }
+  submit_actors(render);
   /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. */
   (void)render->overlay_rect(0, 0, st.restores != 0U ? 38 : 24, 8, 0x000000C0U);
   (void)render->overlay_text(2, 0, "P+", 2U, 0xFFD040FFU);
@@ -209,7 +282,7 @@ static int provider_init(void *state, const SegaModHost *host) {
 
 static void provider_phase(void *state, const SegaModHost *host) {
   (void)state;
-  if (host->phase == SEGA_MOD_PHASE_RESET) { ready = scene_id = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
+  if (host->phase == SEGA_MOD_PHASE_RESET) { collected_n = served_n = 0U; ready = scene_id = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
   else if (host->phase == SEGA_MOD_PHASE_INPUT) intercept(host);
   else if (host->phase == SEGA_MOD_PHASE_POST_INPUT) practice(host);
   else if (host->phase == SEGA_MOD_PHASE_FRAME_END) provider_frame_end(host);
@@ -236,11 +309,12 @@ static int provider_load(void *state, const uint8_t *in, uint32_t len) {
   st.restores = values[1];
   st.flash = values[2];
   st.chord_now = values[3];
+  collected_n = served_n = 0U;   /* pieces are re-collected from the next frame's hook calls */
   ready = scene_id = 0U;   /* rebuilt from guest RAM at the next frame-end; nothing of an earlier frame is drawn */
   return 0;
 }
 
-static const SegaModProvider provider = {sizeof(SegaModProvider), SEGA_MOD_ABI_MAJOR, 0U, SEGA_MOD_PLATFORM, "castle-of-illusion-widescreen-practice", 1U, provider_init, provider_phase, NULL, provider_save, provider_load,
+static const SegaModProvider provider = {sizeof(SegaModProvider), SEGA_MOD_ABI_MAJOR, 0U, SEGA_MOD_PLATFORM, "castle-of-illusion-widescreen-practice", 1U, provider_init, provider_phase, provider_hook, provider_save, provider_load,
                                          {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}};
 
 const SegaModProvider *segarecomp_mod_provider(void **state_out) {

@@ -18,15 +18,11 @@ sha256 = "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
 kind = "native-c11"
 path = "src/provider.c"
 
-[[source]]
-kind = "rom-edit-set"
-path = "edits/main.edits"
-
 [abi]
 native = 2
 
 [capabilities]
-required = ["input.intercept", "input.read", "memory.read.m68k.work_ram", "memory.write.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+required = ["frame.work_ram", "hook.function", "input.intercept", "input.read", "memory.read.m68k.work_ram", "memory.write.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
 
 [state]
 schema = 1
@@ -79,6 +75,14 @@ offset = 62473
 length = 1
 access = "read-write"
 
+# Actors: the object structures (one flag byte each) and the sprite buffer the object sprite builder fills (0xF500..0xF7FF).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 40960
+length = 22528
+access = "read"
+
 # The scroll records of both planes (0xFA80 and 0xFAC0).
 [[memory]]
 revision = "usa-europe"
@@ -87,49 +91,69 @@ offset = 64128
 length = 96
 access = "read"
 
+[[symbol]]
+name = "object_sprite_pieces"
+revision = "usa-europe"
+address = "0x1ab6"
+provenance = "verified"
+
+[[symbol]]
+name = "sprite_piece_x_clip"
+revision = "usa-europe"
+address = "0x1c34"
+provenance = "verified"
+
+# A `before` hook only observes: it never changes the guest. The anchor names the object sprite builder (a verified symbol the program executes) so the build can prove the call sites of the clip routine.
+[[hook]]
+id = "sprite-piece-x-clip"
+symbol = "sprite_piece_x_clip"
+anchor = "object_sprite_pieces"
+mode = "before"
+reads = ["d0", "a0", "a2"]
+
 [geometry]
 aspect_max = "32:9"
 
 [[scene]]
 id = "a16x240-b16"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a48x160-b16"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a48x128-b48"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a16x32-b16"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a192x48-b192"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a32x112-b32"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a14x320-b14"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a17x32-b17"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a80x80-b80x80"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a32x128-b32x128"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]
 
 [[scene]]
 id = "a96x64-b96"
-components = ["scenery", "hud"]
+components = ["scenery", "hud", "actors"]

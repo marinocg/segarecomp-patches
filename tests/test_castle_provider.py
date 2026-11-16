@@ -22,10 +22,12 @@ typedef struct { uint32_t off, len; int write; } Range;
 static Range ranges[32]; static int nranges;
 static struct { uint32_t off, w, v; } staged[64]; static int nstaged, fault;
 static SegaModHost host; static SegaGenesisFeatures features; static SegaGenesisRenderApi api;
-static uint32_t pad1;
+static uint32_t pad1, regs[32];
 static int in_range(uint32_t off, uint32_t w, int write) { int i; for (i = 0; i < nranges; ++i) if (off >= ranges[i].off && off + w <= ranges[i].off + ranges[i].len && (!write || ranges[i].write)) return 1; return 0; }
 static int mread(uint32_t space, uint32_t off, uint32_t w, uint32_t *v) {
-  uint32_t i, x = 0; if (space != SEGA_GEN_SPACE_M68K_WORK_RAM || !in_range(off, w, 0)) { fault = 1; return SEGA_MOD_E_RANGE; }
+  uint32_t i, x = 0;
+  if (space == SEGA_GEN_SPACE_M68K_HOOK_REGS) { if (off >= 32 || w != 4) { fault = 1; return SEGA_MOD_E_RANGE; } *v = regs[off]; return 0; }
+  if (space != SEGA_GEN_SPACE_M68K_WORK_RAM || !in_range(off, w, 0)) { fault = 1; return SEGA_MOD_E_RANGE; }
   for (i = 0; i < w; ++i) x = (x << 8) | ram[off + i]; *v = x; return 0; }
 static int mwrite(uint32_t space, uint32_t off, uint32_t w, uint32_t v) {
   if (space != SEGA_GEN_SPACE_M68K_WORK_RAM || !in_range(off, w, 1) || nstaged >= 64) { fault = 1; return SEGA_MOD_E_RANGE; }
@@ -38,7 +40,10 @@ static int a_target(uint32_t i) { (void)i; return 0; }
 static int a_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) { printf("rect %d %d %d %d\n", x, y, w, h); (void)c; return 0; }
 static int a_text(int32_t x, int32_t y, const char *t, uint32_t n, uint32_t c) { printf("text %d %d %.*s\n", x, y, (int)n, t); (void)c; return 0; }
 static int a_scene(const char *id, uint32_t n) { printf("scene %.*s\n", (int)n, id); return 0; }
-static int a_sprites(const GenesisVirtualSpriteSet *s) { (void)s; printf("sprites\n"); return 0; }
+static int a_sprites(const GenesisVirtualSpriteSet *s) {
+  uint32_t i; printf("vsprites space %u budget %u count %u\n", s->space, s->budget_mode, s->count);
+  for (i = 0; i < s->count; ++i) { const GenesisVirtualSprite *c = &s->sprites[i]; printf("vs %u %u %d %d %u %u %u %u %u %u %u\n", c->provenance, c->layer, c->x, c->y, c->width_cells, c->height_cells, c->tile_index, c->palette, c->h_flip, c->v_flip, c->has_clip); }
+  return 0; }
 static int a_window(uint32_t plane, int32_t x0, int32_t y0, uint32_t cols, uint32_t rows, const uint16_t *w) {
   uint32_t i; if (cols == 0 || rows == 0 || cols > 128 || rows > 64 || cols * rows > 4096) { printf("BAD-WINDOW\n"); return SEGA_MOD_E_RANGE; }
   printf("window %u %d %d %u %u", plane, x0, y0, cols, rows); for (i = 0; i < cols * rows; ++i) printf(" %04x", w[i]); printf("\n"); return 0; }
@@ -47,7 +52,7 @@ int main(int argc, char **argv) {
   const SegaModProvider *p; void *state = NULL; char line[256]; uint64_t frame = 0; uint8_t blob[64]; uint32_t bloblen = 0; (void)argc; (void)argv;
   host.size = sizeof host; host.abi_major = 2; host.platform = SEGA_MOD_PLATFORM; host.platform_features = &features; host.read = mread; host.write = mwrite; host.input_get = minput; host.input_set = mset; host.log = mlog;
   features.size = sizeof features; features.render = &api;
-  api.size = sizeof api; api.overlay_layer = a_layer; api.overlay_target = a_target; api.overlay_rect = a_rect; api.overlay_text = a_text; api.scene = a_scene; api.virtual_sprites = a_sprites; api.scenery_window = a_window;
+  api.size = sizeof api; api.overlay_layer = a_layer; api.overlay_target = a_target; api.overlay_rect = a_rect; api.overlay_text = a_text; api.scene = a_scene; api.virtual_sprites = a_sprites; api.scenery_window = a_window; api.virtual_sprites = a_sprites;
   p = segarecomp_mod_provider(&state);
   while (fgets(line, sizeof line, stdin)) {
     unsigned a, b, c;
@@ -55,6 +60,8 @@ int main(int argc, char **argv) {
     else if (sscanf(line, "ram %x %u %x", &a, &b, &c) == 3) { unsigned k; for (k = 0; k < b; ++k) ram[a + k] = (uint8_t)(c >> (8U * (b - 1U - k))); }
     else if (sscanf(line, "pad %x", &a) == 1) pad1 = a;
     else if (sscanf(line, "frame %u", &a) == 1) frame = a;
+    else if (sscanf(line, "reg %u %x", &a, &b) == 2) regs[a] = b;
+    else if (strncmp(line, "hook", 4) == 0) { host.frame = frame; host.phase = SEGA_MOD_PHASE_HOOK_ENTRY; fault = 0; printf("hook %d\n", p->hook(state, &host, 0)); if (fault) printf("FAULT\n"); }
     else if (strncmp(line, "init", 4) == 0) printf("init %d\n", p->init(state, &host));
     else if (strncmp(line, "phase ", 6) == 0) {
       host.frame = frame; fault = 0;
@@ -276,6 +283,68 @@ class Provider(unittest.TestCase):
         self.assertFalse([l for l in out if l.startswith("setpad")], "a partial chord is the game's")
         bad = Ram(cam=100); bad.w(REC_A + 10, 2, 0)
         self.assertFalse([l for l in self.run_script(["init"] + self.frame(bad, pad=CHORD)) if l.startswith("setpad")], "outside a verified level nothing is intercepted")
+
+
+    # ---- actors beyond the hardware range (hook-observed pieces, virtual sprites, no guest write) ----
+    def piece(self, d0, a0=0xD000, a2=0xF506, y=0xA8, size=0x0F, attr=0x4090, flags=0):
+        """Script lines for one hook call on the sprite-piece clip routine: the buffer entry (y word, size byte, link byte, attribute word) sits just before a2, the object's flag byte at a0 + 0xE."""
+        base = a2 - 6
+        return ["ram %x 2 %x" % (base, y), "ram %x 1 %x" % (base + 2, size), "ram %x 2 %x" % (base + 4, attr), "ram %x 1 %x" % (a0 + 0xE, flags), "reg 0 %x" % d0, "reg 8 %x" % (0xFF0000 | a0), "reg 10 %x" % (0xFF0000 | a2), "hook"]
+
+    def actors(self, hooks, scene_ok=True, frames=1):
+        ram = Ram(cam=100)
+        if not scene_ok: ram.w(REC_A + 10, 2, 0)
+        lines = ["init"] + self.load(ram) + ["pad 0", "frame 1"]
+        for h in hooks: lines += h
+        lines += ["phase input", "phase post-input", "phase frame-end", "phase render"]
+        return self.run_script(lines)
+
+    def sprites(self, out): return [l.split() for l in out if l.startswith("vs ")]
+
+    def test_a_dropped_piece_becomes_one_game_art_virtual_sprite(self):
+        out = self.actors([self.piece(0x1F6)])
+        self.assertIn("vsprites space 1 budget 0 count 1", out)
+        # provenance 1 (game state verified), layer 2 (above all), x = 0x1F6 - 128, y = 0xA8 - 128, a 4 x 4 cell piece, tile 0x90, palette 2, no flips, no clip
+        self.assertEqual(self.sprites(out), [["vs", "1", "2", "374", "40", "4", "4", "144", "2", "0", "0", "0"]])
+        self.assertEqual(self.writes(out), [], "presentation only: no guest write")
+        self.assertNotIn("FAULT", out)
+
+    def test_the_games_own_clip_range_is_respected_exactly(self):
+        for d0, dropped in ((0x5F, True), (0x60, False), (0x100, False), (0x1DF, False), (0x1E0, True), (0xFF00, True), (0x400, True)):
+            out = self.actors([self.piece(d0)])
+            self.assertEqual(len(self.sprites(out)), 1 if dropped else 0, hex(d0))
+        self.assertEqual(self.sprites(self.actors([self.piece(0xFF00)]))[0][3], str(-256 - 128), "a negative x keeps its sign")
+
+    def test_attribute_bits_become_tile_palette_flips(self):
+        out = self.actors([self.piece(0x1F6, attr=0x8000 | (3 << 13) | 0x1000 | 0x0800 | 0x123, size=0x05)])
+        self.assertEqual(self.sprites(out), [["vs", "1", "2", "374", "40", "2", "2", "291", "3", "1", "1", "0"]])
+
+    def test_never_clipped_objects_foreign_addresses_and_other_scenes_submit_nothing(self):
+        self.assertEqual(self.sprites(self.actors([self.piece(0x1F6, flags=0x20)])), [], "an object the game never clips is kept by the game")
+        self.assertEqual(self.sprites(self.actors([self.piece(0x1F6, a0=0x9000)])), [], "an object outside the declared range is not a verified object")
+        self.assertEqual(self.sprites(self.actors([self.piece(0x1F6, a2=0xF900)])), [], "a position outside the sprite buffer is not a piece")
+        out = self.actors([self.piece(0x1F6)], scene_ok=False)
+        self.assertEqual(self.sprites(out), [], "no verified level: no virtual sprite")
+        self.assertNotIn("FAULT", out)
+
+    def test_pieces_live_one_frame_and_are_bounded(self):
+        hooks = [self.piece(0x1F6 + k, a2=0xF506 + 8 * (k % 32)) for k in range(60)]
+        out = self.actors(hooks)
+        self.assertEqual(len(self.sprites(out)), 48, "at most 48 pieces per frame")
+        ram = Ram(cam=100)
+        lines = ["init"] + self.load(ram) + ["pad 0", "frame 1"] + self.piece(0x1F6) + ["phase frame-end", "phase render", "frame 2", "phase frame-end", "phase render"]
+        out = self.run_script(lines)
+        self.assertEqual(len(self.sprites(out)), 1, "a piece collected in one frame is served once, never carried to the next")
+
+    def test_a_restored_state_starts_with_no_pieces(self):
+        ram = Ram(cam=100)
+        first = self.run_script(["init"] + self.load(ram) + ["pad 0", "frame 1"] + self.piece(0x1F6) + ["phase frame-end", "save"])
+        blob = next(l for l in first if l.startswith("state")).split()[1:]
+        out = self.run_script(["init"] + self.load(ram) + ["pad 0", "frame 2", "load " + " ".join(blob), "phase render"])
+        self.assertEqual(self.sprites(out), [], "nothing is drawn from before the restore")
+
+    def test_far_coordinates_are_not_submitted(self):
+        self.assertEqual(self.sprites(self.actors([self.piece(0x7000)])), [], "x beyond the transport's coordinate limit")
 
     def test_rejects_a_corrupt_state(self):
         out = self.run_script(["init", "load 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00", "echo done"])
