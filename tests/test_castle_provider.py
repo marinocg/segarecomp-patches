@@ -42,7 +42,7 @@ static int a_text(int32_t x, int32_t y, const char *t, uint32_t n, uint32_t c) {
 static int a_scene(const char *id, uint32_t n) { printf("scene %.*s\n", (int)n, id); return 0; }
 static int a_sprites(const GenesisVirtualSpriteSet *s) {
   uint32_t i; printf("vsprites space %u budget %u count %u\n", s->space, s->budget_mode, s->count);
-  for (i = 0; i < s->count; ++i) { const GenesisVirtualSprite *c = &s->sprites[i]; printf("vs %u %u %d %d %u %u %u %u %u %u %u %d %d %u %u\n", c->provenance, c->layer, c->x, c->y, c->width_cells, c->height_cells, c->tile_index, c->palette, c->h_flip, c->v_flip, c->has_clip, c->clip_x, c->clip_y, c->clip_w, c->clip_h); }
+  for (i = 0; i < s->count; ++i) { const GenesisVirtualSprite *c = &s->sprites[i]; printf("vs %u %u %d %d %u %u %u %u %u %u %u %d %d %u %u\n", c->provenance, c->layer, c->x, c->y, c->width_cells, c->height_cells, c->tile_index, c->palette, c->h_flip, c->v_flip, c->has_clip, c->clip_x, c->clip_y, c->clip_w, c->clip_h); printf("vsflag %u\n", c->flags); }
   return 0; }
 static int a_window(uint32_t plane, int32_t x0, int32_t y0, uint32_t cols, uint32_t rows, const uint16_t *w) {
   uint32_t i; if (cols == 0 || rows == 0 || cols > 128 || rows > 64 || cols * rows > 4096) { printf("BAD-WINDOW\n"); return SEGA_MOD_E_RANGE; }
@@ -110,16 +110,17 @@ def ranges():
     return [(x["offset"], x["length"], 1 if x["access"] in ("write", "read-write") else 0) for x in m["memory"]]
 
 
-def expect_window(ram, base, mapaddr, table, rows, stride, wrap):
-    """The name-table window the provider must submit for the plane whose record is at `base` (independent re-derivation)."""
+def expect_window(ram, base, mapaddr, table, rows, stride, wrap, band=False):
+    """The name-table window the provider must submit for the plane whose record is at `base` (independent re-derivation): the main window around the camera (36 cells of slack on the left, 91 on the right,
+    32 rows) or, with band=True, the second window of ADR 0313 (plane cells -32..95, 16 rows from picture row 128 down, the same vertical scroll)."""
     v, cam = ram.r(base), ram.r(base + 4)
     hs = ((-cam + 512) & 1023) - 512
     shift = (cam + hs) // 8
-    x0 = cam // 8 - 40 - shift
+    x0 = -32 if band else cam // 8 - 36 - shift
     vs = ((v + 512) & 1023) - 512
     shift_y = (v - vs) // 8
-    first = (vs >> 3) - 1
-    n = 32
+    first = ((128 + vs) >> 3) - 1 if band else (vs >> 3) - 1
+    n = 16 if band else 32
     words = []
     for r in range(n):
         wy = first + r + shift_y
@@ -175,9 +176,10 @@ class Provider(unittest.TestCase):
         self.assertNotIn("FAULT", out)
         self.assertIn("scene " + scene, out)
         wins = [l.split() for l in out if l.startswith("window")]
-        self.assertEqual([w[1] for w in wins], ["0", "1"], "one window per plane, plane A first")
-        for w, (base, mp, tbl, rows, stride, wrap) in zip(wins, ((REC_A, MAP_A, TBL_A, ram.rows, ram.cols, False), (REC_B, ram.bptr, TBL_B, ram.brows, ram.bstride, ram.bstride == 32))):
-            x0, y0, n, words = expect_window(ram, base, mp, tbl, rows, stride, wrap)
+        self.assertEqual([w[1] for w in wins], ["0", "1", "0", "1"], "per plane the main window, then the band window; plane A first (ADR 0313: two windows per plane)")
+        planes = ((REC_A, MAP_A, TBL_A, ram.rows, ram.cols, False), (REC_B, ram.bptr, TBL_B, ram.brows, ram.bstride, ram.bstride == 32))
+        for w, (base, mp, tbl, rows, stride, wrap), band in zip(wins, planes + planes, (False, False, True, True)):
+            x0, y0, n, words = expect_window(ram, base, mp, tbl, rows, stride, wrap, band)
             self.assertEqual((int(w[2]), int(w[3]), int(w[4]), int(w[5])), (x0, y0, 128, n))
             self.assertEqual([int(x, 16) for x in w[6:]], words, "window words equal the independent block lookup")
 
@@ -326,6 +328,33 @@ class Provider(unittest.TestCase):
         self.assertEqual([m[2] for m in mixed], ["1", "2", "1", "2"], "one set mixes both layers, in submission order")
         edge = self.sprites(self.actors([self.piece(0x1C0 + 4, attr=0x0090)]))
         self.assertEqual((edge[0][2], edge[0][11:]), ("1", ["1", "320", "0", "1024", "224"]), "a clipped edge piece keeps its clip and takes its own layer")
+
+    def test_every_cell_the_host_can_ask_for_is_answered_by_one_of_the_two_windows(self):
+        # ADR 0313: the playfield rows are scrolled with the camera, the rows of a split-scroll band with scroll 0; their cell ranges can be disjoint (a union wider than the 128-column bound), so each plane has two windows.
+        # The host asks for plane cell floor((x - hscroll) / 8) of row floor((line + vscroll) / 8); a window answers a cell it contains, the first window of the plane first.
+        for cam in (0, 5, 96, 343, 511, 512, 600, 1500, 3800):
+            ram = Ram(cam=cam, cam_b=(cam * 3) // 5)
+            out = self.run_script(["init"] + self.frame(ram))
+            wins = [l.split() for l in out if l.startswith("window")]
+            self.assertEqual(len(wins), 4)
+            for plane, base in ((1, REC_B),):
+                mine = [(int(w[2]), int(w[3]), int(w[4]), int(w[5])) for w in wins if int(w[1]) == plane]
+                v, camp = ram.r(base), ram.r(base + 4)
+                vs = ((v + 512) & 1023) - 512
+                hs_play = ((-camp + 512) & 1023) - 512
+                for hs, rows in ((hs_play, range(0, 192, 3)), (0, range(150, 224, 2))):   # scrolled playfield rows, then the unscrolled rows from 150 down
+                    for line in rows:
+                        for x in range(-238, 558 + 1, 7):
+                            cx, cy = (x - hs) // 8, (line + vs) // 8
+                            self.assertTrue(any(x0 <= cx < x0 + c and y0 <= cy < y0 + r for x0, y0, c, r in mine), "plane %d cam %d: cell (%d, %d) at x %d line %d (hscroll %d) is in no window" % (plane, cam, cx, cy, x, line, hs))
+
+    def test_the_hardware_piece_flag_is_set_on_kept_edge_pieces_only(self):
+        # ADR 0313: a piece the game kept (the host's Level 3 extension already draws it with the original rules) carries HARDWARE_PIECE; a piece the game dropped does not
+        dropped = self.actors([self.piece(0x1F6)])
+        edge = self.actors([self.piece(0x1C0 + 4)])
+        inside = self.actors([self.piece(0x80 + 100)])
+        flags = lambda out: [l.split()[1] for l in out if l.startswith("vsflag")]
+        self.assertEqual((flags(dropped), flags(edge), flags(inside)), (["0"], ["1"], []), "dropped: unflagged; kept beside the raster: flagged; kept inside the raster: not submitted")
 
     def test_the_games_own_clip_range_is_respected_exactly(self):
         # a 4 x 4 cell piece (32 px wide): dropped by the game outside 0x60..0x1DF (drawn whole), kept inside; a kept piece that lies fully inside the 320 px raster is the hardware's alone

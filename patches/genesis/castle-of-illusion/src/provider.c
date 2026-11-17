@@ -32,6 +32,9 @@
 #define B_BLOCKS 256U
 #define WCOLS 128U        /* the widest window the host accepts: 32:9 needs about 30 cells each side of the picture, the rest absorbs the camera's motion since the frame-end read */
 #define WROWS 32U         /* 28 visible rows + 1 partial + one row of slack on each side; 128 x 32 = 4096 words is the host's window bound */
+#define BROWS 16U         /* the second window (ADR 0313): the rows from picture row 128 down, where a split-scroll band (the status bar and, in some stages, a strip above it) is scrolled differently from the playfield */
+#define BAND_ROW0 128     /* the first picture row the second window covers */
+#define BAND_X0 (-32)     /* the band's cells are asked for at their own, camera-independent plane coordinates: scroll 0 shows plane cells -30..69 of a 32:9 view */
 
 typedef struct Plane {
   int32_t cam;            /* the game's horizontal scroll value (camera x, pixels) */
@@ -41,11 +44,12 @@ typedef struct Plane {
   int32_t shift_cells;    /* world cell - window plane cell (x): a multiple of 128 while the VDP's 10-bit scroll has wrapped */
   int32_t shift_rows;     /* the same for y */
   int32_t cell_x0, cell_y0;
+  int32_t band_y0;        /* first plane cell row of the second (band) window */
   uint32_t window_rows;
 } Plane;
 
 static Plane plane_a, plane_b;
-static uint16_t words_a[WCOLS * WROWS], words_b[WCOLS * WROWS];
+static uint16_t words_a[WCOLS * WROWS], words_b[WCOLS * WROWS], band_a[WCOLS * BROWS], band_b[WCOLS * BROWS];
 typedef struct ModState {
   uint32_t chord_held;    /* the chord was down at the latest post-input (an edge needs it up first) */
   uint32_t restores;      /* completed restorations since reset */
@@ -55,6 +59,7 @@ typedef struct ModState {
 static ModState st;
 static uint32_t scene_id;          /* 0 = nothing verified this frame, else 1 + the index in `scenes` */
 static uint32_t ready;             /* a window was built at the latest frame-end for the next render */
+static uint32_t band_ready;        /* the second (band) windows were built too: without them only the rows the main window covers are served */
 
 static int rd(const SegaModHost *h, uint32_t offset, uint32_t width, uint32_t *value) { return h->read(SEGA_GEN_SPACE_M68K_WORK_RAM, offset, width, value); }
 
@@ -79,8 +84,9 @@ static void place(Plane *p) {
   hs = ((hs + 512) & 1023) - 512;
   p->shift_cells = (p->cam + hs) / 8;                    /* exact: cam + hs is a multiple of 1024 */
   p->shift_rows = (p->vscroll - vs) / 8;
-  p->cell_x0 = (p->cam / 8 - 40) - p->shift_cells;      /* 40 cells of slack on the left: more than the widest side style needs */
+  p->cell_x0 = (p->cam / 8 - 36) - p->shift_cells;      /* the measured need of the scrolled rows is cells -30..+88 around the camera (32:9, rows with different parallax scroll included): 36 cells of slack on the left, 91 on the right */
   p->cell_y0 = (vs >> 3) - 1;                           /* one row of slack above the visible rows (floor division) */
+  p->band_y0 = ((BAND_ROW0 + vs) >> 3) - 1;              /* the band shares the playfield's vertical scroll in every measured stage */
   p->window_rows = WROWS;                               /* rows outside the map are the game's own empty block, as the VDP planes hold them */
 }
 
@@ -204,7 +210,7 @@ static void submit_actors(const SegaGenesisRenderApi *render) {
     c->h_flip = (uint8_t)((p->attr >> 11) & 1U);
     c->v_flip = (uint8_t)((p->attr >> 12) & 1U);
     c->tile_index = (uint16_t)(p->attr & 0x7FFU);
-    if (p->edge != 0U) { c->has_clip = 1U; c->clip_y = 0; c->clip_h = RASTER_H; c->clip_w = 1024U; c->clip_x = (int16_t)(p->edge == 1U ? RASTER_W : -1024); }
+    if (p->edge != 0U) { c->flags = (uint8_t)GENESIS_VSPRITE_FLAG_HARDWARE_PIECE; c->has_clip = 1U; c->clip_y = 0; c->clip_h = RASTER_H; c->clip_w = 1024U; c->clip_x = (int16_t)(p->edge == 1U ? RASTER_W : -1024); }
     c->x = p->x;
     c->y = p->y;
     ++n;
@@ -223,12 +229,17 @@ static void provider_frame_end(const SegaModHost *h) {
   { uint32_t k; for (k = 0U; k < served_n; ++k) served[k] = collected[k]; }
   collected_n = 0U;
   ready = 0U;
+  band_ready = 0U;
   scene_id = classify(h, &plane_a, &plane_b);
   if (st.flash != 0U) --st.flash;
   if (scene_id == 0U) return;
   place(&plane_a);
   place(&plane_b);
   if (!build_plane(h, &plane_a, plane_a.map, TABLE_A, plane_a.cols, A_BLOCKS, 0, words_a) || !build_plane(h, &plane_b, plane_b.map, TABLE_B, plane_b.cols, B_BLOCKS, plane_b.cols == 32U, words_b)) { scene_id = 0U; return; }
+  /* the second window of each plane (ADR 0313): the same cell builder over the unscrolled plane coordinates and the rows where a split-scroll band lives (rows from BAND_ROW0 down) */
+  { Plane ba = plane_a, bb = plane_b;
+    ba.cell_x0 = bb.cell_x0 = BAND_X0; ba.cell_y0 = plane_a.band_y0; bb.cell_y0 = plane_b.band_y0; ba.window_rows = bb.window_rows = BROWS;
+    band_ready = build_plane(h, &ba, ba.map, TABLE_A, ba.cols, A_BLOCKS, 0, band_a) && build_plane(h, &bb, bb.map, TABLE_B, bb.cols, B_BLOCKS, bb.cols == 32U, band_b); }
   ready = 1U;
 }
 
@@ -276,6 +287,10 @@ static void provider_render(const SegaModHost *h) {
   if (ready != 0U) {
     if (plane_a.window_rows != 0U) (void)render->scenery_window(0U, plane_a.cell_x0, plane_a.cell_y0, WCOLS, plane_a.window_rows, words_a);
     if (plane_b.window_rows != 0U) (void)render->scenery_window(1U, plane_b.cell_x0, plane_b.cell_y0, WCOLS, plane_b.window_rows, words_b);
+    if (band_ready != 0U) {   /* a cell is answered by the first window of its plane that contains it: the main window first */
+      (void)render->scenery_window(0U, BAND_X0, plane_a.band_y0, WCOLS, BROWS, band_a);
+      (void)render->scenery_window(1U, BAND_X0, plane_b.band_y0, WCOLS, BROWS, band_b);
+    }
   }
   submit_actors(render);
   /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. */
@@ -295,7 +310,7 @@ static int provider_init(void *state, const SegaModHost *host) {
 
 static void provider_phase(void *state, const SegaModHost *host) {
   (void)state;
-  if (host->phase == SEGA_MOD_PHASE_RESET) { collected_n = served_n = 0U; ready = scene_id = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
+  if (host->phase == SEGA_MOD_PHASE_RESET) { collected_n = served_n = 0U; ready = band_ready = scene_id = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
   else if (host->phase == SEGA_MOD_PHASE_INPUT) intercept(host);
   else if (host->phase == SEGA_MOD_PHASE_POST_INPUT) practice(host);
   else if (host->phase == SEGA_MOD_PHASE_FRAME_END) provider_frame_end(host);
@@ -323,7 +338,7 @@ static int provider_load(void *state, const uint8_t *in, uint32_t len) {
   st.flash = values[2];
   st.chord_now = values[3];
   collected_n = served_n = 0U;   /* pieces are re-collected from the next frame's hook calls */
-  ready = scene_id = 0U;   /* rebuilt from guest RAM at the next frame-end; nothing of an earlier frame is drawn */
+  ready = band_ready = scene_id = 0U;   /* rebuilt from guest RAM at the next frame-end; nothing of an earlier frame is drawn */
   return 0;
 }
 
