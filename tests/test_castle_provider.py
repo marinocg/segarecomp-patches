@@ -428,14 +428,13 @@ class Provider(unittest.TestCase):
                                     cx, cy = (x - hs) // 8, (line + vs) // 8
                                     self.assertTrue(any(x0 <= cx < x0 + c and y0 <= cy < y0 + r for x0, y0, c, r in mine), "margin %d camera %d plane %d: cell (%d, %d) at x %d line %d is in no window" % (margin, cam, plane, cx, cy, x, line))
 
-    def test_the_indicator_is_a_top_right_layer_while_an_extension_is_planned(self):
+    def test_the_indicator_is_always_a_top_right_layer_never_the_fixed_overlay(self):
+        # the fixed overlay is the game's relocated HUD in the host's accounting and sits at the left edge of the view (the picture's own power meter when the picture is placed left): the panel is a layer
         second, first = self.two_frames(Ram(cam=100), 238)
-        self.assertIn("layer 1 2 1 0 0 40 16 0", second, "anchored to the top right of the presentation, where the picture's own HUD never is")
-        self.assertLess(second.index("layer 1 2 1 0 0 40 16 0"), second.index("target 1"))
-        self.assertLess(second.index("target 1"), second.index("rect 0 0 24 8"), "the panel is drawn into the layer")
-        out = self.run_script(["init"] + self.frame(Ram(cam=100)))   # the mock host reports margin 0: no extension is planned (Original, 4:3)
-        self.assertFalse([l for l in out if l.startswith(("layer", "target"))], "no layer while no extension is planned: the fixed overlay, as before")
-        self.assertIn("rect 0 0 24 8", out)
+        for out in (second, first, self.run_script(["init"] + self.frame(Ram(cam=100)))):   # planned, learnt in the same render, and no extension (margin 0)
+            self.assertIn("layer 1 2 1 0 0 40 16 0", out, "anchored to the top right of the presentation, where the picture's own HUD never is")
+            self.assertLess(out.index("layer 1 2 1 0 0 40 16 0"), out.index("target 1"))
+            self.assertLess(out.index("target 1"), out.index("rect 0 0 24 8"), "the panel is drawn into the layer, never into the fixed overlay (target 0)")
 
     def test_the_hardware_piece_flag_is_set_on_kept_edge_pieces_only(self):
         # ADR 0313: a piece the game kept (the host's Level 3 extension already draws it with the original rules) carries HARDWARE_PIECE; a piece the game dropped does not

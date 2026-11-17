@@ -328,10 +328,10 @@ static void provider_render(const SegaModHost *h) {
     }
   }
   submit_actors(render);
-  /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. The fixed overlay sits at the left edge of the whole view, which is the picture's own
-   * HUD corner whenever the picture is placed at the left of the view (a level's first columns, ADR 0315); while an extension is planned the panel is therefore a layer in the top right corner of the view, where
-   * there is always at least one margin of world-less space (the right margin is never narrower than the centred one). Without an extension (Original, 4:3) it is the fixed overlay, as before. */
-  if (margin_learnt != 0U && render->overlay_layer(1U, 2U, 1U, 0, 0, 40U, 16U, 0U) == 0) (void)render->overlay_target(1U);
+  /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. It is always a positioned layer anchored to the top-right corner of the whole
+   * presented view, never the fixed overlay: the fixed overlay sits at the left edge of the view, which is the picture's own power meter when the picture is placed at the left (a level's first columns, ADR 0315),
+   * and the host counts only the fixed overlay as the game's relocated HUD, which this package does not provide. With no extension (Original, 4:3) the view is the picture and the corner is the picture's. */
+  if (render->overlay_layer(1U, 2U, 1U, 0, 0, 40U, 16U, 0U) == 0) (void)render->overlay_target(1U);
   (void)render->overlay_rect(0, 0, st.restores != 0U ? 38 : 24, 8, 0x000000C0U);
   (void)render->overlay_text(2, 0, "P+", 2U, 0xFFD040FFU);
   if (st.restores != 0U) draw_number(render, 16, 0, st.restores, 0xFFFFFFFFU);
