@@ -116,68 +116,68 @@ aspect_max = "32:9"
 
 [[scene]]
 id = "a16x240-b16"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a48x160-b16"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a48x128-b48"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a16x32-b16"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a192x48-b192"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a32x112-b32"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a14x320-b14"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a17x32-b17"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a80x80-b80x80"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a32x128-b32x128"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a96x64-b96"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a48x160-b48"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a48x256-b48"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a16x160-b16"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a32x32-b32"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a80x128-b80x128"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]
 
 [[scene]]
 id = "a16x64-b16"
-components = ["scenery", "hud", "actors"]
+components = ["scenery", "actors"]

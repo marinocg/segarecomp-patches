@@ -304,17 +304,22 @@ static void draw_number(const SegaGenesisRenderApi *render, int32_t x, int32_t y
 }
 
 static void provider_render(const SegaModHost *h) {
+  uint32_t serve;
   const SegaGenesisFeatures *features = (const SegaGenesisFeatures *)h->platform_features;
   const SegaGenesisRenderApi *render;
   if (features == NULL || features->size < sizeof(SegaGenesisFeatures) || features->render == NULL || scene_id == 0U) return;
   render = features->render;
   { const char *n = scenes[scene_id - 1U].name; uint32_t len = 0U; while (n[len] != 0) ++len; (void)render->scene(n, len); }
+  serve = ready;
   { uint32_t m = 0U;   /* learn the host's plan for the next frame-end; declare the placement the windows below were built for, only while that plan is still the host's */
     if (features->render->view_margin != NULL && features->render->view_left != NULL && features->render->view_margin(&m) == 0) {
       margin_learnt = m;
-      if (ready != 0U && view_declared != 0U && m == margin_used) (void)features->render->view_left((uint32_t)view_left_px);
+      if (view_declared != 0U) {
+        if (m == margin_used) (void)features->render->view_left((uint32_t)view_left_px, margin_used);
+        else serve = 0U;   /* the windows were built for a view of another margin: neither they nor a placement are submitted (the scenery is generic this frame; the HUD layer and the actors are independent of the view) */
+      }
     } }
-  if (ready != 0U) {
+  if (serve != 0U) {
     if (plane_a.window_rows != 0U) (void)render->scenery_window(0U, plane_a.cell_x0, plane_a.cell_y0, WCOLS, plane_a.window_rows, words_a);
     if (plane_b_authored != 0U && plane_b.window_rows != 0U) (void)render->scenery_window(1U, plane_b.cell_x0, plane_b.cell_y0, WCOLS, plane_b.window_rows, words_b);
     if (band_ready != 0U) {   /* a cell is answered by the first window of its plane that contains it: the main window first */

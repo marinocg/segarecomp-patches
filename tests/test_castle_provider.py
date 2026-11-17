@@ -39,7 +39,7 @@ static int a_layer(uint32_t a, uint32_t b, uint32_t c, int32_t d, int32_t e, uin
 static int a_target(uint32_t i) { printf("target %u\n", i); return 0; }
 static uint32_t margin;
 static int a_margin(uint32_t *m) { *m = margin; return 0; }
-static int a_left(uint32_t l) { printf("view_left %u\n", l); return 0; }
+static int a_left(uint32_t l, uint32_t m) { printf("view_left %u %u\n", l, m); return 0; }
 static int a_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) { printf("rect %d %d %d %d\n", x, y, w, h); (void)c; return 0; }
 static int a_text(int32_t x, int32_t y, const char *t, uint32_t n, uint32_t c) { printf("text %d %d %.*s\n", x, y, (int)n, t); (void)c; return 0; }
 static int a_scene(const char *id, uint32_t n) { printf("scene %.*s\n", (int)n, id); return 0; }
@@ -377,7 +377,7 @@ class Provider(unittest.TestCase):
                 ram = Ram(rows=16, cols=240, brows=16, cam=cam, cam_b=cam // 2)
                 second, first = self.two_frames(ram, margin)
                 want = min(cam, margin)
-                self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d" % want], "margin %d camera %d" % (margin, cam))
+                self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d %d" % (want, margin)], "margin %d camera %d" % (margin, cam))
                 self.assertEqual([l for l in first if l.startswith("view_left")], [], "the first frame knows no margin: nothing is declared")
                 wins = [l.split() for l in second if l.startswith("window")]
                 x0, y0, n, words = expect_window(ram, REC_A, MAP_A, TBL_A, 16, 240, False, left=want)
@@ -401,9 +401,11 @@ class Provider(unittest.TestCase):
         out = self.run_script(["init", "margin 238"] + self.frame(ram, frame=1) + self.frame(ram, frame=2) + ["margin 39"] + ["echo F3"] + self.frame(ram, frame=3) + ["echo F4"] + self.frame(ram, frame=4))
         f3 = out[out.index("F3") + 1:out.index("F4")]
         f4 = out[out.index("F4") + 1:]
-        self.assertEqual([l for l in out[:out.index("F3")] if l.startswith("view_left")], ["view_left 150"], "frame 2: margin 238 learnt in frame 1")
+        self.assertEqual([l for l in out[:out.index("F3")] if l.startswith("view_left")], ["view_left 150 238"], "frame 2: margin 238 learnt in frame 1")
         self.assertEqual([l for l in f3 if l.startswith("view_left")], [], "frame 3: the windows were built for margin 238 but the host now plans 39: no placement")
-        self.assertEqual([l for l in f4 if l.startswith("view_left")], ["view_left 39"], "frame 4: built for 39, declared for 39")
+        self.assertEqual([l for l in f3 if l.startswith("window")], [], "frame 3: and no window either (they answer the cells of a view that is no longer the host's); the actors and the indicator are still submitted")
+        self.assertTrue([l for l in f3 if l.startswith("rect")], "the indicator is independent of the view")
+        self.assertEqual([l for l in f4 if l.startswith("view_left")], ["view_left 39 39"], "frame 4: built for 39, declared for 39")
 
     def test_windows_cover_the_placed_view(self):
         # the whole presented view: screen x from -left to 320 + (2 * margin - left); scrolled playfield rows (and plane B's own scroll where it is authored) and the unscrolled band rows
@@ -412,7 +414,7 @@ class Provider(unittest.TestCase):
                 for ram, planes in ((Ram(rows=32, cols=128, brows=32, bstride=128, cam=cam % 2000, cam_b=((cam * 3) // 5) % 2000), (0, 1)), (Ram(cam=cam, cam_b=(cam * 3) // 5), (0,))):
                     second, _ = self.two_frames(ram, margin)
                     left = min(ram.r(REC_A + 4), margin)
-                    self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d" % left])
+                    self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d %d" % (left, margin)])
                     wins = [l.split() for l in second if l.startswith("window")]
                     for plane in planes:
                         base = (REC_A, REC_B)[plane]
