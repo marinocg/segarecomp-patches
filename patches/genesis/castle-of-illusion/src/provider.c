@@ -30,11 +30,13 @@
 #define B_MAP_END 0x7000U
 #define A_BLOCKS 256U
 #define B_BLOCKS 256U
-#define WCOLS 128U        /* the widest window the host accepts: 32:9 needs about 30 cells each side of the picture, the rest absorbs the camera's motion since the frame-end read */
+#define WCOLS 128U        /* the widest window the host accepts (1024 px): a 32:9 view is 796 px, the rest absorbs the rows scrolled differently and the camera's motion since the frame-end read */
 #define WROWS 32U         /* 28 visible rows + 1 partial + one row of slack on each side; 128 x 32 = 4096 words is the host's window bound */
 #define BROWS 16U         /* the second window (ADR 0313): the rows from picture row 128 down, where a split-scroll band (the status bar and, in some stages, a strip above it) is scrolled differently from the playfield */
 #define BAND_ROW0 128     /* the first picture row the second window covers */
-#define BAND_X0 (-32)     /* the band's cells are asked for at their own, camera-independent plane coordinates: scroll 0 shows plane cells -30..69 of a 32:9 view */
+#define LEGACY_LEFT 238   /* the symmetric 32:9 margin the windows assumed before the picture could be placed (used while the host's margin is not known: no extension is planned, nothing is placed) */
+#define SLACK_LEFT 6      /* cells of slack left of the view in the main windows (the camera moves a few pixels between the frame-end read and the frame the host produces) */
+#define BAND_SLACK 2
 
 typedef struct Plane {
   int32_t cam;            /* the game's horizontal scroll value (camera x, pixels) */
@@ -61,6 +63,15 @@ static uint32_t scene_id;          /* 0 = nothing verified this frame, else 1 + 
 static uint32_t ready;             /* a window was built at the latest frame-end for the next render */
 static uint32_t plane_b_authored;  /* plane B has a window (its map is a real world map, not a tiling background) */
 static uint32_t band_ready;        /* the second (band) windows were built too: without them only the rows the main window covers are served */
+static int32_t band_x0;            /* the band windows' first plane cell: the band is not scrolled, so its cells are the screen's own: the view starts `left` pixels left of the picture */
+/* The asymmetric view (product ADR 0315). The host plans one total of 2 * margin extra columns and learns it to the provider (`view_margin`, in the render phase); the provider only chooses how many of them lie
+ * left of the picture. The camera never needs more world to its left than exists: `view_x = max(level_start, camera_x - margin)` and `left = camera_x - view_x`, so the picture starts at the left edge of the view at a
+ * level's first column and the whole total shows the world ahead, and from `margin` pixels in it is the centred view. The level's first column is the map's own (the planes hold no world left of block 0). The
+ * margin is read in the render phase and used by the next frame-end that builds the windows, so a placement is declared only when the margin it was computed for is still the host's. */
+static uint32_t margin_learnt;     /* per-side margin of the host's latest produced frame, 0 = none yet (or no extension): the centred layout is assumed */
+static uint32_t margin_used;       /* the margin the windows of this frame were built for */
+static int32_t view_left_px;       /* columns of the planned total left of the picture, for the frame the windows were built for */
+static uint32_t view_declared;     /* a placement is to be declared at render (a margin is known) */
 
 static int rd(const SegaModHost *h, uint32_t offset, uint32_t width, uint32_t *value) { return h->read(SEGA_GEN_SPACE_M68K_WORK_RAM, offset, width, value); }
 
@@ -80,12 +91,12 @@ static int record(const SegaModHost *h, uint32_t base, uint32_t map, uint32_t ta
 }
 
 /* The VDP applies a 10-bit scroll: -camera wraps into [-512, 511] (and the vertical value into the same range); the host's plane coordinate is screen position minus that value. The window is in plane cells, the maps in world cells. */
-static void place(Plane *p) {
+static void place(Plane *p, int32_t left) {
   int32_t hs = -p->cam, vs = ((p->vscroll + 512) & 1023) - 512;
   hs = ((hs + 512) & 1023) - 512;
   p->shift_cells = (p->cam + hs) / 8;                    /* exact: cam + hs is a multiple of 1024 */
   p->shift_rows = (p->vscroll - vs) / 8;
-  p->cell_x0 = (p->cam / 8 - 36) - p->shift_cells;      /* the measured need of the scrolled rows is cells -30..+88 around the camera (32:9, rows with different parallax scroll included): 36 cells of slack on the left, 91 on the right */
+  p->cell_x0 = ((p->cam - left) >> 3) - SLACK_LEFT - p->shift_cells;   /* the view starts `left` pixels left of the camera; the measured need of the scrolled rows is up to 18 cells beyond the view's right edge (rows with different parallax scroll included): the 128-cell window leaves 4 */
   p->cell_y0 = (vs >> 3) - 1;                           /* one row of slack above the visible rows (floor division) */
   p->band_y0 = ((BAND_ROW0 + vs) >> 3) - 1;              /* the band shares the playfield's vertical scroll in every measured stage */
   p->window_rows = WROWS;                               /* rows outside the map are the game's own empty block, as the VDP planes hold them */
@@ -233,9 +244,18 @@ static void provider_frame_end(const SegaModHost *h) {
   band_ready = 0U;
   scene_id = classify(h, &plane_a, &plane_b);
   if (st.flash != 0U) --st.flash;
+  view_declared = 0U;
   if (scene_id == 0U) return;
-  place(&plane_a);
-  place(&plane_b);
+  margin_used = margin_learnt;
+  if (margin_used != 0U) {
+    view_left_px = plane_a.cam < (int32_t)margin_used ? plane_a.cam : (int32_t)margin_used;   /* camera_x - max(0, camera_x - margin) */
+    view_declared = 1U;
+  } else {
+    view_left_px = LEGACY_LEFT;
+  }
+  band_x0 = -((view_left_px + 7) / 8) - BAND_SLACK;
+  place(&plane_a, view_left_px);
+  place(&plane_b, view_left_px);
   /* Plane B of most scenes is a tiling background that the VDP-derived extension already shows exactly, wrapped: in those scenes (`b_generic`, measured per scene) its margins were pixel-identical to this
    * provider's authored ones in every sampled frame and its words equal the VDP's in every answered cell, and its scroll can differ from the record this provider reads (parallax rows), so nothing is authored
    * for it (product ADR 0314). Two scenes (a48x160-b48, a96x64-b96) differ, because their plane B map is taller than the VDP's 64-cell plane: there the authored world rows are submitted. */
@@ -243,7 +263,7 @@ static void provider_frame_end(const SegaModHost *h) {
   if (!build_plane(h, &plane_a, plane_a.map, TABLE_A, plane_a.cols, A_BLOCKS, 0, words_a) || (plane_b_authored && !build_plane(h, &plane_b, plane_b.map, TABLE_B, plane_b.cols, B_BLOCKS, plane_b.cols == 32U, words_b))) { scene_id = 0U; return; }
   /* the second window of each plane (ADR 0313): the same cell builder over the unscrolled plane coordinates and the rows where a split-scroll band lives (rows from BAND_ROW0 down) */
   { Plane ba = plane_a, bb = plane_b;
-    ba.cell_x0 = bb.cell_x0 = BAND_X0; ba.cell_y0 = plane_a.band_y0; bb.cell_y0 = plane_b.band_y0; ba.window_rows = bb.window_rows = BROWS;
+    ba.cell_x0 = bb.cell_x0 = band_x0; ba.cell_y0 = plane_a.band_y0; bb.cell_y0 = plane_b.band_y0; ba.window_rows = bb.window_rows = BROWS;
     band_ready = build_plane(h, &ba, ba.map, TABLE_A, ba.cols, A_BLOCKS, 0, band_a) && (!plane_b_authored || build_plane(h, &bb, bb.map, TABLE_B, bb.cols, B_BLOCKS, bb.cols == 32U, band_b)); }
   ready = 1U;
 }
@@ -289,16 +309,24 @@ static void provider_render(const SegaModHost *h) {
   if (features == NULL || features->size < sizeof(SegaGenesisFeatures) || features->render == NULL || scene_id == 0U) return;
   render = features->render;
   { const char *n = scenes[scene_id - 1U].name; uint32_t len = 0U; while (n[len] != 0) ++len; (void)render->scene(n, len); }
+  { uint32_t m = 0U;   /* learn the host's plan for the next frame-end; declare the placement the windows below were built for, only while that plan is still the host's */
+    if (features->render->view_margin != NULL && features->render->view_left != NULL && features->render->view_margin(&m) == 0) {
+      margin_learnt = m;
+      if (ready != 0U && view_declared != 0U && m == margin_used) (void)features->render->view_left((uint32_t)view_left_px);
+    } }
   if (ready != 0U) {
     if (plane_a.window_rows != 0U) (void)render->scenery_window(0U, plane_a.cell_x0, plane_a.cell_y0, WCOLS, plane_a.window_rows, words_a);
     if (plane_b_authored != 0U && plane_b.window_rows != 0U) (void)render->scenery_window(1U, plane_b.cell_x0, plane_b.cell_y0, WCOLS, plane_b.window_rows, words_b);
     if (band_ready != 0U) {   /* a cell is answered by the first window of its plane that contains it: the main window first */
-      (void)render->scenery_window(0U, BAND_X0, plane_a.band_y0, WCOLS, BROWS, band_a);
-      if (plane_b_authored != 0U) (void)render->scenery_window(1U, BAND_X0, plane_b.band_y0, WCOLS, BROWS, band_b);
+      (void)render->scenery_window(0U, band_x0, plane_a.band_y0, WCOLS, BROWS, band_a);
+      if (plane_b_authored != 0U) (void)render->scenery_window(1U, band_x0, plane_b.band_y0, WCOLS, BROWS, band_b);
     }
   }
   submit_actors(render);
-  /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. */
+  /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. The fixed overlay sits at the left edge of the whole view, which is the picture's own
+   * HUD corner whenever the picture is placed at the left of the view (a level's first columns, ADR 0315); while an extension is planned the panel is therefore a layer in the top right corner of the view, where
+   * there is always at least one margin of world-less space (the right margin is never narrower than the centred one). Without an extension (Original, 4:3) it is the fixed overlay, as before. */
+  if (margin_learnt != 0U && render->overlay_layer(1U, 2U, 1U, 0, 0, 40U, 16U, 0U) == 0) (void)render->overlay_target(1U);
   (void)render->overlay_rect(0, 0, st.restores != 0U ? 38 : 24, 8, 0x000000C0U);
   (void)render->overlay_text(2, 0, "P+", 2U, 0xFFD040FFU);
   if (st.restores != 0U) draw_number(render, 16, 0, st.restores, 0xFFFFFFFFU);
@@ -315,7 +343,7 @@ static int provider_init(void *state, const SegaModHost *host) {
 
 static void provider_phase(void *state, const SegaModHost *host) {
   (void)state;
-  if (host->phase == SEGA_MOD_PHASE_RESET) { collected_n = served_n = 0U; ready = band_ready = scene_id = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
+  if (host->phase == SEGA_MOD_PHASE_RESET) { collected_n = served_n = 0U; ready = band_ready = scene_id = view_declared = margin_learnt = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
   else if (host->phase == SEGA_MOD_PHASE_INPUT) intercept(host);
   else if (host->phase == SEGA_MOD_PHASE_POST_INPUT) practice(host);
   else if (host->phase == SEGA_MOD_PHASE_FRAME_END) provider_frame_end(host);
@@ -343,7 +371,7 @@ static int provider_load(void *state, const uint8_t *in, uint32_t len) {
   st.flash = values[2];
   st.chord_now = values[3];
   collected_n = served_n = 0U;   /* pieces are re-collected from the next frame's hook calls */
-  ready = band_ready = scene_id = 0U;   /* rebuilt from guest RAM at the next frame-end; nothing of an earlier frame is drawn */
+  ready = band_ready = scene_id = view_declared = 0U;   /* rebuilt from guest RAM at the next frame-end; nothing of an earlier frame is drawn */
   return 0;
 }
 

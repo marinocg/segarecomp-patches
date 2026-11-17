@@ -35,8 +35,11 @@ static int mwrite(uint32_t space, uint32_t off, uint32_t w, uint32_t v) {
 static int minput(uint32_t port, uint32_t *b) { if (port != 1U) return 1; *b = pad1; return 0; }
 static int mset(uint32_t port, uint32_t b) { printf("setpad %u %x\n", port, b); return 0; }
 static void mlog(const char *s, uint32_t n) { (void)s; (void)n; }
-static int a_layer(uint32_t a, uint32_t b, uint32_t c, int32_t d, int32_t e, uint32_t f, uint32_t g, uint32_t h) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h; return 0; }
-static int a_target(uint32_t i) { (void)i; return 0; }
+static int a_layer(uint32_t a, uint32_t b, uint32_t c, int32_t d, int32_t e, uint32_t f, uint32_t g, uint32_t h) { printf("layer %u %u %u %d %d %u %u %u\n", a, b, c, d, e, f, g, h); return 0; }
+static int a_target(uint32_t i) { printf("target %u\n", i); return 0; }
+static uint32_t margin;
+static int a_margin(uint32_t *m) { *m = margin; return 0; }
+static int a_left(uint32_t l) { printf("view_left %u\n", l); return 0; }
 static int a_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) { printf("rect %d %d %d %d\n", x, y, w, h); (void)c; return 0; }
 static int a_text(int32_t x, int32_t y, const char *t, uint32_t n, uint32_t c) { printf("text %d %d %.*s\n", x, y, (int)n, t); (void)c; return 0; }
 static int a_scene(const char *id, uint32_t n) { printf("scene %.*s\n", (int)n, id); return 0; }
@@ -52,13 +55,14 @@ int main(int argc, char **argv) {
   const SegaModProvider *p; void *state = NULL; char line[256]; uint64_t frame = 0; uint8_t blob[64]; uint32_t bloblen = 0; (void)argc; (void)argv;
   host.size = sizeof host; host.abi_major = 2; host.platform = SEGA_MOD_PLATFORM; host.platform_features = &features; host.read = mread; host.write = mwrite; host.input_get = minput; host.input_set = mset; host.log = mlog;
   features.size = sizeof features; features.render = &api;
-  api.size = sizeof api; api.overlay_layer = a_layer; api.overlay_target = a_target; api.overlay_rect = a_rect; api.overlay_text = a_text; api.scene = a_scene; api.virtual_sprites = a_sprites; api.scenery_window = a_window; api.virtual_sprites = a_sprites;
+  api.size = sizeof api; api.view_margin = a_margin; api.view_left = a_left; api.overlay_layer = a_layer; api.overlay_target = a_target; api.overlay_rect = a_rect; api.overlay_text = a_text; api.scene = a_scene; api.virtual_sprites = a_sprites; api.scenery_window = a_window; api.virtual_sprites = a_sprites;
   p = segarecomp_mod_provider(&state);
   while (fgets(line, sizeof line, stdin)) {
     unsigned a, b, c;
     if (sscanf(line, "range %x %u %u", &a, &b, &c) == 3) { ranges[nranges].off = a; ranges[nranges].len = b; ranges[nranges].write = (int)c; ++nranges; }
     else if (sscanf(line, "ram %x %u %x", &a, &b, &c) == 3) { unsigned k; for (k = 0; k < b; ++k) ram[a + k] = (uint8_t)(c >> (8U * (b - 1U - k))); }
     else if (sscanf(line, "pad %x", &a) == 1) pad1 = a;
+    else if (sscanf(line, "margin %u", &a) == 1) margin = a;
     else if (sscanf(line, "frame %u", &a) == 1) frame = a;
     else if (sscanf(line, "reg %u %x", &a, &b) == 2) regs[a] = b;
     else if (strncmp(line, "hook", 4) == 0) { host.frame = frame; host.phase = SEGA_MOD_PHASE_HOOK_ENTRY; fault = 0; printf("hook %d\n", p->hook(state, &host, 0)); if (fault) printf("FAULT\n"); }
@@ -114,13 +118,14 @@ def ranges():
 GENERIC_B = {"a16x240-b16", "a48x160-b16", "a48x128-b48", "a16x32-b16", "a192x48-b192", "a32x112-b32", "a14x320-b14", "a17x32-b17", "a48x256-b48", "a16x160-b16", "a32x32-b32", "a16x64-b16"}
 
 
-def expect_window(ram, base, mapaddr, table, rows, stride, wrap, band=False):
-    """The name-table window the provider must submit for the plane whose record is at `base` (independent re-derivation): the main window around the camera (36 cells of slack on the left, 91 on the right,
-    32 rows) or, with band=True, the second window of ADR 0313 (plane cells -32..95, 16 rows from picture row 128 down, the same vertical scroll)."""
+def expect_window(ram, base, mapaddr, table, rows, stride, wrap, band=False, left=238):
+    """The name-table window the provider must submit for the plane whose record is at `base` (independent re-derivation): the main window starting 6 cells left of the view (the view starts `left` pixels
+    left of the camera; 238 is the symmetric 32:9 margin the provider assumes while the host's margin is unknown), 128 columns and 32 rows, or, with band=True, the second window of ADR 0313 (the band is not
+    scrolled: its first cell is the view's own first cell less 2, 128 columns, 16 rows from picture row 128 down, the same vertical scroll)."""
     v, cam = ram.r(base), ram.r(base + 4)
     hs = ((-cam + 512) & 1023) - 512
     shift = (cam + hs) // 8
-    x0 = -32 if band else cam // 8 - 36 - shift
+    x0 = -((left + 7) // 8) - 2 if band else ((cam - left) >> 3) - 6 - shift
     vs = ((v + 512) & 1023) - 512
     shift_y = (v - vs) // 8
     first = ((128 + vs) >> 3) - 1 if band else (vs >> 3) - 1
@@ -357,6 +362,78 @@ class Provider(unittest.TestCase):
                             for x in range(-238, 558 + 1, 7):
                                 cx, cy = (x - hs) // 8, (line + vs) // 8
                                 self.assertTrue(any(x0 <= cx < x0 + c and y0 <= cy < y0 + r for x0, y0, c, r in mine), "plane %d cam %d: cell (%d, %d) at x %d line %d (hscroll %d) is in no window" % (plane, cam, cx, cy, x, line, hs))
+
+    # ---- the asymmetric view (product ADR 0315) ----
+    def two_frames(self, ram, margin, extra=()):
+        """Frame 1 (the host's margin is not known yet: its render learns it), then frame 2, whose windows and placement are the ones under test. Returns the output lines of frame 2 only."""
+        out = self.run_script(["init", "margin %d" % margin] + self.frame(ram, frame=1) + ["echo FRAME2"] + self.frame(ram, frame=2, extra=extra))
+        self.assertNotIn("FAULT", out)
+        return out[out.index("FRAME2") + 1:], out[:out.index("FRAME2")]
+
+    def test_the_placement_is_the_camera_clamped_to_the_margin(self):
+        # view_x = max(level_start, camera_x - margin), left = camera_x - view_x: the picture starts at the view's left edge at the level's first column and the view is centred once the camera is `margin` in
+        for margin in (39, 101, 238):
+            for cam in (0, 1, 38, 39, 40, 100, 237, 238, 239, 1000):
+                ram = Ram(rows=16, cols=240, brows=16, cam=cam, cam_b=cam // 2)
+                second, first = self.two_frames(ram, margin)
+                want = min(cam, margin)
+                self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d" % want], "margin %d camera %d" % (margin, cam))
+                self.assertEqual([l for l in first if l.startswith("view_left")], [], "the first frame knows no margin: nothing is declared")
+                wins = [l.split() for l in second if l.startswith("window")]
+                x0, y0, n, words = expect_window(ram, REC_A, MAP_A, TBL_A, 16, 240, False, left=want)
+                self.assertEqual((int(wins[0][2]), [int(x, 16) for x in wins[0][6:]]), (x0, words), "the plane A window follows the placement (margin %d camera %d)" % (margin, cam))
+                bx0, _, _, bwords = expect_window(ram, REC_A, MAP_A, TBL_A, 16, 240, False, band=True, left=want)
+                self.assertEqual((int(wins[1][2]), [int(x, 16) for x in wins[1][6:]]), (bx0, bwords), "the band window follows the placement")
+
+    def test_no_placement_without_a_known_margin_or_a_verified_scene(self):
+        ram = Ram(cam=100)
+        out = self.run_script(["init"] + self.frame(ram, frame=1) + self.frame(ram, frame=2))   # the mock host reports margin 0: no extension is planned
+        self.assertEqual([l for l in out if l.startswith("view_left")], [], "margin 0: the centred layout is assumed, nothing is declared")
+        windows = [l.split() for l in out if l.startswith("window")]
+        x0, _, _, _ = expect_window(ram, REC_A, MAP_A, TBL_A, 16, 240, False)
+        self.assertEqual(int(windows[0][2]), x0, "the windows are the symmetric ones (238)")
+        menu = Ram(cam=100); [menu.w(REC_A + k, 2, 0) or menu.w(REC_B + k, 2, 0) for k in range(0, 20, 2)]
+        second, _ = self.two_frames(menu, 238)
+        self.assertEqual([l for l in second if l.startswith(("view_left", "window", "scene"))], [], "a menu or cutscene declares no placement")
+
+    def test_a_changed_margin_is_never_given_a_placement_computed_for_another(self):
+        ram = Ram(cam=150)
+        out = self.run_script(["init", "margin 238"] + self.frame(ram, frame=1) + self.frame(ram, frame=2) + ["margin 39"] + ["echo F3"] + self.frame(ram, frame=3) + ["echo F4"] + self.frame(ram, frame=4))
+        f3 = out[out.index("F3") + 1:out.index("F4")]
+        f4 = out[out.index("F4") + 1:]
+        self.assertEqual([l for l in out[:out.index("F3")] if l.startswith("view_left")], ["view_left 150"], "frame 2: margin 238 learnt in frame 1")
+        self.assertEqual([l for l in f3 if l.startswith("view_left")], [], "frame 3: the windows were built for margin 238 but the host now plans 39: no placement")
+        self.assertEqual([l for l in f4 if l.startswith("view_left")], ["view_left 39"], "frame 4: built for 39, declared for 39")
+
+    def test_windows_cover_the_placed_view(self):
+        # the whole presented view: screen x from -left to 320 + (2 * margin - left); scrolled playfield rows (and plane B's own scroll where it is authored) and the unscrolled band rows
+        for margin in (39, 78, 101, 238):
+            for cam in (0, 7, 39, 96, 238, 343, 511, 512, 600, 1500, 3800):
+                for ram, planes in ((Ram(rows=32, cols=128, brows=32, bstride=128, cam=cam % 2000, cam_b=((cam * 3) // 5) % 2000), (0, 1)), (Ram(cam=cam, cam_b=(cam * 3) // 5), (0,))):
+                    second, _ = self.two_frames(ram, margin)
+                    left = min(ram.r(REC_A + 4), margin)
+                    self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d" % left])
+                    wins = [l.split() for l in second if l.startswith("window")]
+                    for plane in planes:
+                        base = (REC_A, REC_B)[plane]
+                        mine = [(int(w[2]), int(w[3]), int(w[4]), int(w[5])) for w in wins if int(w[1]) == plane]
+                        v, camp = ram.r(base), ram.r(base + 4)
+                        vs = ((v + 512) & 1023) - 512
+                        hs_play = ((-camp + 512) & 1023) - 512
+                        for hs, rows in ((hs_play, range(0, 192, 5)), (0, range(150, 224, 2))):
+                            for line in rows:
+                                for x in range(-left, 320 + 2 * margin - left, 7):
+                                    cx, cy = (x - hs) // 8, (line + vs) // 8
+                                    self.assertTrue(any(x0 <= cx < x0 + c and y0 <= cy < y0 + r for x0, y0, c, r in mine), "margin %d camera %d plane %d: cell (%d, %d) at x %d line %d is in no window" % (margin, cam, plane, cx, cy, x, line))
+
+    def test_the_indicator_is_a_top_right_layer_while_an_extension_is_planned(self):
+        second, first = self.two_frames(Ram(cam=100), 238)
+        self.assertIn("layer 1 2 1 0 0 40 16 0", second, "anchored to the top right of the presentation, where the picture's own HUD never is")
+        self.assertLess(second.index("layer 1 2 1 0 0 40 16 0"), second.index("target 1"))
+        self.assertLess(second.index("target 1"), second.index("rect 0 0 24 8"), "the panel is drawn into the layer")
+        out = self.run_script(["init"] + self.frame(Ram(cam=100)))   # the mock host reports margin 0: no extension is planned (Original, 4:3)
+        self.assertFalse([l for l in out if l.startswith(("layer", "target"))], "no layer while no extension is planned: the fixed overlay, as before")
+        self.assertIn("rect 0 0 24 8", out)
 
     def test_the_hardware_piece_flag_is_set_on_kept_edge_pieces_only(self):
         # ADR 0313: a piece the game kept (the host's Level 3 extension already draws it with the original rules) carries HARDWARE_PIECE; a piece the game dropped does not
