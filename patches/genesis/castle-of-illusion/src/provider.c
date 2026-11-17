@@ -59,6 +59,7 @@ typedef struct ModState {
 static ModState st;
 static uint32_t scene_id;          /* 0 = nothing verified this frame, else 1 + the index in `scenes` */
 static uint32_t ready;             /* a window was built at the latest frame-end for the next render */
+static uint32_t plane_b_authored;  /* plane B has a window (its map is a real world map, not a tiling background) */
 static uint32_t band_ready;        /* the second (band) windows were built too: without them only the rows the main window covers are served */
 
 static int rd(const SegaModHost *h, uint32_t offset, uint32_t width, uint32_t *value) { return h->read(SEGA_GEN_SPACE_M68K_WORK_RAM, offset, width, value); }
@@ -123,12 +124,12 @@ static int build_plane(const SegaModHost *h, const Plane *p, uint32_t map, uint3
 }
 
 /* The verified scenes, by the map sizes (blocks) of the running level: plane A rows x columns and plane B rows. Each was flown through end to end with a private debug build and compared against the VDP (see README). */
-typedef struct Scene { uint32_t a_rows, a_cols, b_rows, b_stride; const char *name; } Scene;
+typedef struct Scene { uint32_t a_rows, a_cols, b_rows, b_stride; const char *name; uint32_t b_generic; } Scene;   /* b_generic: plane B is left to the VDP-derived extension (product ADR 0314), see below */
 static const Scene scenes[] = {
-  {16U, 240U, 16U, 32U, "a16x240-b16"}, {48U, 160U, 16U, 32U, "a48x160-b16"}, {48U, 128U, 48U, 32U, "a48x128-b48"}, {16U, 32U, 16U, 32U, "a16x32-b16"},
-  {192U, 48U, 192U, 32U, "a192x48-b192"}, {32U, 112U, 32U, 32U, "a32x112-b32"}, {14U, 320U, 14U, 32U, "a14x320-b14"}, {17U, 32U, 17U, 32U, "a17x32-b17"},
-  {80U, 80U, 80U, 80U, "a80x80-b80x80"}, {32U, 128U, 32U, 128U, "a32x128-b32x128"}, {96U, 64U, 96U, 32U, "a96x64-b96"},
-  {48U, 160U, 48U, 32U, "a48x160-b48"}, {48U, 256U, 48U, 32U, "a48x256-b48"}, {16U, 160U, 16U, 32U, "a16x160-b16"}, {32U, 32U, 32U, 32U, "a32x32-b32"}, {80U, 128U, 80U, 128U, "a80x128-b80x128"}, {16U, 64U, 16U, 32U, "a16x64-b16"},
+  {16U, 240U, 16U, 32U, "a16x240-b16", 1U}, {48U, 160U, 16U, 32U, "a48x160-b16", 1U}, {48U, 128U, 48U, 32U, "a48x128-b48", 1U}, {16U, 32U, 16U, 32U, "a16x32-b16", 1U},
+  {192U, 48U, 192U, 32U, "a192x48-b192", 1U}, {32U, 112U, 32U, 32U, "a32x112-b32", 1U}, {14U, 320U, 14U, 32U, "a14x320-b14", 1U}, {17U, 32U, 17U, 32U, "a17x32-b17", 1U},
+  {80U, 80U, 80U, 80U, "a80x80-b80x80", 0U}, {32U, 128U, 32U, 128U, "a32x128-b32x128", 0U}, {96U, 64U, 96U, 32U, "a96x64-b96", 0U},
+  {48U, 160U, 48U, 32U, "a48x160-b48", 0U}, {48U, 256U, 48U, 32U, "a48x256-b48", 1U}, {16U, 160U, 16U, 32U, "a16x160-b16", 1U}, {32U, 32U, 32U, 32U, "a32x32-b32", 1U}, {80U, 128U, 80U, 128U, "a80x128-b80x128", 0U}, {16U, 64U, 16U, 32U, "a16x64-b16", 1U},
 };
 #define SCENE_COUNT (sizeof scenes / sizeof scenes[0])
 
@@ -235,11 +236,15 @@ static void provider_frame_end(const SegaModHost *h) {
   if (scene_id == 0U) return;
   place(&plane_a);
   place(&plane_b);
-  if (!build_plane(h, &plane_a, plane_a.map, TABLE_A, plane_a.cols, A_BLOCKS, 0, words_a) || !build_plane(h, &plane_b, plane_b.map, TABLE_B, plane_b.cols, B_BLOCKS, plane_b.cols == 32U, words_b)) { scene_id = 0U; return; }
+  /* Plane B of most scenes is a tiling background that the VDP-derived extension already shows exactly, wrapped: in those scenes (`b_generic`, measured per scene) its margins were pixel-identical to this
+   * provider's authored ones in every sampled frame and its words equal the VDP's in every answered cell, and its scroll can differ from the record this provider reads (parallax rows), so nothing is authored
+   * for it (product ADR 0314). Two scenes (a48x160-b48, a96x64-b96) differ, because their plane B map is taller than the VDP's 64-cell plane: there the authored world rows are submitted. */
+  plane_b_authored = scenes[scene_id - 1U].b_generic == 0U;
+  if (!build_plane(h, &plane_a, plane_a.map, TABLE_A, plane_a.cols, A_BLOCKS, 0, words_a) || (plane_b_authored && !build_plane(h, &plane_b, plane_b.map, TABLE_B, plane_b.cols, B_BLOCKS, plane_b.cols == 32U, words_b))) { scene_id = 0U; return; }
   /* the second window of each plane (ADR 0313): the same cell builder over the unscrolled plane coordinates and the rows where a split-scroll band lives (rows from BAND_ROW0 down) */
   { Plane ba = plane_a, bb = plane_b;
     ba.cell_x0 = bb.cell_x0 = BAND_X0; ba.cell_y0 = plane_a.band_y0; bb.cell_y0 = plane_b.band_y0; ba.window_rows = bb.window_rows = BROWS;
-    band_ready = build_plane(h, &ba, ba.map, TABLE_A, ba.cols, A_BLOCKS, 0, band_a) && build_plane(h, &bb, bb.map, TABLE_B, bb.cols, B_BLOCKS, bb.cols == 32U, band_b); }
+    band_ready = build_plane(h, &ba, ba.map, TABLE_A, ba.cols, A_BLOCKS, 0, band_a) && (!plane_b_authored || build_plane(h, &bb, bb.map, TABLE_B, bb.cols, B_BLOCKS, bb.cols == 32U, band_b)); }
   ready = 1U;
 }
 
@@ -286,10 +291,10 @@ static void provider_render(const SegaModHost *h) {
   { const char *n = scenes[scene_id - 1U].name; uint32_t len = 0U; while (n[len] != 0) ++len; (void)render->scene(n, len); }
   if (ready != 0U) {
     if (plane_a.window_rows != 0U) (void)render->scenery_window(0U, plane_a.cell_x0, plane_a.cell_y0, WCOLS, plane_a.window_rows, words_a);
-    if (plane_b.window_rows != 0U) (void)render->scenery_window(1U, plane_b.cell_x0, plane_b.cell_y0, WCOLS, plane_b.window_rows, words_b);
+    if (plane_b_authored != 0U && plane_b.window_rows != 0U) (void)render->scenery_window(1U, plane_b.cell_x0, plane_b.cell_y0, WCOLS, plane_b.window_rows, words_b);
     if (band_ready != 0U) {   /* a cell is answered by the first window of its plane that contains it: the main window first */
       (void)render->scenery_window(0U, BAND_X0, plane_a.band_y0, WCOLS, BROWS, band_a);
-      (void)render->scenery_window(1U, BAND_X0, plane_b.band_y0, WCOLS, BROWS, band_b);
+      if (plane_b_authored != 0U) (void)render->scenery_window(1U, BAND_X0, plane_b.band_y0, WCOLS, BROWS, band_b);
     }
   }
   submit_actors(render);

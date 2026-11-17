@@ -110,6 +110,10 @@ def ranges():
     return [(x["offset"], x["length"], 1 if x["access"] in ("write", "read-write") else 0) for x in m["memory"]]
 
 
+# the scenes whose plane B is left to the VDP-derived extension: measured pixel-identical to the authored one in 20 sampled frames each (a48x160-b48 and a96x64-b96 differ and stay authored)
+GENERIC_B = {"a16x240-b16", "a48x160-b16", "a48x128-b48", "a16x32-b16", "a192x48-b192", "a32x112-b32", "a14x320-b14", "a17x32-b17", "a48x256-b48", "a16x160-b16", "a32x32-b32", "a16x64-b16"}
+
+
 def expect_window(ram, base, mapaddr, table, rows, stride, wrap, band=False):
     """The name-table window the provider must submit for the plane whose record is at `base` (independent re-derivation): the main window around the camera (36 cells of slack on the left, 91 on the right,
     32 rows) or, with band=True, the second window of ADR 0313 (plane cells -32..95, 16 rows from picture row 128 down, the same vertical scroll)."""
@@ -176,9 +180,12 @@ class Provider(unittest.TestCase):
         self.assertNotIn("FAULT", out)
         self.assertIn("scene " + scene, out)
         wins = [l.split() for l in out if l.startswith("window")]
-        self.assertEqual([w[1] for w in wins], ["0", "1", "0", "1"], "per plane the main window, then the band window; plane A first (ADR 0313: two windows per plane)")
+        authored_b = scene not in GENERIC_B   # ADR 0314: in the measured scenes plane B is a tiling background the VDP-derived extension already shows: no plane B window at all
+        self.assertEqual([w[1] for w in wins], ["0", "1", "0", "1"] if authored_b else ["0", "0"], "per authored plane the main window, then the band window; plane A first (ADR 0313: two windows per plane; ADR 0314: no window for a tiling plane B)")
         planes = ((REC_A, MAP_A, TBL_A, ram.rows, ram.cols, False), (REC_B, ram.bptr, TBL_B, ram.brows, ram.bstride, ram.bstride == 32))
-        for w, (base, mp, tbl, rows, stride, wrap), band in zip(wins, planes + planes, (False, False, True, True)):
+        order = [(0, False), (1, False), (0, True), (1, True)] if authored_b else [(0, False), (0, True)]
+        for w, (plane, band) in zip(wins, order):
+            base, mp, tbl, rows, stride, wrap = planes[plane]
             x0, y0, n, words = expect_window(ram, base, mp, tbl, rows, stride, wrap, band)
             self.assertEqual((int(w[2]), int(w[3]), int(w[4]), int(w[5])), (x0, y0, 128, n))
             self.assertEqual([int(x, 16) for x in w[6:]], words, "window words equal the independent block lookup")
@@ -330,23 +337,26 @@ class Provider(unittest.TestCase):
         self.assertEqual((edge[0][2], edge[0][11:]), ("1", ["1", "320", "0", "1024", "224"]), "a clipped edge piece keeps its clip and takes its own layer")
 
     def test_every_cell_the_host_can_ask_for_is_answered_by_one_of_the_two_windows(self):
-        # ADR 0313: the playfield rows are scrolled with the camera, the rows of a split-scroll band with scroll 0; their cell ranges can be disjoint (a union wider than the 128-column bound), so each plane has two windows.
+        # ADR 0313: the playfield rows are scrolled with the camera, the rows of a split-scroll band with scroll 0; their cell ranges can be disjoint (a union wider than the 128-column bound), so each authored plane has two windows.
         # The host asks for plane cell floor((x - hscroll) / 8) of row floor((line + vscroll) / 8); a window answers a cell it contains, the first window of the plane first.
+        # ADR 0314: plane B is authored only in the scenes where it was measured to differ from the VDP-derived extension; elsewhere it has no window and the VDP-derived extension answers it.
         for cam in (0, 5, 96, 343, 511, 512, 600, 1500, 3800):
-            ram = Ram(cam=cam, cam_b=(cam * 3) // 5)
-            out = self.run_script(["init"] + self.frame(ram))
-            wins = [l.split() for l in out if l.startswith("window")]
-            self.assertEqual(len(wins), 4)
-            for plane, base in ((1, REC_B),):
-                mine = [(int(w[2]), int(w[3]), int(w[4]), int(w[5])) for w in wins if int(w[1]) == plane]
-                v, camp = ram.r(base), ram.r(base + 4)
-                vs = ((v + 512) & 1023) - 512
-                hs_play = ((-camp + 512) & 1023) - 512
-                for hs, rows in ((hs_play, range(0, 192, 3)), (0, range(150, 224, 2))):   # scrolled playfield rows, then the unscrolled rows from 150 down
-                    for line in rows:
-                        for x in range(-238, 558 + 1, 7):
-                            cx, cy = (x - hs) // 8, (line + vs) // 8
-                            self.assertTrue(any(x0 <= cx < x0 + c and y0 <= cy < y0 + r for x0, y0, c, r in mine), "plane %d cam %d: cell (%d, %d) at x %d line %d (hscroll %d) is in no window" % (plane, cam, cx, cy, x, line, hs))
+            for ram, planes in ((Ram(rows=32, cols=128, brows=32, bstride=128, cam=cam % 2000, cam_b=((cam * 3) // 5) % 2000), (0, 1)), (Ram(cam=cam, cam_b=(cam * 3) // 5), (0,))):   # a32x128-b32x128 (authored plane B), a16x240-b16 (plane B left to the VDP-derived extension)
+                out = self.run_script(["init"] + self.frame(ram))
+                wins = [l.split() for l in out if l.startswith("window")]
+                self.assertEqual(len(wins), 4 if len(planes) == 2 else 2)
+                self.assertEqual(sorted({int(w[1]) for w in wins}), list(planes), "a plane has windows exactly when it is authored")
+                for plane in planes:
+                    base = (REC_A, REC_B)[plane]
+                    mine = [(int(w[2]), int(w[3]), int(w[4]), int(w[5])) for w in wins if int(w[1]) == plane]
+                    v, camp = ram.r(base), ram.r(base + 4)
+                    vs = ((v + 512) & 1023) - 512
+                    hs_play = ((-camp + 512) & 1023) - 512
+                    for hs, rows in ((hs_play, range(0, 192, 3)), (0, range(150, 224, 2))):   # scrolled playfield rows, then the unscrolled rows from 150 down
+                        for line in rows:
+                            for x in range(-238, 558 + 1, 7):
+                                cx, cy = (x - hs) // 8, (line + vs) // 8
+                                self.assertTrue(any(x0 <= cx < x0 + c and y0 <= cy < y0 + r for x0, y0, c, r in mine), "plane %d cam %d: cell (%d, %d) at x %d line %d (hscroll %d) is in no window" % (plane, cam, cx, cy, x, line, hs))
 
     def test_the_hardware_piece_flag_is_set_on_kept_edge_pieces_only(self):
         # ADR 0313: a piece the game kept (the host's Level 3 extension already draws it with the original rules) carries HARDWARE_PIECE; a piece the game dropped does not
