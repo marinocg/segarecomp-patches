@@ -1,0 +1,5 @@
+# Castle of Illusion: early object activation (EXPERIMENTAL, gameplay-changing)
+
+Not part of the shipped presentation-only package. This directory holds a separately-identified experiment: typed ROM edits that coordinate the four object-activation mechanisms of the original streamer (column lookahead, initial fill, row span, off-screen deletion limit) for a window of 0x200 (16:9), 0x280 (21:9) or 0x380 (32:9) pixels, plus a bounded guest-asm retry (`asm/retry.asm`, 4-slot ring, 24 attempts, one per frame, no pool-size change) that re-runs the ORIGINAL section loader for a section whose object allocation failed. It changes which objects exist and when, so it is gameplay-changing and must be labelled so.
+
+Use: copy `mod.toml.example` and one `edits/window-*.edits` into a mod project with `asm/retry.asm` (the retry hook edits are listed at the end of each edits file) and the provider; `segarecomp mod build`. Findings (aggregate counts only) are in the PR discussion. Only 7 stages were measured; replay/save-state consistency and frame-time are not proven.

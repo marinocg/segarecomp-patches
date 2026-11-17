@@ -1,0 +1,7 @@
+usa-europe u16 0x0006d5cc 0x0180 0x0280
+usa-europe u16 0x0006d788 0x0280 0x0380
+usa-europe u8 0x0006d59d 0x04 0x06
+usa-europe u16 0x00001b14 0x0280 0x0380
+usa-europe bytes 0x0006d612 48e725207600 4ef900060c80
+usa-europe bytes 0x0006d676 51cefff6602a 4ef900060cc0
+usa-europe bytes 0x0006d536 4df8fa806114 4ef900060e00
