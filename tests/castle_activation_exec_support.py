@@ -1,0 +1,98 @@
+"""Executes the ACTUAL assembled retry code (patches/genesis/castle-of-illusion-activation-21x9/src/retry.asm) on a synthetic image through the product's generated-native path.
+
+The asm text is the shipped file with only its addresses remapped into a 16 KiB synthetic image; the "original game" it hooks is a handful of hand-assembled stubs (a fake section loader that logs its
+arguments and can be told to fail, plus continuation markers). Nothing commercial is involved. Needs SEGARECOMP_CLI, SEGARECOMP_SDK_DIR (the product's platforms directory) and a C compiler."""
+import hashlib, os, pathlib, re, shutil, struct, subprocess, tempfile
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+ASM = ROOT / "patches/genesis/castle-of-illusion-activation-21x9/src/retry.asm"
+STATE = 0xFFFC00
+SLOT = lambda i: STATE + 0x10 + 8 * i
+LOG = 0xFF0300          # stub counters: +0 loader calls, +4 d2, +6 d5, +8 a2, +c a1, +10 fail knob, +14 loop, +18 next, +1c vertical, +20 tail, +24 level init
+WINDOW_R = int(re.search(r"addi\.w #(0x[0-9a-f]+),d2", ASM.read_text()).group(1), 16)
+WINDOW_L = int(re.search(r"subi\.w #(0x[0-9a-f]+),d2", ASM.read_text()).group(1), 16)
+SYM = {"section_load": 0x3000, "section_load_body": 0x3006, "slot_scan": 0x3300, "next_entry": 0x3400, "streamer_tail": 0x3600, "vertical_loader": 0x3500, "level_init": 0x3700, "cull_continue": 0x3800, "cull_delete": 0x3900}
+FAIL_SITE = 0x3200
+MAP = {0x00060c80: 0x2000, 0x00060cc0: 0x2100, 0x00060e00: 0x2300, 0x00061000: 0x2600, 0x00061060: 0x2700}
+
+
+def available():
+    return bool(os.environ.get("SEGARECOMP_CLI") and os.environ.get("SEGARECOMP_SDK_DIR"))
+
+
+def _stubs(entry, fail_hook):
+    def jmp(a): return struct.pack(">HI", 0x4EF9, a)
+    def addq(a): return struct.pack(">HI", 0x52B9, a) + struct.pack(">H", 0x4E75)
+    img = bytearray(0x4000)
+    struct.pack_into(">II", img, 0, 0x01000000, 0x1000)
+    img[0x100:0x110] = b"SEGA MEGA DRIVE "
+    img[0x1000:0x100A] = bytes.fromhex("4eb90000100c60fe4e75")
+    img[0x3000:0x3006] = jmp(entry)                                  # the patched loader entry: jumps into the entry hook
+    body = bytes.fromhex("241f" "2a1f" "2e1f" "245f")                 # the original epilogue's restore of d2, d5, d7, a2 (lowest address first)
+    body += struct.pack(">HI", 0x33C2, LOG + 4) + struct.pack(">HI", 0x33C5, LOG + 6) + struct.pack(">HI", 0x23CA, LOG + 8) + struct.pack(">HI", 0x23C9, LOG + 12)
+    body += struct.pack(">HI", 0x52B9, LOG)                           # calls += 1
+    body += struct.pack(">HI", 0x4AB9, LOG + 0x10) + bytes.fromhex("6706")   # tst.l knob; beq ok
+    body += bytes.fromhex("7C00") + jmp(FAIL_SITE)                    # allocation failure: d6 = 0 (the scan is exhausted), jump to the patched site
+    body += bytes.fromhex("4e75")
+    img[0x3006:0x3006 + len(body)] = body
+    img[FAIL_SITE:FAIL_SITE + 6] = jmp(fail_hook)
+    for sym, c in (("slot_scan", 0x14), ("next_entry", 0x18), ("vertical_loader", 0x1C), ("streamer_tail", 0x20), ("level_init", 0x24), ("cull_continue", 0x28), ("cull_delete", 0x2C)):
+        a = SYM[sym]; img[a:a + 10] = addq(LOG + c)
+    return img
+
+
+class Harness:
+    def __init__(self):
+        self.cli, self.sdk, self.cc = os.environ["SEGARECOMP_CLI"], pathlib.Path(os.environ["SEGARECOMP_SDK_DIR"]), os.environ.get("SEGARECOMP_CC", "cc")
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix="castle-activation-exec-"))
+        text = ASM.read_text()
+        for old, new in MAP.items():
+            text = text.replace("0x%08x" % old, "0x%04x" % new)
+        text = re.sub(r"^free usa-europe .*$", "free fixture 0x2000 0x800 0x00", text, flags=re.M).replace("org usa-europe", "org fixture")
+        proj = self.work / "proj"; (proj / "asm").mkdir(parents=True); (proj / "asm/retry.asm").write_text(text)
+        entry, fail_hook, frame_hook, reset = 0x2000, 0x2100, 0x2300, 0x2600
+        image = bytes(_stubs(entry, fail_hook))
+        sha = hashlib.sha256(image).hexdigest()
+        toml = f'[mod]\nid = "castle-exec"\nversion = "1.0.0"\nname = "Exec"\nlicense = "CC0-1.0"\n\n[target]\nplatform = "genesis"\n\n[[target.revision]]\nlabel = "fixture"\nsha256 = "{sha}"\n\n[[source]]\nkind = "guest-asm"\npath = "asm/retry.asm"\ncpu = "m68k"\n'
+        for n, a in SYM.items():
+            toml += f'\n[[symbol]]\nname = "{n}"\nrevision = "fixture"\naddress = "{a:#x}"\nprovenance = "verified"\n'
+        (proj / "mod.toml").write_text(toml)
+        (self.work / "vanilla.bin").write_bytes(image)
+        r = subprocess.run([self.cli, "mod", "apply", str(proj), "--rom", str(self.work / "vanilla.bin"), "--out", str(self.work / "modded.bin")], capture_output=True, text=True)
+        assert r.returncode == 0 and '"ok":true' in r.stdout, r.stdout + r.stderr
+        self.image = (self.work / "modded.bin").read_bytes()
+        self.entries = {"entry": entry, "fail": fail_hook, "frame": frame_hook, "reset": reset, "cull": 0x2700, "noop": 0x3600}
+        gen = subprocess.run([self.cli, "emit-general-startup-bridge-c", "--rom", str(self.work / "modded.bin"), "--entry", "00001000", "--mapping-base", "00000000", "--rom-sha256", hashlib.sha256(self.image).hexdigest(), "--immutable-rom-aot"], capture_output=True, text=True).stdout
+        assert "genesis_runtime_run" in gen and "translation rejected" not in gen[:200], gen[:300]
+        seed = r'''
+ runtime.pc = UINT32_C(0x00001000);
+ { const char *e = getenv("T_PC"); if (e) runtime.pc = (uint32_t)strtoul(e, NULL, 16);
+   e = getenv("T_REGS"); if (e) { char b[2048]; char *t; strncpy(b, e, sizeof b - 1); b[sizeof b - 1] = 0; for (t = strtok(b, ","); t; t = strtok(NULL, ",")) { char *q = strchr(t, '='); unsigned long v; if (!q) continue; *q = 0; v = strtoul(q + 1, NULL, 16);
+       if (t[0] == 'd') runtime.d[t[1] - '0'] = (uint32_t)v; else if (t[0] == 'a') runtime.a[t[1] - '0'] = (uint32_t)v; } }
+   e = getenv("T_RAM"); if (e) { char b[8192]; char *t; strncpy(b, e, sizeof b - 1); b[sizeof b - 1] = 0; for (t = strtok(b, ","); t; t = strtok(NULL, ",")) { char *q = strchr(t, '='); unsigned long a, i; if (!q) continue; *q = 0; a = strtoul(t, NULL, 16) & 0xFFFFU; q++;
+       for (i = 0; q[i] && q[i + 1]; i += 2) { char h[3] = {q[i], q[i + 1], 0}; runtime.work_ram[a++ & 0xFFFFU] = (uint8_t)strtoul(h, NULL, 16); } } } }
+'''
+        gen = gen.replace("runtime.pc = UINT32_C(0x00001000);", seed, 1)
+        observe = r'''
+ { unsigned i; unsigned long h = 1469598103934665603UL; for (i = 0; i < 0xF000U; ++i) { if (i >= 0x0300U && i < 0x0330U) continue; if (i >= 0xFC00U) break; h = (h ^ runtime.work_ram[i]) * 1099511628211UL; }
+   fprintf(stderr, "OUT"); for (i = 0; i < 8; ++i) fprintf(stderr, " d%u=%08X", i, (unsigned)runtime.d[i]); for (i = 0; i < 8; ++i) fprintf(stderr, " a%u=%08X", i, (unsigned)runtime.a[i]);
+   fprintf(stderr, " pc=%06X hash=%016lX ram=", (unsigned)runtime.pc, h); for (i = 0xFC00U; i < 0xFC30U; ++i) fprintf(stderr, "%02X", runtime.work_ram[i]);
+   fprintf(stderr, " log="); for (i = 0x0300U; i < 0x0330U; ++i) fprintf(stderr, "%02X", runtime.work_ram[i]); fprintf(stderr, " hi="); for (i = 0xFC30U; i < 0xFC40U; ++i) fprintf(stderr, "%02X", runtime.work_ram[i]); fprintf(stderr, "\n"); }
+'''
+        anchor = re.search(r"\} while \([^;]*\);", gen); assert anchor
+        (self.work / "t.c").write_text(gen[:anchor.end()] + observe + gen[anchor.end():])
+        env = os.environ.copy()
+        if not env.get("SDKROOT") and shutil.which("xcrun"):
+            env["SDKROOT"] = subprocess.run(["xcrun", "--show-sdk-path"], text=True, capture_output=True, check=True).stdout.strip()
+        b = subprocess.run([self.cc, "-std=gnu11", "-w", "-I", str(self.sdk / "genesis/runtime"), str(self.work / "t.c"), str(self.sdk / "genesis/runtime/runtime.c"), "-o", str(self.work / "t")], capture_output=True, text=True, env=env)
+        assert b.returncode == 0, b.stderr[:1500]
+
+    def run(self, where, regs=None, ram=None):
+        env = dict(os.environ, T_PC="%x" % self.entries[where], T_REGS=",".join("%s=%x" % kv for kv in {"a7": 0x01000000, **(regs or {})}.items()),
+                   T_RAM=",".join("%x=%s" % (a, v.hex() if isinstance(v, (bytes, bytearray)) else v) for a, v in (ram or {}).items()))
+        r = subprocess.run([str(self.work / "t"), "--instruction-budget", "20000"], capture_output=True, text=True, env=env, timeout=120)
+        m = re.search(r"OUT (.*)", r.stderr); assert m, r.stderr[-500:] + r.stdout[-300:]
+        d = dict(kv.split("=") for kv in m.group(1).split())
+        out = {k: int(v, 16) for k, v in d.items() if k[0] in "da" and len(k) == 2 or k in ("pc", "hash")}
+        out["state"] = bytes.fromhex(d["ram"]); out["log"] = bytes.fromhex(d["log"])
+        out["above"] = bytes.fromhex(d["hi"]); return out

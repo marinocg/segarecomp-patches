@@ -124,7 +124,7 @@ mode = "before"
 reads = ["d0", "a0", "a2"]
 
 [geometry]
-aspect_max = "32:9"
+aspect_max = "21:9"
 
 [[scene]]
 id = "a16x240-b16"
@@ -228,4 +228,22 @@ provenance = "verified"
 name = "vertical_loader"
 revision = "usa-europe"
 address = "0x6d550"
+provenance = "verified"
+
+[[symbol]]
+name = "level_init"
+revision = "usa-europe"
+address = "0x6d6b4"
+provenance = "verified"
+
+[[symbol]]
+name = "cull_continue"
+revision = "usa-europe"
+address = "0x1b20"
+provenance = "verified"
+
+[[symbol]]
+name = "cull_delete"
+revision = "usa-europe"
+address = "0x1c94"
 provenance = "verified"

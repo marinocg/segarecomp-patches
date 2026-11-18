@@ -29,19 +29,21 @@ class Activation(unittest.TestCase):
         lint_layout.lint(ROOT, errs)
         self.assertEqual(errs, [])
 
-    def test_16x9_is_four_typed_edits_and_no_guest_code(self):
+    def test_16x9_is_the_two_necessary_typed_edits_and_no_guest_code(self):
         e = {x[2]: (x[3], x[4]) for x in edits(P16)}
-        self.assertEqual(e, {"0x0006d5cc": ("0x0180", "0x0200"), "0x0006d788": ("0x0280", "0x0300"), "0x0006d59d": ("0x04", "0x05"), "0x00001b14": ("0x0280", "0x0300")})
+        self.assertEqual(e, {"0x0006d5cc": ("0x0180", "0x0200"), "0x0006d788": ("0x0280", "0x0300")})     # right lookahead and the initial-fill bound
         self.assertFalse((P16 / "src/retry.asm").exists())
 
     def test_21x9_window_edits_and_hooks(self):
         e = {x[2]: (x[3], x[4]) for x in edits(P21)}
-        self.assertEqual(e["0x0006d5cc"], ("0x0180", "0x0280"))      # column lookahead
-        self.assertEqual(e["0x0006d788"], ("0x0280", "0x0380"))
-        self.assertEqual(e["0x00001b14"], ("0x0280", "0x0380"))      # off-screen deletion limit
-        self.assertEqual(e["0x0006d59d"], ("0x04", "0x06"))
-        # three six-byte hooks, each one an absolute jump into the injected block
-        for site, old, new in (("0x0006d612", "48e725207600", "4ef900060c80"), ("0x0006d676", "51cefff6602a", "4ef900060cc0"), ("0x0006d536", "4df8fa806114", "4ef900060e00")):
+        self.assertEqual(e["0x0006d5cc"], ("0x0180", "0x0280"))      # right column lookahead
+        self.assertEqual(e["0x0006d5d2"], ("0x0071", "0x0100"))      # left column lookahead
+        self.assertEqual(e["0x0006d788"], ("0x0280", "0x0480"))      # initial-fill bound (it runs the LEFT branch, so it moves with both lookaheads)
+        self.assertEqual(e["0x00001b14"], ("0x0280", "0x0380"))      # right off-screen deletion limit
+        self.assertEqual(e["0x0006d59d"], ("0x04", "0x06"))          # row-loader span
+        # five six-byte hooks, each one an absolute jump into the injected block
+        for site, old, new in (("0x0006d612", "48e725207600", "4ef900060c80"), ("0x0006d676", "51cefff6602a", "4ef900060cc0"), ("0x0006d536", "4df8fa806114", "4ef900060e00"),
+                               ("0x0000963c", "4eb90006d6b4", "4eb900061000"), ("0x00001b1a", "4a446b000176", "4ef900061060")):
             self.assertEqual(e[site], (old, new))
 
     def test_retry_state_stays_inside_its_extent(self):
@@ -49,8 +51,8 @@ class Activation(unittest.TestCase):
         addrs = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", asm) if a.startswith("fffc")}
         self.assertTrue(addrs and all(0xFFFC00 <= a <= 0xFFFC2F for a in addrs), sorted(hex(a) for a in addrs))
         self.assertNotRegex(asm, r"\b(trap|stop|reset|rte)\b")
-        self.assertEqual(asm.count("jmp @"), 4)                       # every exit returns to an original continuation
-        self.assertIn("addi.w #0x280,d2", asm)                        # the retry window equals the 21:9 lookahead
+        self.assertEqual(asm.count("jmp @"), 7)                       # every exit returns to an original continuation
+        self.assertIn("addi.w #0x280,d2", asm); self.assertIn("subi.w #0x100,d2", asm)   # the retry window equals the lookaheads
 
     def test_asm_lives_under_src_and_is_declared(self):
         self.assertIn('kind = "guest-asm"', (P21 / "mod.toml").read_text())

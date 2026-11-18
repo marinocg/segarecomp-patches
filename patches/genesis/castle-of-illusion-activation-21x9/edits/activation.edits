@@ -1,8 +1,11 @@
 # <revision> <type> <site> <expected> <value>: every site asserts the original value.
 usa-europe u16 0x0006d5cc 0x0180 0x0280
-usa-europe u16 0x0006d788 0x0280 0x0380
+usa-europe u16 0x0006d788 0x0280 0x0480
 usa-europe u8 0x0006d59d 0x04 0x06
 usa-europe u16 0x00001b14 0x0280 0x0380
+usa-europe u16 0x0006d5d2 0x0071 0x0100
+usa-europe bytes 0x00001b1a 4a446b000176 4ef900061060
 usa-europe bytes 0x0006d612 48e725207600 4ef900060c80
 usa-europe bytes 0x0006d676 51cefff6602a 4ef900060cc0
 usa-europe bytes 0x0006d536 4df8fa806114 4ef900060e00
+usa-europe bytes 0x0000963c 4eb90006d6b4 4eb900061000
