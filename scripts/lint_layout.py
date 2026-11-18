@@ -18,7 +18,7 @@ SCHEMAS = {1, 2}          # .segapatch schemas this repository PUBLISHES (releas
 NATIVE_ABIS = {1}
 PROJECT_ENTRIES = {"README.md", "release.json", "source", "tests"}
 MOD_ENTRIES = {"README.md", "mod.toml", "src", "scripts", "edits", "tests"}   # an unpublished schema 3 project: no release.json, so it can never reach the catalog or a release
-MOD_SOURCE_EXT = {"native-c11": {".c", ".h"}, "luau-source": {".luau"}, "rom-edit-set": {".edits"}}   # what a schema 3 project may commit as source: text only, never a binary payload
+MOD_SOURCE_EXT = {"native-c11": {".c", ".h"}, "luau-source": {".luau"}, "rom-edit-set": {".edits"}, "guest-asm": {".asm"}}   # what a schema 3 project may commit as source: text only, never a binary payload
 MOD_NATIVE_ABI = 2
 
 

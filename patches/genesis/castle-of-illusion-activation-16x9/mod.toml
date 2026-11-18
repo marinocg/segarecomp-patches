@@ -1,10 +1,10 @@
-# Castle of Illusion starring Mickey Mouse (Genesis, USA/Europe): authored widescreen scenery and Practice+ (a user-invoked power restore) as ONE schema 3 / native ABI 2 package.
+# Castle of Illusion activation 16x9 (gameplay-changing): the widescreen + Practice+ provider of patches/genesis/castle-of-illusion (src/provider.c is a byte-identical copy, checked by tests/test_castle_activation.py) plus a GAMEPLAY-CHANGING early object activation.
 # Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
 [mod]
-id = "castle-of-illusion-activation-380r"
+id = "castle-of-illusion-activation-16x9"
 author = "segarecomp-patches contributors"
 version = "0.1.0"
-name = "Castle activation experiment 200 (gameplay-changing)"
+name = "Castle of Illusion activation 16x9 (gameplay-changing)"
 license = "MIT"
 
 [target]
@@ -21,11 +21,6 @@ path = "src/provider.c"
 [[source]]
 kind = "rom-edit-set"
 path = "edits/activation.edits"
-
-[[source]]
-kind = "guest-asm"
-path = "asm/retry.asm"
-cpu = "m68k"
 
 [build]
 header_repair = "genesis-checksum"
@@ -193,39 +188,3 @@ components = ["scenery", "actors"]
 [[scene]]
 id = "a16x64-b16"
 components = ["scenery", "actors"]
-
-[[symbol]]
-name = "s_load"
-revision = "usa-europe"
-address = "0x6d612"
-provenance = "verified"
-
-[[symbol]]
-name = "s_load_cont"
-revision = "usa-europe"
-address = "0x6d618"
-provenance = "verified"
-
-[[symbol]]
-name = "s_loop"
-revision = "usa-europe"
-address = "0x6d66e"
-provenance = "verified"
-
-[[symbol]]
-name = "s_next"
-revision = "usa-europe"
-address = "0x6d6a6"
-provenance = "verified"
-
-[[symbol]]
-name = "s_ret"
-revision = "usa-europe"
-address = "0x6d53c"
-provenance = "verified"
-
-[[symbol]]
-name = "s_vert"
-revision = "usa-europe"
-address = "0x6d550"
-provenance = "verified"

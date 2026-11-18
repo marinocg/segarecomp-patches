@@ -1,0 +1,5 @@
+# <revision> <type> <site> <expected> <value>: every site asserts the original value.
+usa-europe u16 0x0006d5cc 0x0180 0x0200
+usa-europe u16 0x0006d788 0x0280 0x0300
+usa-europe u8 0x0006d59d 0x04 0x05
+usa-europe u16 0x00001b14 0x0280 0x0300
