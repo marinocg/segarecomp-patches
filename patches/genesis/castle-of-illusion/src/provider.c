@@ -163,26 +163,45 @@ static uint32_t classify(const SegaModHost *h, Plane *a, Plane *b) {
  * (sprite x 0x60 .. 0x1DF, i.e. screen -32 .. 351) and silently drops it otherwise, unless its object is flagged never-clipped. A `before` function hook on that routine observes every piece at that moment (d0 = x, a0 =
  * the object, a2 = the buffer position just after the attribute), BEFORE the decision, so the dropped pieces can be drawn as virtual sprites with the game's own art (tile, palette, flips from the attribute word,
  * read from the frame's own VRAM/CRAM by the host). Nothing is written to the guest, and a piece the game keeps is never drawn twice: only pieces outside the kept range are collected. */
-#define PIECE_MAX 48U
+#define COLLECT_MAX 128U         /* scratch for the frame's candidate pieces (in the game's order); the host takes at most GENESIS_VSPRITE_MAX of them, chosen at render when the presented view is known */
+#define VIEW_SLACK 8             /* pixels of tolerance around the presented view (the camera moves a little between the frame-end read and the frame the host produces) */
 #define PIECE_X_LO 0x60
 #define PIECE_X_HI 0x1E0
 #define OBJECT_FLAGS 0xEU        /* byte at object + 0xE: bit 5 = never clipped */
 #define OBJECT_LO 0xA000U
 #define SPRITE_BUFFER_LO 0xF506U /* the buffer position of an x slot (entry base + 6 .. ) inside the buffer at 0xF500 */
 #define SPRITE_BUFFER_HI 0xF800U
-typedef struct Piece { int16_t x, y; uint16_t attr; uint8_t size; uint8_t edge; } Piece;   /* edge: 0 = draw whole (the game dropped it), 1 = only the part right of the raster, 2 = only the part left of it (the game keeps the piece, the hardware cannot show that part) */
+typedef struct Piece { int16_t x, y; uint16_t attr; uint8_t size; uint8_t edge; uint8_t likely; } Piece;   /* edge: 0 = draw whole (the game dropped it), 1 = only the part right of the raster, 2 = only the part left of it (the game keeps the piece, the hardware cannot show that part) */
 #define RASTER_W 320
 #define RASTER_H 224
-static Piece collected[PIECE_MAX], served[PIECE_MAX];
+static Piece collected[COLLECT_MAX], served[COLLECT_MAX];
 static uint32_t collected_n, served_n;
 static GenesisVirtualSpriteSet vset;
+/* Diagnostics only (never saved, never read by the guest-affecting code): candidates that no presented view could show, visible commands lost to a full host budget, candidates lost to a full scratch. A loss is never silent: it is logged when it starts. */
+static uint32_t stat_lost_visible, stat_lost_scratch, stat_unlikely_dropped, stat_evicted, lost_logged, lost_prev;
+
+/* The part of a collected piece the provider asks the host to draw, as [x0, x1) in screen pixels: a dropped piece whole, a kept edge piece only the part the raster does not show (edge 1: right of it, edge 2: left of it). */
+static int piece_region(const Piece *p, int32_t *x0, int32_t *x1) {
+  const int32_t w = (int32_t)(((p->size >> 2) & 3U) + 1U) * 8, h = (int32_t)((p->size & 3U) + 1U) * 8;
+  *x0 = p->x;
+  *x1 = p->x + w;
+  if (p->edge == 1U && *x0 < RASTER_W) *x0 = RASTER_W;
+  if (p->edge == 2U && *x1 > 0) *x1 = 0;
+  return *x0 < *x1 && p->y + h > 0 && p->y < RASTER_H;   /* a piece with no vertical overlap with the raster rows is shown by nobody (the presented view is as tall as the raster) */
+}
+/* Whether any pixel of the piece's drawn part can lie in the presented view [lo, hi) (screen x, the picture's left edge is 0). */
+static int piece_visible(const Piece *p, int32_t lo, int32_t hi) {
+  int32_t x0, x1;
+  if (!piece_region(p, &x0, &x1)) return 0;
+  /* the tolerance does not apply to an edge that is the picture's own (no extension on that side): nothing is presented beyond it, however the camera moves */
+  return x1 > (lo == 0 ? 0 : lo - VIEW_SLACK) && x0 < (hi == RASTER_W ? RASTER_W : hi + VIEW_SLACK);
+}
 
 static int provider_hook(void *state, const SegaModHost *h, uint32_t hook_id) {
   uint32_t d0 = 0U, a0 = 0U, a2 = 0U, yw = 0U, size = 0U, attr = 0U, flags = 0U, edge = 0U;
   int32_t x;
   (void)state;
   (void)hook_id;
-  if (collected_n >= PIECE_MAX) return 0;
   if (h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 0U, 4U, &d0) != 0 || h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 8U, 4U, &a0) != 0 || h->read(SEGA_GEN_SPACE_M68K_HOOK_REGS, 10U, 4U, &a2) != 0) return 0;
   x = (int32_t)(int16_t)(uint16_t)(d0 & 0xFFFFU);
   a2 &= 0xFFFFU;
@@ -198,21 +217,43 @@ static int provider_hook(void *state, const SegaModHost *h, uint32_t hook_id) {
     if (sx >= 0 && sx + w <= RASTER_W) return 0;
     edge = sx < 0 ? 2U : 1U;
   }
-  collected[collected_n].x = (int16_t)(x - 128);
-  collected[collected_n].y = (int16_t)((int32_t)(int16_t)(uint16_t)yw - 128);
-  collected[collected_n].attr = (uint16_t)attr;
-  collected[collected_n].size = (uint8_t)size;
-  collected[collected_n].edge = (uint8_t)edge;
-  ++collected_n;
+  {   /* the coarse filter: a piece no placement of any package could show (beyond the widest planned view, or off the raster rows) never takes a place; the exact choice is made at render, when the host's plan is known */
+    Piece c;
+    c.x = (int16_t)(x - 128);
+    c.y = (int16_t)((int32_t)(int16_t)(uint16_t)yw - 128);
+    c.attr = (uint16_t)attr;
+    c.size = (uint8_t)size;
+    c.edge = (uint8_t)edge;
+    if (!piece_visible(&c, -LEGACY_LEFT, RASTER_W + 2 * LEGACY_LEFT)) return 0;
+    {   /* "likely": visible under the best plan known now (the host's last margin and this frame's camera). Only a full scratch makes it matter: a likely piece then takes the place of the newest unlikely one (which may still be needed in the frame the plan changes). */
+      uint32_t cam = 0U, m = margin_learnt > margin_used ? margin_learnt : margin_used;
+      const int32_t left = (rd(h, REC_A + 4U, 2U, &cam) == 0 && (int32_t)cam < (int32_t)m) ? (int32_t)cam : (int32_t)m;
+      c.likely = (uint8_t)(piece_visible(&c, -left, RASTER_W + 2 * (int32_t)m - left) ? 1U : 0U);
+    }
+    if (collected_n >= COLLECT_MAX) {
+      uint32_t k = COLLECT_MAX;
+      if (c.likely != 0U) while (k != 0U && collected[k - 1U].likely != 0U) --k;
+      else k = 0U;
+      if (k == 0U) { if (c.likely != 0U) ++stat_lost_scratch; else ++stat_unlikely_dropped; return 0; }
+      for (--k; k + 1U < collected_n; ++k) collected[k] = collected[k + 1U];   /* drop the newest unlikely candidate; the order of the others is kept */
+      --collected_n;
+      ++stat_evicted;
+    }
+    collected[collected_n++] = c;
+  }
   return 0;
 }
 
-static void submit_actors(const SegaGenesisRenderApi *render) {
-  uint32_t i, n = 0U;
-  for (i = 0U; i < served_n && n < GENESIS_VSPRITE_MAX; ++i) {
+/* The exact choice (render phase): the pieces whose drawn part intersects the view [lo, hi) the host presents this frame, in the game's order (so the priority bit and the relative order of the pieces are the game's), at most GENESIS_VSPRITE_MAX of them.
+ * A visible piece the full host budget cannot take is counted and logged, never dropped silently. */
+static void submit_actors(const SegaModHost *h, const SegaGenesisRenderApi *render, int32_t lo, int32_t hi, int plan_known) {
+  uint32_t i, n = 0U, lost = 0U;
+  for (i = 0U; i < served_n; ++i) {
     GenesisVirtualSprite *c = &vset.sprites[n];
     const Piece *p = &served[i];
     if (p->x < -900 || p->x > 900 || p->y < -900 || p->y > 900) continue;
+    if (!piece_visible(p, lo, hi)) continue;
+    if (n >= GENESIS_VSPRITE_MAX) { ++lost; continue; }
     { uint8_t *z = (uint8_t *)c; uint32_t b; for (b = 0U; b < (uint32_t)sizeof *c; ++b) z[b] = 0U; }
     c->provenance = (uint8_t)GENESIS_VSPRITE_GAME_STATE_VERIFIED;
     c->layer = (uint8_t)((p->attr & 0x8000U) != 0U ? GENESIS_VSPRITE_LAYER_ABOVE_ALL : GENESIS_VSPRITE_LAYER_BETWEEN);   /* the piece's own priority bit (bit 15 of the attribute word): a priority-0 piece sits behind high-priority planes, as the hardware draws it */
@@ -227,6 +268,16 @@ static void submit_actors(const SegaGenesisRenderApi *render) {
     c->y = p->y;
     ++n;
   }
+  stat_lost_visible += lost;
+  if (!plan_known) stat_lost_scratch += stat_unlikely_dropped;   /* while the plan is changing, a candidate the scratch could not hold may have been visible: not silent */
+  stat_unlikely_dropped = 0U;
+  if ((lost != 0U || stat_lost_scratch != 0U) && lost_prev == 0U && lost_logged < 8U) {
+    static const char msg[] = "castle: visible virtual sprites exceeded the host budget or the candidate scratch; the later ones of the frame are not drawn";
+    if (h->log != NULL) h->log(msg, (uint32_t)(sizeof msg - 1U));
+    ++lost_logged;
+  }
+  lost_prev = lost + stat_lost_scratch;
+  stat_lost_scratch = 0U;
   if (n == 0U) return;
   vset.space = (uint8_t)GENESIS_VSPRITE_SPACE_PRESENTATION;
   vset.budget_mode = (uint8_t)GENESIS_VSPRITE_BUDGET_EXTENDED;
@@ -304,14 +355,15 @@ static void draw_number(const SegaGenesisRenderApi *render, int32_t x, int32_t y
 }
 
 static void provider_render(const SegaModHost *h) {
-  uint32_t serve;
+  uint32_t serve, m = 0U;
+  int32_t view_lo, view_hi;
   const SegaGenesisFeatures *features = (const SegaGenesisFeatures *)h->platform_features;
   const SegaGenesisRenderApi *render;
   if (features == NULL || features->size < sizeof(SegaGenesisFeatures) || features->render == NULL || scene_id == 0U) return;
   render = features->render;
   { const char *n = scenes[scene_id - 1U].name; uint32_t len = 0U; while (n[len] != 0) ++len; (void)render->scene(n, len); }
   serve = ready;
-  { uint32_t m = 0U;   /* learn the host's plan for the next frame-end; declare the placement the windows below were built for, only while that plan is still the host's */
+  {   /* learn the host's plan for the next frame-end; declare the placement the windows below were built for, only while that plan is still the host's */
     if (features->render->view_margin != NULL && features->render->view_left != NULL && features->render->view_margin(&m) == 0) {
       margin_learnt = m;
       if (view_declared != 0U) {
@@ -327,7 +379,12 @@ static void provider_render(const SegaModHost *h) {
       if (plane_b_authored != 0U) (void)render->scenery_window(1U, band_x0, plane_b.band_y0, WCOLS, BROWS, band_b);
     }
   }
-  submit_actors(render);
+  /* The view the host presents this frame, for the exact choice of actor pieces. With the placement known (the windows above were built for this very margin) it is exactly [-left, 320 + total - left); when it is not (the plan changed this frame, or no placement was
+   * declared) the widest placement of the plan; with no extension at all (Original, 4:3) just the picture; a host without the plan queries is assumed to present the widest view. */
+  if (render->view_margin == NULL || render->view_left == NULL) { view_lo = -LEGACY_LEFT; view_hi = RASTER_W + LEGACY_LEFT; }
+  else if (view_declared != 0U && m == margin_used) { view_lo = -view_left_px; view_hi = RASTER_W + 2 * (int32_t)margin_used - view_left_px; }
+  else { const int32_t mw = (int32_t)(m > margin_used ? m : margin_used); view_lo = -mw; view_hi = RASTER_W + 2 * mw; }
+  submit_actors(h, render, view_lo, view_hi, render->view_margin != NULL && render->view_left != NULL && view_declared != 0U && m == margin_used);
   /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. It is always a positioned layer anchored to the top-right corner of the whole
    * presented view, never the fixed overlay: the fixed overlay sits at the left edge of the view, which is the picture's own power meter when the picture is placed at the left (a level's first columns, ADR 0315),
    * and the host counts only the fixed overlay as the game's relocated HUD, which this package does not provide. With no extension (Original, 4:3) the view is the picture and the corner is the picture's. */
@@ -348,7 +405,7 @@ static int provider_init(void *state, const SegaModHost *host) {
 
 static void provider_phase(void *state, const SegaModHost *host) {
   (void)state;
-  if (host->phase == SEGA_MOD_PHASE_RESET) { collected_n = served_n = 0U; ready = band_ready = scene_id = view_declared = margin_learnt = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
+  if (host->phase == SEGA_MOD_PHASE_RESET) { collected_n = served_n = 0U; stat_lost_visible = stat_lost_scratch = stat_unlikely_dropped = stat_evicted = lost_logged = lost_prev = 0U; ready = band_ready = scene_id = view_declared = margin_learnt = 0U; st.chord_held = st.restores = st.flash = st.chord_now = 0U; }
   else if (host->phase == SEGA_MOD_PHASE_INPUT) intercept(host);
   else if (host->phase == SEGA_MOD_PHASE_POST_INPUT) practice(host);
   else if (host->phase == SEGA_MOD_PHASE_FRAME_END) provider_frame_end(host);

@@ -22,7 +22,7 @@ path = "src/provider.c"
 native = 2
 
 [capabilities]
-required = ["frame.work_ram", "hook.function", "input.intercept", "input.read", "memory.read.m68k.work_ram", "memory.write.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+required = ["frame.work_ram", "hook.function", "host.log", "input.intercept", "input.read", "memory.read.m68k.work_ram", "memory.write.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
 
 [state]
 schema = 1

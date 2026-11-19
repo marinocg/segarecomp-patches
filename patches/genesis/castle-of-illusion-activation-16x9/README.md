@@ -11,7 +11,7 @@ An opt-in variant, separate from the presentation-only package [`castle-of-illus
 Objects created by the column loader already inside the visible 16:9 picture: right scroll 18-19% -> 13%; left scroll unchanged (37-47%); level-start initial fill 63-66% -> 46-48%. Allocated objects that never get a visible pixel: 21% -> 46% (the 0x80 px of extra window mostly lie beyond a 16:9 view).
 
 ## Identity and validation revisions
-Package identity (deterministic): `60c57a1b53d2778b858556fee524651721747eb1787bfb0b0e32dd73a8c3d238`; effective image SHA-256 `1a16046a81bcc31cc70e39b60459dd3372bcc9feb49e46b221df40f80fb292ba` over `Castle of Illusion (USA, Europe)` (`2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f`); validated against product main `8d419ab`; this package's sources did not change in this revision.
+Package identity (deterministic): `0799bc25b2201579b7541de495b4da9133bafbc110dfe71b0fb834c11b02f122`; effective image SHA-256 `1a16046a81bcc31cc70e39b60459dd3372bcc9feb49e46b221df40f80fb292ba` over `Castle of Illusion (USA, Europe)` (`2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f`); validated against product main `8d419ab`; this package's sources did not change in this revision.
 
 ## Stage inventory
 All 29 stages the in-game stage select accepts were run with the passive script (see the 21:9 README for the list and the scrolling/arena split); an active script (jumps, throws, left excursions) ran in 0-1, 0-2, 1-3, 4-0, 4-2. No guest stop, no missing original object. Pixel-level continuity was **not** measured for this package.

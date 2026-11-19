@@ -34,7 +34,7 @@ static int mwrite(uint32_t space, uint32_t off, uint32_t w, uint32_t v) {
   staged[nstaged].off = off; staged[nstaged].w = w; staged[nstaged].v = v; ++nstaged; return 0; }
 static int minput(uint32_t port, uint32_t *b) { if (port != 1U) return 1; *b = pad1; return 0; }
 static int mset(uint32_t port, uint32_t b) { printf("setpad %u %x\n", port, b); return 0; }
-static void mlog(const char *s, uint32_t n) { (void)s; (void)n; }
+static void mlog(const char *s, uint32_t n) { printf("log %.*s\n", (int)n, s); }
 static int a_layer(uint32_t a, uint32_t b, uint32_t c, int32_t d, int32_t e, uint32_t f, uint32_t g, uint32_t h) { printf("layer %u %u %u %d %d %u %u %u\n", a, b, c, d, e, f, g, h); return 0; }
 static int a_target(uint32_t i) { printf("target %u\n", i); return 0; }
 static uint32_t margin;
@@ -312,10 +312,11 @@ class Provider(unittest.TestCase):
         base = a2 - 6
         return ["ram %x 2 %x" % (base, y), "ram %x 1 %x" % (base + 2, size), "ram %x 2 %x" % (base + 4, attr), "ram %x 1 %x" % (a0 + 0xE, flags), "reg 0 %x" % d0, "reg 8 %x" % (0xFF0000 | a0), "reg 10 %x" % (0xFF0000 | a2), "hook"]
 
-    def actors(self, hooks, scene_ok=True, frames=1):
-        ram = Ram(cam=100)
+    def actors(self, hooks, scene_ok=True, frames=1, margin=101, cam=100):
+        """One frame with the host's plan `margin` (px per side; 101 = the 21:9 package's, 0 = no extension) and the given camera. The margin is learnt at this frame's render, so the placement is the widest of the plan (see actors_placed for the exact one)."""
+        ram = Ram(cam=cam)
         if not scene_ok: ram.w(REC_A + 10, 2, 0)
-        lines = ["init"] + self.load(ram) + ["pad 0", "frame 1"]
+        lines = ["init"] + self.load(ram) + ["pad 0", "margin %d" % margin, "frame 1"]
         for h in hooks: lines += h
         lines += ["phase input", "phase post-input", "phase frame-end", "phase render"]
         return self.run_script(lines)
@@ -446,10 +447,10 @@ class Provider(unittest.TestCase):
 
     def test_the_games_own_clip_range_is_respected_exactly(self):
         # a 4 x 4 cell piece (32 px wide): dropped by the game outside 0x60..0x1DF (drawn whole), kept inside; a kept piece that lies fully inside the 320 px raster is the hardware's alone
-        for d0, drawn in ((0x5F, True), (0x80, False), (0x100, False), (0x1DF, True), (0x1E0, True), (0xFF00, True), (0x400, True)):
+        for d0, drawn in ((0x5F, True), (0x80, False), (0x100, False), (0x1DF, True), (0x1E0, True), (0xFFF4, True), (0xFF00, False), (0x400, False)):   # the last two are dropped by the game but lie beyond the widest presented view (21:9 plan): nothing shows them
             out = self.actors([self.piece(d0)])
             self.assertEqual(len(self.sprites(out)), 1 if drawn else 0, hex(d0))
-        self.assertEqual(self.sprites(self.actors([self.piece(0xFF00)]))[0][3], str(-256 - 128), "a negative x keeps its sign")
+        self.assertEqual(self.sprites(self.actors([self.piece(0xFFF4)]))[0][3], str(-12 - 128), "a negative x keeps its sign")
 
     def test_a_kept_piece_beside_the_raster_is_drawn_only_outside_it(self):
         # the sprite table can address 32 columns each side of the 320 px raster; the game keeps those pieces but nothing displays them
@@ -482,20 +483,136 @@ class Provider(unittest.TestCase):
         self.assertEqual(self.sprites(out), [], "no verified level: no virtual sprite")
         self.assertNotIn("FAULT", out)
 
+
+    # ---- Task C: visible pieces are never starved by invisible ones; the view the host presents decides ----
+    # A piece is submitted only if the game DROPPED it (screen x < -32 or >= 352, d0 outside 0x60..0x1DF) or KEPT it beside the raster (its part beside the raster). Screen x = d0 - 128; every test piece is 32 x 32 px unless said.
+    def at(self, sx, **kw): return self.piece((sx + 128) & 0xFFFF, **kw)
+
+    def actors_placed(self, hooks, margin=101, cam=100, margin2=None):
+        """Two frames: frame 1 learns the host's plan, frame 2 (with `hooks`, plan `margin2` or the same) builds the exact placement view_left = min(camera, margin). Returns frame 2's output only."""
+        ram = Ram(cam=cam)
+        lines = ["init"] + self.load(ram) + ["pad 0", "margin %d" % margin, "frame 1", "phase input", "phase post-input", "phase frame-end", "phase render", "echo ---\n"]
+        if margin2 is not None: lines.append("margin %d" % margin2)
+        lines += ["frame 2"]
+        for h in hooks: lines += h
+        lines += ["phase input", "phase post-input", "phase frame-end", "phase render"]
+        out = self.run_script(lines)
+        return out[out.index("---") + 1:]
+
+    def xs(self, out): return [int(v[3]) for v in self.sprites(out)]
+    def spread(self, base, n, per=60, **kw): return [self.at(base + k % per, a2=0xF506 + 8 * (k % 32), a0=0xD000 + 0x40 * (k % 8), **kw) for k in range(n)]
+
+    def test_visible_pieces_after_many_invisible_ones_are_all_submitted(self):
+        # 21:9 plan (101 px per side), camera 100: the view is [-100, 422). 120 pieces at x 470 (beyond the view but inside the widest 32:9 bound, so they are collected) come first, then 20 visible ones
+        far = self.spread(470, 120, per=8)
+        vis = [self.at(352 + k, a2=0xF506 + 8 * (k % 32), a0=0xD000 + 0x40 * (k % 8)) for k in range(20)]
+        out = self.actors_placed(far + vis)
+        self.assertEqual(self.xs(out), [352 + k for k in range(20)], "all 20 visible pieces, in the game's order, none of the invisible ones")
+        self.assertFalse(any(l.startswith("log ") for l in out), "nothing visible was lost")
+        # the same on the first frame of a session (the plan is only learnt at render, the exact placement is unknown): the widest placement of the plan is used and everything inside it is kept
+        self.assertEqual([x for x in self.xs(self.actors(far[:40] + vis)) if x < 400], [352 + k for k in range(20)])
+
+    def test_invisible_pieces_beyond_the_widest_view_do_not_even_take_a_scratch_place(self):
+        beyond = self.spread(900, 400)
+        vis = [self.at(360 + k, a2=0xF506 + 8 * (k % 32)) for k in range(5)]
+        out = self.actors_placed(beyond + vis)
+        self.assertEqual(self.xs(out), [360 + k for k in range(5)])
+        self.assertFalse(any(l.startswith("log ") for l in out))
+
+    def test_both_directions_and_the_exact_edges_of_the_placed_view(self):
+        # camera 100 < margin 101: the picture sits 100 px from the view's left edge; the view is [-100, 422) in screen x (320 + 202 - 100); a piece is kept while a pixel of it is within 8 px of the view
+        for sx, shown in ((-141, False), (-140, False), (-139, True), (-120, True), (352, True), (429, True), (430, False), (600, False)):
+            out = self.actors_placed([self.at(sx)])
+            self.assertEqual(len(self.sprites(out)), 1 if shown else 0, sx)
+        # the camera at the level's first column (left = 0): nothing left of the picture is presented, so nothing there is submitted (the host would refuse it as "virtual sprites not presented"); the right side holds the whole total
+        out = self.actors_placed([self.at(-90), self.at(-40), self.piece(0x70)], cam=0)    # two dropped pieces left of the picture and one KEPT piece straddling the left edge (its part beside the raster is left of 0)
+        self.assertEqual(self.xs(out), [], "left placement 0: the margin left of the picture has no width")
+        self.assertEqual(self.xs(self.actors_placed([self.at(421), self.at(521)], cam=0)), [421, 521], "right of the picture the view reaches 320 + 202 - 0 = 522")
+        # far from the level start the view is centred: left = margin = 101
+        out = self.actors_placed([self.at(-100), self.at(-150), self.piece(0x80 + 321), self.at(430)], cam=2000)
+        self.assertEqual(self.xs(out), [-100, 321], "view [-101, 421): -150 and 430 are beyond it")
+
+    def test_partial_intersection_keeps_the_whole_piece_for_the_host_to_clip(self):
+        self.assertEqual(self.xs(self.actors_placed([self.at(400)])), [400], "32 px piece at 400, 22 px of it inside the view")
+        self.assertEqual(self.xs(self.actors_placed([self.at(-120)])), [-120], "12 px of it inside the view's left part")
+
+    def test_a_kept_edge_piece_counts_by_its_part_beside_the_raster(self):
+        # the game keeps a piece at screen 328 (wholly beside the raster) and one straddling the right edge (296..328: its part beside the raster is [320,328)): both are in the 21:9 view
+        self.assertEqual(len(self.sprites(self.actors_placed([self.piece(0x1C0 + 8)]))), 1)
+        self.assertEqual(len(self.sprites(self.actors_placed([self.at(296)]))), 1)
+        # a kept piece inside the raster is the hardware's alone
+        self.assertEqual(len(self.sprites(self.actors_placed([self.at(100)]))), 0)
+        # no extension planned: the part beside the raster is shown by nobody
+        self.assertEqual(self.sprites(self.actors_placed([self.piece(0x1C0 + 8), self.at(296), self.at(374), self.at(-60)], margin=0)), [], "no extension planned: nothing outside the picture is presented")
+
+    def test_the_vertical_rows_are_the_rasters(self):
+        for y, shown in ((96, False), (97, True), (95, False), (128 + 223, True), (128 + 224, False), (128 + 230, False)):
+            out = self.actors_placed([self.at(374, y=y, size=0x0F)])   # 4 cells = 32 px tall; screen y = y - 128: the rows -31..223 intersect the 224 rows
+            self.assertEqual(len(self.sprites(out)), 1 if shown else 0, y)
+
+    def test_geometry_changes_never_drop_a_piece_the_new_view_shows(self):
+        # the plan grows 16:9 (39) -> 21:9 (101) at frame 2: the placement was built for the old margin, so the widest placement of the new plan is used
+        self.assertEqual(self.xs(self.actors_placed([self.at(400)], margin=39, margin2=101)), [400], "the grown plan shows it at once")
+        # the plan shrinks 21:9 -> 16:9: that frame is still the old geometry; the next frame (exact 39 placement: [-39, 359)) does not show it
+        self.assertEqual(self.xs(self.actors_placed([self.at(400)], margin=101, margin2=39)), [400])
+        self.assertEqual(self.xs(self.actors_placed([self.at(400)], margin=39)), [], "stable 16:9 plan: x 400 is beyond [-39, 359) + 8")
+        self.assertEqual(self.xs(self.actors_placed([self.at(340)], margin=39)), [340])
+        # no extension at all (Original, 4:3): only the picture
+        self.assertEqual(self.xs(self.actors_placed([self.at(340), self.at(-40)], margin=0)), [])
+        # a transition frame whose candidates exceed the scratch reports the loss (a dropped candidate may have been visible there)
+        out = self.actors_placed(self.spread(470, 160, per=8), margin=39, margin2=101)
+        self.assertTrue(any(l.startswith("log castle:") for l in out))
+
+    def test_a_stale_scene_never_leaves_pieces_behind(self):
+        self.assertEqual(self.sprites(self.actors([self.piece(0x1F6)], scene_ok=False)), [])
+
+    def test_maximum_density_keeps_the_games_first_64_visible_pieces_and_says_so(self):
+        # 200 visible pieces at x 352..429: the scratch holds 128 in order, the host takes 64: the first 64 of the game's order; one log line says visible commands were not drawn
+        dense = [self.at(352 + k % 78, a2=0xF506 + 8 * (k % 32), a0=0xD000 + 0x40 * (k % 8)) for k in range(200)]
+        out = self.actors_placed(dense)
+        self.assertEqual(self.xs(out), [352 + k % 78 for k in range(64)])
+        self.assertEqual(len([l for l in out if l.startswith("log castle: visible")]), 1, "one line when the loss starts, not one per frame")
+        exactly = self.actors_placed(dense[:64])
+        self.assertEqual(len(self.sprites(exactly)), 64); self.assertFalse(any(l.startswith("log ") for l in exactly), "exactly the host's limit is not a loss")
+
+    def test_a_full_scratch_prefers_pieces_the_current_plan_shows(self):
+        # 140 pieces in the 32:9 band the 21:9 plan does not show, then 30 it does: the later, visible ones take the unlikely ones' places
+        out = self.actors_placed(self.spread(470, 140, per=8) + [self.at(352 + k, a2=0xF506 + 8 * (k % 32), a0=0xD000 + 0x40 * (k % 8)) for k in range(30)])
+        self.assertEqual(self.xs(out), [352 + k for k in range(30)])
+        self.assertFalse(any(l.startswith("log ") for l in out))
+        # 140 visible pieces with no unlikely one to evict: 64 are drawn, the rest is a reported loss
+        out = self.actors_placed(self.spread(352, 140, per=60))
+        self.assertEqual(len(self.sprites(out)), 64)
+        self.assertTrue(any(l.startswith("log castle:") for l in out))
+
+    def test_priority_bits_and_game_order_survive_the_selection(self):
+        hooks = [self.at(360, attr=0x0090), self.at(700, attr=0x8091), self.at(372, attr=0x8092), self.at(-60, attr=0x0093)]
+        out = self.sprites(self.actors_placed(hooks))
+        self.assertEqual([(int(v[3]), v[2]) for v in out], [(360, "1"), (372, "2"), (-60, "1")], "x 700 is not presented; the others keep the game's order and their own priority layers")
+
+    def test_the_provider_logs_only_with_the_declared_capability_in_every_package(self):
+        # The mock host does not gate capabilities; the real host DISABLES a mod that calls host.log without `host.log`. Every Castle package ships the same provider, so every one must declare it.
+        uses_log = "h->log(" in (PROJECT / "src/provider.c").read_text()
+        self.assertTrue(uses_log, "the shared provider reports lost visible commands through host.log")
+        for name in ("castle-of-illusion", "castle-of-illusion-activation-16x9", "castle-of-illusion-activation-21x9"):
+            manifest = tomllib.loads((ROOT / "patches/genesis" / name / "mod.toml").read_text())
+            self.assertIn("host.log", manifest["capabilities"]["required"], name)
+
     def test_pieces_live_one_frame_and_are_bounded(self):
-        hooks = [self.piece(0x1F6 + k, a2=0xF506 + 8 * (k % 32)) for k in range(60)]
+        hooks = [self.piece(0x1F6 + k % 40, a2=0xF506 + 8 * (k % 32)) for k in range(70)]
         out = self.actors(hooks)
-        self.assertEqual(len(self.sprites(out)), 48, "at most 48 pieces per frame")
+        self.assertEqual(len(self.sprites(out)), 64, "at most the host's 64 commands per frame (GENESIS_VSPRITE_MAX), the first 64 of the game's order")
+        self.assertTrue(any(l.startswith("log castle: visible virtual sprites exceeded") for l in out), "a visible piece the host's budget cannot take is reported, never lost silently")
         ram = Ram(cam=100)
-        lines = ["init"] + self.load(ram) + ["pad 0", "frame 1"] + self.piece(0x1F6) + ["phase frame-end", "phase render", "frame 2", "phase frame-end", "phase render"]
+        lines = ["init"] + self.load(ram) + ["pad 0", "margin 101", "frame 1"] + self.piece(0x1F6) + ["phase frame-end", "phase render", "frame 2", "phase frame-end", "phase render"]
         out = self.run_script(lines)
         self.assertEqual(len(self.sprites(out)), 1, "a piece collected in one frame is served once, never carried to the next")
 
     def test_a_restored_state_starts_with_no_pieces(self):
         ram = Ram(cam=100)
-        first = self.run_script(["init"] + self.load(ram) + ["pad 0", "frame 1"] + self.piece(0x1F6) + ["phase frame-end", "save"])
+        first = self.run_script(["init"] + self.load(ram) + ["pad 0", "margin 101", "frame 1"] + self.piece(0x1F6) + ["phase frame-end", "save"])
         blob = next(l for l in first if l.startswith("state")).split()[1:]
-        out = self.run_script(["init"] + self.load(ram) + ["pad 0", "frame 2", "load " + " ".join(blob), "phase render"])
+        out = self.run_script(["init"] + self.load(ram) + ["pad 0", "margin 101", "frame 2", "load " + " ".join(blob), "phase render"])
         self.assertEqual(self.sprites(out), [], "nothing is drawn from before the restore")
 
     def test_far_coordinates_are_not_submitted(self):

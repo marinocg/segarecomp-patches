@@ -92,6 +92,18 @@ class RetryCode(unittest.TestCase):
                 for k, v in REGS.items():
                     if k != "a6": self.assertEqual(o[k], v, k)
 
+    def test_the_hook_does_not_preserve_x_across_extra_loader_calls_so_x_must_be_dead_at_the_continuation(self):
+        # The synthetic loader DELIBERATELY changes X on every call (EORI #$10,CCR, then its counter ADDQ rewrites X from the carry), exactly as the real loader's ADD.W/ADD.W D3,D3 do. Injected code cannot read X (the product assembler
+        # has no ADDX/ROXL and forbids SR access), so the hook neither saves nor restores it: after a retry X is whatever the last extra loader call left. This test PINS that fact (and thereby the assumption): if X were live at the original
+        # continuation (streamer tail 0x6d53c, whose first instruction MOVE.W 4(A6),D0 rewrites N/Z/V/C but not X, returning into the per-frame update at 0x9808) the retry would change guest behaviour. README: X was forced to 0 and to 1 right before
+        # that continuation in the real image over 3,002 scrolling frames and the complete machine digest of every frame was identical, so X is dead there on every executed path.
+        for sr in (SR_USER | X, SR_USER):
+            o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24)])), sr=sr)
+            self.assertEqual(paths(o).get("calls"), 1)
+            self.assertEqual(o["ccr"] & X, 0, "after the loader's last ADDQ X is the carry of that addition (0): the entry X is NOT preserved")
+        o = self.run_hook("frame", ram=seed(state()), sr=SR_USER | X)
+        self.assertEqual(o["ccr"] & X, X, "with nothing queued the hook runs no extra loader call and X is exactly the original vertical loader's")
+
     def test_retry_success_rebuilds_the_loader_arguments_and_clears_the_slot(self):
         o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24), (11, 3, 5)])))
         self.assertEqual(paths(o), {"calls": 2, "vert": 1, "tail": 1})      # both slots are served in one invocation (no starvation); the original loader ran twice

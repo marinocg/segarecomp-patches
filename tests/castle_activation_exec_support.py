@@ -34,6 +34,7 @@ def _stubs(entry, fail_hook, hooks):
     img[0x3000:0x3006] = jmp(entry)                                  # the patched loader entry: jumps into the entry hook
     body = bytes.fromhex("241f" "2a1f" "2e1f" "245f")                 # the original epilogue's restore of d2, d5, d7, a2 (lowest address first)
     body += struct.pack(">HI", 0x33C2, LOG + 4) + struct.pack(">HI", 0x33C5, LOG + 6) + struct.pack(">HI", 0x23CA, LOG + 8) + struct.pack(">HI", 0x23C9, LOG + 12)
+    body += bytes.fromhex("0a3c0010")                                 # eori #$10,ccr: the synthetic loader DELIBERATELY changes X on every call (the real one's add.w/add.w d3,d3 do)
     body += struct.pack(">HI", 0x52B9, LOG)                           # calls += 1
     body += struct.pack(">HI", 0x4AB9, LOG + 0x10) + bytes.fromhex("6706")   # tst.l knob; beq ok
     body += bytes.fromhex("7C00") + jmp(FAIL_SITE)                    # allocation failure: d6 = 0 (the scan is exhausted), jump to the patched site
