@@ -24,7 +24,7 @@ typedef struct { uint32_t off, len; int write; } Range;
 static Range ranges[32]; static int nranges;
 static struct { uint32_t off, w, v; } staged[64]; static int nstaged, fault;
 static SegaModHost host; static SegaGenesisFeatures features; static SegaGenesisRenderApi api;
-static uint32_t pad1, regs[32];
+static uint32_t pad1, pad2, regs[32];
 static int in_range(uint32_t off, uint32_t w, int write) { int i; for (i = 0; i < nranges; ++i) if (off >= ranges[i].off && off + w <= ranges[i].off + ranges[i].len && (!write || ranges[i].write)) return 1; return 0; }
 static int mread(uint32_t space, uint32_t off, uint32_t w, uint32_t *v) {
   uint32_t i, x = 0;
@@ -34,7 +34,7 @@ static int mread(uint32_t space, uint32_t off, uint32_t w, uint32_t *v) {
 static int mwrite(uint32_t space, uint32_t off, uint32_t w, uint32_t v) {
   if (space != SEGA_GEN_SPACE_M68K_WORK_RAM || !in_range(off, w, 1) || nstaged >= 64) { fault = 1; return SEGA_MOD_E_RANGE; }
   staged[nstaged].off = off; staged[nstaged].w = w; staged[nstaged].v = v; ++nstaged; return 0; }
-static int minput(uint32_t port, uint32_t *b) { if (port != 1U) return 1; *b = pad1; return 0; }
+static int minput(uint32_t port, uint32_t *b) { if (port != 1U && port != 2U) return 1; *b = port == 1U ? pad1 : pad2; return 0; }
 static int mset(uint32_t port, uint32_t b) { printf("setpad %u %x\n", port, b); return 0; }
 static void mlog(const char *s, uint32_t n) { printf("log %.*s\n", (int)n, s); }
 static int a_layer(uint32_t a, uint32_t b, uint32_t c, int32_t d, int32_t e, uint32_t f, uint32_t g, uint32_t h) { printf("layer %u %u %u %d %d %u %u %u\n", a, b, c, d, e, f, g, h); return 0; }
@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
     unsigned a, b, c;
     if (sscanf(line, "range %x %u %u", &a, &b, &c) == 3) { ranges[nranges].off = a; ranges[nranges].len = b; ranges[nranges].write = (int)c; ++nranges; }
     else if (sscanf(line, "ram %x %u %x", &a, &b, &c) == 3) { unsigned k; for (k = 0; k < b; ++k) ram[a + k] = (uint8_t)(c >> (8U * (b - 1U - k))); }
+    else if (sscanf(line, "pad2 %x", &a) == 1) pad2 = a;
     else if (sscanf(line, "pad %x", &a) == 1) pad1 = a;
     else if (sscanf(line, "margin %u", &a) == 1) margin = a;
     else if (sscanf(line, "frame %u", &a) == 1) frame = a;

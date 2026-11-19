@@ -33,12 +33,21 @@ class Recorder(unittest.TestCase):
     def run_script(self, lines):
         r = subprocess.run([str(self.tmp / "t")], input="\n".join(lines) + "\n", capture_output=True, text=True, timeout=60); self.assertEqual(r.returncode, 0, r.stderr); return r.stdout.splitlines()
 
-    def test_it_logs_only_changes_with_the_guest_frame_number_and_touches_nothing(self):
+    def test_it_logs_start_changes_ticks_and_the_explicit_end_and_touches_nothing(self):
         lines = ["init"]
-        for frame, pad in ((7, 0), (8, 0), (9, 0x08), (10, 0x08), (11, 0x48), (12, 0x00), (100000, 0x80)): lines += ["pad %x" % pad, "frame %d" % frame, "phase input", "phase post-input", "phase frame-end"]
-        out = self.run_script(lines)
-        self.assertEqual([l for l in out if l.startswith("log ")], ["log REC 7 00 00", "log REC 9 08 00", "log REC 11 48 00", "log REC 12 00 00", "log REC 100000 80 00"])
-        self.assertEqual([l for l in out if l.startswith(("write", "setpad", "FAULT"))], [], "it reads the pad and logs: no write, no pad override, no fault")
+        for frame, pad in ((7, 0), (8, 0), (9, 0x08), (10, 0x08), (11, 0x48), (12, 0x00), (400, 0x80)): lines += ["pad %x" % pad, "frame %d" % frame, "phase input", "phase post-input", "phase frame-end"]
+        out = [l for l in self.run_script(lines) if l.startswith("log ")]
+        self.assertEqual(out[:5], ["log START 7", "log REC 7 00 00", "log REC 9 08 00", "log REC 11 48 00", "log REC 12 00 00"])
+        self.assertIn("log TICK 400", out); self.assertIn("log REC 400 80 00", out)
+        self.assertEqual(self.writes(lines), [], "it reads the pad and logs: no write, no pad override, no fault")
+
+    def writes(self, lines): return [l for l in self.run_script(lines) if l.startswith(("write", "setpad", "FAULT"))]
+
+    def test_player_two_start_ends_the_recording_and_nothing_is_logged_after_it(self):
+        lines = ["init", "pad 0", "frame 10", "phase input"]
+        lines += ["pad2 80", "frame 50", "phase input", "pad2 0", "frame 60", "phase input", "pad 08", "frame 70", "phase input"]
+        out = [l for l in self.run_script(lines) if l.startswith("log ")]
+        self.assertEqual(out, ["log START 10", "log REC 10 00 00", "log END 50"])
 
     def test_manifest_is_read_and_log_only(self):
         m = tomllib.loads((PROJECT / "mod.toml").read_text())
@@ -46,23 +55,63 @@ class Recorder(unittest.TestCase):
 
 
 class Tools(unittest.TestCase):
-    LOG = ('MOD_LOG {"line":"REC 0 00 00"}\nnoise\nMOD_LOG {"line":"REC 422 80 00"}\nMOD_LOG {"line":"REC 426 00 00"}\nMOD_LOG {"line":"REC 2502 28 00"}\nMOD_LOG {"line":"REC 2504 08 40"}\n')
+    def log(self, *rows): return "".join('MOD_LOG {"line":"%s"}\n' % r for r in rows)
+    GOOD = ("START 0", "REC 0 00 00", "REC 422 80 00", "REC 426 00 00", "REC 2502 28 00", "TICK 300", "REC 2504 08 c0", "TICK 2800", "END 2900")
+    GOOD = ("START 0", "REC 0 00 00", "REC 100 80 00", "REC 104 00 00", "TICK 300", "REC 500 28 00", "TICK 600", "REC 700 08 c0", "TICK 900", "END 1000")
 
-    def test_convert_to_viewer_and_headless_scripts(self):
-        e = R.parse(self.LOG); v, h = R.convert(e)
-        self.assertEqual(v, ["0 -", "422 S", "426 -", "2502 RC", "2504 R"])
-        self.assertEqual(h, ["0:1:0x00", "0:2:0x00", "422:1:0x80", "426:1:0x00", "2502:1:0x28", "2504:1:0x08", "2504:2:0x40"])
+    def conv(self, *rows): return R.convert(R.parse(self.log(*rows)))
 
-    def test_a_rewound_session_is_refused(self):
-        with self.assertRaises(SystemExit): R.convert(R.parse('"line":"REC 100 00 00"\n"line":"REC 90 08 00"'))
+    def refused(self, *rows):
+        with self.assertRaises(R.Refused) as c: self.conv(*rows)
+        return str(c.exception)
 
-    def test_the_command_line_writes_the_three_files_and_a_quit_line(self):
+    def test_a_complete_recording_gives_exact_headless_entries_duration_and_released_final_buttons(self):
+        start, end, v, h = self.conv(*self.GOOD)
+        self.assertEqual((start, end), (0, 1000))
+        self.assertEqual(h, ["0:1:0x00", "0:2:0x00", "100:1:0x80", "104:1:0x00", "500:1:0x28", "700:1:0x08", "700:2:0x40", "1000:1:0x00", "1000:2:0x00"])   # P2 Start stripped; both ports; held buttons released at END
+        self.assertEqual(v, ["0 -", "100 S", "104 -", "500 RC", "700 R", "1000 -", "1000 Q"])
+
+    def test_the_duration_includes_unchanged_input_after_the_last_change(self):
+        _, end, _, _ = self.conv("START 0", "REC 0 00 00", "TICK 300", "TICK 600", "END 800")
+        self.assertEqual(end, 800)
+
+    def test_incomplete_and_malformed_recordings_are_refused(self):
+        self.assertIn("no END", self.refused("START 0", "REC 0 00 00", "TICK 300"))
+        self.assertIn("no START", self.refused("REC 0 00 00", "END 10"))
+        self.assertIn("more than one START", self.refused("START 0", "REC 0 00 00", "START 5", "END 10"))
+        self.assertIn("backwards", self.refused("START 0", "REC 0 00 00", "REC 90 08 00", "REC 80 00 00", "END 100"))        # quick-load / rewind
+        self.assertIn("duplicated frame", self.refused("START 0", "REC 5 08 00", "REC 5 00 00", "END 10"))
+        self.assertIn("follow END", self.refused("START 0", "REC 0 00 00", "END 10", "REC 12 08 00"))
+        self.assertIn("lost lines", self.refused("START 0", "REC 0 00 00", "TICK 300", "END 2000"))
+        with self.assertRaises(R.Refused): self.conv()
+
+    def route(self, changes, two_ports=False):
+        rows, f = ["START 0"], 0
+        for i in range(changes):
+            f += 2; rows.append("REC %d %02x %02x" % (f, 0x08 if i % 2 == 0 else 0x04, (0x40 if i % 2 == 0 else 0x20) if two_ports else 0))
+            if f % 300 == 0: rows.append("TICK %d" % f)
+        return rows, f + 2
+
+    def test_scripts_over_the_runtime_capacity_are_refused_not_truncated(self):
+        rows, end = self.route(1024)                        # 1,024 changes (+ the end lines) overflow the viewer's 1,024-line script
+        self.assertIn("viewer", self.refused(*rows, "END %d" % end))
+        rows, end = self.route(1020)                        # fits both
+        self.conv(*rows, "END %d" % end)
+        rows, end = self.route(2100, two_ports=True)        # 2 entries per change: over the headless 4,096; the viewer limit is hit first, so test the headless one directly
+        with self.assertRaises(R.Refused): self.conv(*rows, "END %d" % end)
+        old = R.MAX_VIEWER; R.MAX_VIEWER = 10 ** 6
+        try: self.assertIn("headless", self.refused(*rows, "END %d" % end))
+        finally: R.MAX_VIEWER = old
+
+    def test_the_command_line_writes_the_files_or_refuses_without_writing(self):
         with tempfile.TemporaryDirectory() as d:
-            d = pathlib.Path(d); (d / "s.log").write_text(self.LOG)
-            r = subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "s.log"), "--out", str(d / "x"), "--quit-after", "60"], capture_output=True, text=True); self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual((d / "x.viewer.txt").read_text().splitlines()[-1], "2564 Q"); self.assertEqual(json.loads((d / "x.summary.json").read_text())["last_frame"], 2504)
-            self.assertTrue((d / "x.headless.txt").read_text().startswith("0:1:0x00,0:2:0x00,422:1:0x80"))
-            (d / "e.log").write_text("nothing here"); self.assertNotEqual(subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "e.log"), "--out", str(d / "y")], capture_output=True, text=True).returncode, 0)
+            d = pathlib.Path(d); (d / "s.log").write_text(self.log(*self.GOOD))
+            r = subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "s.log"), "--out", str(d / "x")], capture_output=True, text=True); self.assertEqual(r.returncode, 0, r.stderr)
+            sm = json.loads((d / "x.summary.json").read_text()); self.assertEqual((sm["end"], sm["duration_frames"]), (1000, 1000))
+            self.assertEqual((d / "x.viewer.txt").read_text().splitlines()[-1], "1000 Q")
+            (d / "e.log").write_text(self.log("START 0", "REC 0 00 00", "TICK 300"))
+            r = subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "e.log"), "--out", str(d / "y")], capture_output=True, text=True)
+            self.assertNotEqual(r.returncode, 0); self.assertIn("REFUSED", r.stderr); self.assertFalse((d / "y.headless.txt").exists())
 
     def test_summarize_capture_decodes_the_observables_and_lists_events(self):
         def sample(score, power, level, x, y, cam): return (score.to_bytes(4, "big") + b"".join((0x807C if i < power else 0x807D).to_bytes(2, "big") for i in range(5)) + level[0].to_bytes(2, "big") + level[1].to_bytes(2, "big") + x.to_bytes(2, "big") + y.to_bytes(2, "big") + cam.to_bytes(2, "big")).hex()

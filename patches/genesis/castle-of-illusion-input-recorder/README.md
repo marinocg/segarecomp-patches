@@ -1,56 +1,61 @@
-# Castle of Illusion: input recorder and replay instructions (a developer tool, not a game change)
+# Castle of Illusion: input recorder (a TEMPORARY developer tool, not a game change)
 
-The product has **no Genesis "record this session" feature** (the Sega CD viewer has one; see `docs/product/sega-cd-play.md` in the product). For Genesis it has two replay inputs: the headless capture program's `SEGARECOMP_PAD_SCRIPT` (frame-keyed, `<frame>:<player>:<mask>`) and the viewer's `SEGARECOMP_VIEWER_PAD_SCRIPT` (`<frame> <buttons>`). What was missing is a way for a **human** to produce such a script. This package fills that gap **with existing facilities only**: a native ABI 2 mod with just `input.read` + `host.log` logs a line `REC <guest frame> <pad1> <pad2>` whenever a controller changes (it writes nothing, intercepts nothing: the guest plays exactly as without it), the viewer prints it on standard error, and `tools/record_to_pad_script.py` turns it into both script formats. A focused product task (a Genesis "Record this session" like Sega CD's) would remove the mod and the converter; until then this is the minimal route.
+Temporary stop-gap until the product has a Genesis session recorder (backlog task **SEG-146-T006**, "Generic guest-frame session recording and replay in the shared viewer"; delete this package when it lands). The product's Sega CD viewer records (`--record`/`--replay`); Genesis only replays: headless `SEGARECOMP_PAD_SCRIPT` (**guest-frame-keyed, exact**, 4,096 entries) and the viewer's `SEGARECOMP_VIEWER_PAD_SCRIPT` (**keyed by host poll, approximate**, 1,024 lines). This package lets a human produce the exact kind with existing facilities only.
 
-## Verified (private image, aggregates only)
-A scripted session recorded with this package and replayed (1) in the real viewer with the converted viewer script and (2) through the headless frame-keyed path reproduced the recorded end state exactly (Mickey x=1032, y=176, camera 904, frame counter equal; the whole-RAM hash differs only in 14 stack/transient bytes because the two binaries stop at different instruction points). **The recorded frame numbers are directly the replay keys (no offset)**: shifting them by 1, 2 or 3 frames changed the result. Replaying the same recording headless against the original and the 16:9, 21:9 and 32:9 activation variants gave the identical state over that early stretch (the activation variants differ only when their extra objects matter). Tests: `tests/test_input_recorder.py` (provider on the mock host, converter, summarizer, refusal of a rewound session).
+## What it does
+A native ABI 2 mod with `input.read` + `host.log` only (writes nothing, intercepts nothing: the guest plays exactly as without it). On the viewer's standard error it logs, per **guest frame**: `START <f>`, `REC <f> <pad1> <pad2>` on every change of either port, `TICK <f>` every 300 frames, and `END <f>` when **player 2 presses Start** (keyboard: **Right Shift**), after which it logs nothing. `END` is the explicit endpoint, so the recording keeps its full duration including unchanged input after the last button change; `TICK` makes a lost log detectable.
+`tools/record_to_pad_script.py` converts the log and **refuses** (writes nothing) a recording that is incomplete (no END), has several STARTs (guest reset), repeats or reverses frame numbers (quick-load, rewind, duplicate log), has lines after END or a gap over 600 frames, or exceeds the replay capacity (viewer 1,024 lines, headless 4,096 entries). Player 2's Start is stripped from the scripts; held buttons are released at END.
+
+| output | use | exactness |
+|---|---|---|
+| `<prefix>.headless.txt` | `SEGARECOMP_PAD_SCRIPT` of a headless capture program, both ports | **exact** guest-frame replay |
+| `<prefix>.viewer.txt` | `SEGARECOMP_VIEWER_PAD_SCRIPT` (player 1 only, ends with `Q`) | **approximate** (host-poll keyed): to watch a route, never to prove one |
+| `<prefix>.summary.json` | start, end, duration in guest frames | - |
+
+Tests: `tests/test_input_recorder.py` (provider on the mock host: START/changes/TICK/END, both ports, nothing after END, no writes; converter: complete, duration beyond the last change, final held buttons, each refusal, both capacity limits, command line). On the real image (private): START/REC/TICK lines appear at guest frames and a session without END is refused; an END from the real keyboard is covered by the mock tests only (not exercised on the real viewer).
 
 ## 1. Build the recorder viewer (once)
 ```
-PRODUCT=/path/to/segarecomp            # a built checkout (cmake --build ... --target segarecomp); SDL3=/path/to/sdl3-prefix
+PRODUCT=/path/to/segarecomp   SDL3=/path/to/sdl3-prefix   # PRODUCT: built checkout of marinocg/segarecomp main (cmake --build build)
 CLI=$PRODUCT/build/apps/segarecomp/segarecomp
-ROM="/path/to/Castle of Illusion Starring Mickey Mouse (USA, Europe).md"      # your own legally held image; it never leaves your machine
+ROM="/path/to/Castle of Illusion Starring Mickey Mouse (USA, Europe).md"      # your own image; sha256 2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f; it never leaves your machine
 $CLI mod build patches/genesis/castle-of-illusion-input-recorder --out recorder.segapatch --cc cc --sdk-dir $PRODUCT/platforms
-ID=$($CLI mod inspect --json recorder.segapatch | python3 -c 'import sys,json;print(json.load(sys.stdin)["package_identity"])')
+ID=$($CLI mod inspect --json recorder.segapatch | python3 -c 'import sys,json;print(json.load(sys.stdin)["package_identity"])')   # must print the identity at the end of this file
 $CLI build --rom "$ROM" --output build-recorder --cc cc --runtime-dir $PRODUCT/platforms/genesis \
   --sdl3-include $SDL3/include --sdl3-lib $SDL3/lib --native-package recorder.segapatch --native-identity $ID
 ```
-(The launcher's install-and-approve flow accepts the same package; where the launcher stores a run's standard error was not verified, so the command line is the documented route.)
 
-## 2. Record (you play)
+## 2. Record the shortest useful scenario (about 2-3 minutes of play)
 ```
 SEGARECOMP_REWIND=0 LD_LIBRARY_PATH=$SDL3/lib ./build-recorder/game --instruction-budget 4000000000 2> session.log
 ```
-Keys (the viewer's fixed map): arrows = D-pad, **Z = A, X = B, C = C, Return = Start**; Esc quits. Rules: **play straight through from power-on** (the recording starts at guest frame 0 and replays from boot); **do not use quick save/load or rewind** (F5/F8/rewind repeat frame numbers; the converter refuses such a session); do not close the window until the scenario is done. The first title/intro screens take about 1,800 frames: press Start as you normally would.
+Keys: arrows, **Z = A (jump), X = B, C = C, Return = Start**; **Right Shift = player 2 Start = END**; Esc quits. Play **straight from power-on**: no F5/F8 quick save/load, no rewind (the converter refuses such a session), no reset. Play Start through the title screens as usual (about 30 s), then **in the first level**: walk right; **collect an apple or gem** (score changes); **jump on or hit an enemy** (score); **take one hit** (power drops); cross a ledge or a moving platform; keep going about 30 s. **Press Right Shift** (hold it for a moment) at the point you want the recording to stop, then close with Esc. Record a second, longer one for the boss and stage transition only after this one replays correctly.
 ```
-python3 tools/record_to_pad_script.py session.log --out routes/items-01        # -> .viewer.txt  .headless.txt  .summary.json (button masks and frame numbers only: no commercial data)
+python3 tools/record_to_pad_script.py session.log --out routes/first-level-01      # prints the complete duration, or REFUSED: <reason>
 ```
-Limits: the viewer script holds 1,024 lines and the headless script 4,096 entries (the converter warns); a headless capture takes at most 64 sampled frames per run.
+Keep `routes/*` and `session.log` private if you prefer; they contain button masks and frame numbers only (no commercial data).
 
-## 3. What to record (one recording per scenario; keep each short and note the intent in the file name)
-1. **items-01 - item collection**: in the first level collect several apples/gems and at least one power-up; end by standing still for 2 s.
-2. **damage-01 - damage to Mickey and to an enemy**: let one enemy hit Mickey (power drops), hit another enemy by jumping on it or throwing an apple (score rises).
-3. **platforms-01 - collisions and moving platforms**: climb ledges, ride a moving platform, push against a wall, fall into and out of a pit if the level has one (a death/restart is a valid part of the route).
-4. **boss-01 - a boss fight to completion**: the first world's boss (or any boss you can beat); finish the fight and stay for the end-of-boss sequence.
-5. **progress-01 - natural stage progression**: play a whole stage to its exit, through the transition into the next stage, and 10 s further.
-Do **not** use the debug free-fly package for any of these: traversal with it is not evidence of normal gameplay.
-
-## 4. Replay and compare
-Viewer (you watch it; against the original and any activation variant, built as in the activation READMEs with `--native-package`):
+## 3. Replay (exact, headless) against the original, the presentation-only package and each activation variant
+Build one headless program per image once. A **headless program is built from an image**: the original from `$ROM`; an activation variant from the ROM the package produces (`mod apply`); the presentation-only package changes no guest bytes (its image equals the original), so it replays on the original build (its output is the original's by construction; to also confirm the package builds, run `$CLI mod apply` and compare the effective hash with the original's).
 ```
-SEGARECOMP_REWIND=0 SEGARECOMP_VIEWER_PAD_SCRIPT=routes/items-01.viewer.txt LD_LIBRARY_PATH=$SDL3/lib ./build-X/game --instruction-budget 4000000000
+$CLI build --rom "$ROM" --output build-orig --cc cc --runtime-dir $PRODUCT/platforms/genesis
+for v in 16x9 21x9 32x9; do
+  $CLI mod apply patches/genesis/castle-of-illusion-activation-$v --rom "$ROM" --out eff-$v.md      # effective images: 16x9 10a2c1ad..., 21x9 32a03d32..., 32x9 9d8a6098...
+  $CLI build --rom eff-$v.md --output build-$v --cc cc --runtime-dir $PRODUCT/platforms/genesis
+done
+END=$(python3 -c 'import json;print(json.load(open("routes/first-level-01.summary.json"))["end"])')
+for b in orig 16x9 21x9 32x9; do
+  mkdir -p out-$b
+  SEGARECOMP_CAPTURE_DIR=out-$b SEGARECOMP_CAPTURE_FIRST=60 SEGARECOMP_CAPTURE_COUNT=64 SEGARECOMP_CAPTURE_STRIDE=$(( END / 64 + 1 )) SEGARECOMP_CAPTURE_SLICE=500 \
+  SEGARECOMP_CAPTURE_RAM="62508:4,62020:10,65348:4,56336:2,56340:2,64132:2" SEGARECOMP_PAD_SCRIPT="$(cat routes/first-level-01.headless.txt)" \
+    timeout 1800 ./build-$b/game --instruction-budget 4000000000 2> cap-$b.txt
+  python3 tools/summarize_capture.py cap-$b.txt > summary-$b.txt
+done
 ```
-Headless observables (a standard headless program: the same `build` without the SDL flags; for an activation variant first `mod apply` it to a ROM and build that ROM, which is what the activation tests do):
-```
-$CLI build --rom "$ROM" --output build-headless --cc cc --runtime-dir $PRODUCT/platforms/genesis
-SEGARECOMP_CAPTURE_DIR=out SEGARECOMP_CAPTURE_FIRST=<first frame> SEGARECOMP_CAPTURE_COUNT=64 SEGARECOMP_CAPTURE_STRIDE=<every n-th frame> SEGARECOMP_CAPTURE_SLICE=500 \
-SEGARECOMP_CAPTURE_RAM="62508:4,62020:10,65348:4,56336:2,56340:2,64132:2" SEGARECOMP_PAD_SCRIPT="$(cat routes/items-01.headless.txt)" \
-  ./build-headless/game --instruction-budget 4000000000 2> cap.txt
-python3 tools/summarize_capture.py cap.txt
-```
-The summary lists score, power (filled HUD slots), level/stage, Mickey's x/y and the camera at each sampled frame and the events between them (score change = item/enemy, power drop = damage, level change = natural progression). Compare the original, the presentation-only package (its guest is the original: same result by construction) and each activation variant: **differences are expected where activation changes which objects exist; a route that stops progressing, a missing essential object, or a reward counted twice is a failure.** The route and the summary are the evidence to attach; the session log, the image and any screenshot stay private.
+`summary-*.txt` lists, per sampled frame, score, power, level/stage, Mickey x/y and camera, and the events (score change, damage, level change). **Differences between the original and a variant are expected only where activation changes which objects exist; a route that stops progressing, a missing essential object, or a reward counted twice is a failure.** Checked with a scripted 3,700-frame route: original and 16:9 gave identical sampled observables (the whole-RAM hash differs, as the activation state lives in RAM). The recording is replayed against the activation variants as a **fixture, not as proof**: a variant that diverges earlier than the route's last frame needs a look at what differed.
+Viewer replay (to watch, any variant): `SEGARECOMP_REWIND=0 SEGARECOMP_VIEWER_PAD_SCRIPT=routes/first-level-01.viewer.txt LD_LIBRARY_PATH=$SDL3/lib ./build-X/game --instruction-budget 4000000000` with a viewer build of that image (`--sdl3-include/--sdl3-lib`); it can drift by a few frames and is not evidence.
 
 ## Limits
-The HUD item counter's RAM address is not identified (items show in the HUD frames; use viewer captures or the score), so "item collected" is judged by the score/HUD; a boss completion is judged by the end-of-boss level/score events. Replay keys are guest frames: they stay valid only for the same image and the same boot (recordings are not portable across revisions).
+The HUD item counter's RAM address is not identified (judged from score/HUD). Replay keys are guest frames and valid only for the same image and boot. A recording for another variant's frame timing may diverge: that is the information being collected. The capture facility samples at most 64 frames per run. The launcher GUI route is not covered.
 
-Package identity `d60da971eef70a4cf562b5219976738225a4b3dd80071c07aad2dd2206ab5dfb` (deterministic; `mod inspect` prints it). Unpublished source project; native code is host code: approve the exact identity.
+Recorder package identity `f58a9653d6b553aded49b23d8c231f203e4e717b8a4d06a13cfd2e6830d34def` (deterministic). Unpublished source project, no catalog entry; native code is host code: approve the exact identity.
