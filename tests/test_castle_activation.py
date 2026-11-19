@@ -11,7 +11,7 @@ import lint_layout
 
 GAME = ROOT / "patches" / "genesis"
 MAIN = GAME / "castle-of-illusion"
-P16, P21 = GAME / "castle-of-illusion-activation-16x9", GAME / "castle-of-illusion-activation-21x9"
+P16, P21, P32 = GAME / "castle-of-illusion-activation-16x9", GAME / "castle-of-illusion-activation-21x9", GAME / "castle-of-illusion-activation-32x9"
 CLI = os.environ.get("SEGARECOMP_CLI")
 
 
@@ -21,7 +21,7 @@ def edits(p):
 
 class Activation(unittest.TestCase):
     def test_provider_is_the_presentation_package_provider(self):
-        for p in (P16, P21):
+        for p in (P16, P21, P32):
             self.assertEqual((p / "src/provider.c").read_bytes(), (MAIN / "src/provider.c").read_bytes(), p.name)
 
     def test_layout_lint_accepts_both_projects(self):
@@ -47,6 +47,24 @@ class Activation(unittest.TestCase):
                                ("0x0000963c", "4eb90006d6b4", "4eb900061000")):
             self.assertEqual(e[site], (old, new))
 
+    def test_32x9_window_edits_hooks_and_deferral_constants(self):
+        e = {x[2]: (x[3], x[4]) for x in edits(P32)}
+        self.assertEqual(e["0x0006d5cc"], ("0x0180", "0x02c0")); self.assertEqual(e["0x0006d5d2"], ("0x0071", "0x0180")); self.assertEqual(e["0x0006d788"], ("0x0280", "0x04c0")); self.assertEqual(e["0x0006d59d"], ("0x04", "0x06"))
+        self.assertEqual(e["0x0006d676"], ("51cefff6602a", "4ef900060d40"))          # the fail hook moved to make room for the deferral in the entry hook
+        asm = (P32 / "src/retry.asm").read_text()
+        self.assertIn("lea 0x42c0(a1),a1", asm); self.assertIn("lea 0x3e80(a1),a1", asm)          # the retry window equals the lookaheads
+        self.assertIn("cmpi.w #20,d3", asm)                                                      # the deferral threshold (objects in the layout pool)
+        self.assertIn('aspect_max = "32:9"', (P32 / "mod.toml").read_text())
+        for blk in re.findall(r"^org usa-europe (0x[0-9a-f]+)", asm, flags=re.M): self.assertTrue(0x60c80 <= int(blk, 16) < 0x61280, blk)   # inside the blank area the project frees
+
+    def test_32x9_state_stays_inside_its_extent_and_exits_are_original_continuations(self):
+        asm = (P32 / "src/retry.asm").read_text()
+        addrs = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", asm) if a.startswith("fffc")}
+        self.assertTrue(addrs and all(0xFFFC00 <= a <= 0xFFFCAB for a in addrs), sorted(hex(a) for a in addrs))
+        self.assertNotRegex(asm, r"\b(trap|stop|reset|rte)\b")
+        self.assertEqual(asm.count("jmp @"), 7)
+        self.assertNotIn("0xfffa84,", asm.replace("move.w 0xfffa84,d3", "").replace("movea.w 0xfffa84,a1", ""), "the camera is only read, never written")
+
     def test_retry_state_stays_inside_its_extent(self):
         asm = (P21 / "src/retry.asm").read_text()
         addrs = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", asm) if a.startswith("fffc")}
@@ -56,12 +74,12 @@ class Activation(unittest.TestCase):
         self.assertIn("lea 0x4280(a1),a1", asm); self.assertIn("lea 0x3f00(a1),a1", asm)   # the retry window equals the lookaheads (0x4000 is a column bias that keeps the shifts unsigned)
 
     def test_asm_lives_under_src_and_is_declared(self):
-        self.assertIn('kind = "guest-asm"', (P21 / "mod.toml").read_text())
+        self.assertIn('kind = "guest-asm"', (P21 / "mod.toml").read_text()); self.assertIn('kind = "guest-asm"', (P32 / "mod.toml").read_text())
         self.assertNotIn("guest-asm", (P16 / "mod.toml").read_text())
 
     @unittest.skipUnless(CLI, "set SEGARECOMP_CLI to run the product's `mod check`")
     def test_product_mod_check(self):
-        for p in (P16, P21):
+        for p in (P16, P21, P32):
             r = subprocess.run([CLI, "mod", "check", str(p)], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 

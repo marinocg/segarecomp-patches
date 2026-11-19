@@ -50,7 +50,7 @@ jobs:
           # pipefail: the unittest exit status must not be hidden by `| tee` (GitHub's default `bash -e` has no pipefail). The last command is the negated grep, so a skipped test fails the step.
           set -euo pipefail
           export SEGARECOMP_CLI="$RUNNER_TEMP/build/apps/segarecomp/segarecomp" SEGARECOMP_SDK_DIR="$RUNNER_TEMP/product/platforms"
-          python3 -m unittest -v tests.test_castle_activation_exec 2>&1 | tee "$RUNNER_TEMP/exec.log"
+          python3 -m unittest -v tests.test_castle_activation_exec tests.test_castle_activation32_exec 2>&1 | tee "$RUNNER_TEMP/exec.log"
           grep -E "^Ran [0-9]+ tests" "$RUNNER_TEMP/exec.log"
           ! grep -q "skipped" "$RUNNER_TEMP/exec.log"
 

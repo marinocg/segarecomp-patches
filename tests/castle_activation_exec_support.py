@@ -52,13 +52,13 @@ def _stubs(entry, fail_hook, hooks):
 
 
 class Harness:
-    def __init__(self):
+    def __init__(self, asm=None, mapping=None, free_len=0x800, state_end=0xFC30):
         self.cli, self.sdk, self.cc = os.environ["SEGARECOMP_CLI"], pathlib.Path(os.environ["SEGARECOMP_SDK_DIR"]), os.environ.get("SEGARECOMP_CC", "cc")
         self.work = pathlib.Path(tempfile.mkdtemp(prefix="castle-activation-exec-"))
-        text = ASM.read_text()
-        for old, new in MAP.items():
+        text = (asm or ASM).read_text()
+        for old, new in (mapping or MAP).items():
             text = text.replace("0x%08x" % old, "0x%04x" % new)
-        text = re.sub(r"^free usa-europe .*$", "free fixture 0x2000 0x800 0x00", text, flags=re.M).replace("org usa-europe", "org fixture")
+        text = re.sub(r"^free usa-europe .*$", "free fixture 0x2000 0x%x 0x00" % free_len, text, flags=re.M).replace("org usa-europe", "org fixture")
         proj = self.work / "proj"; (proj / "asm").mkdir(parents=True); (proj / "asm/retry.asm").write_text(text)
         entry, fail_hook, frame_hook, reset = 0x2000, 0x2100, 0x2300, 0x2600
         hooks = {"entry": entry, "fail": fail_hook, "frame": frame_hook, "reset": reset, "cull": 0x2700, "noop": 0x3600}
@@ -90,6 +90,7 @@ class Harness:
    fprintf(stderr, " sr=%04X pc=%06X hash=%016lX ram=", (unsigned)runtime.sr, (unsigned)runtime.pc, h); for (i = 0xFC00U; i < 0xFC30U; ++i) fprintf(stderr, "%02X", runtime.work_ram[i]);
    fprintf(stderr, " log="); for (i = 0x0300U; i < 0x0340U; ++i) fprintf(stderr, "%02X", runtime.work_ram[i]); fprintf(stderr, " hi="); for (i = 0xFC30U; i < 0xFC40U; ++i) fprintf(stderr, "%02X", runtime.work_ram[i]); fprintf(stderr, "\n"); }
 '''
+        observe = observe.replace("0xFC30U", "0x%XU" % state_end).replace("0xFC40U", "0x%XU" % (state_end + 16))
         anchor = re.search(r"\} while \([^;]*\);", gen); assert anchor
         (self.work / "t.c").write_text(gen[:anchor.end()] + observe + gen[anchor.end():])
         env = os.environ.copy()
