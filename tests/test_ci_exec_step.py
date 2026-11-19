@@ -18,7 +18,7 @@ class ExecStep(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = pathlib.Path(d)
             (d / "tests").mkdir()
-            for m in ("test_castle_activation_exec", "test_castle_provider", "test_castle_activation", "test_castle_debug_fly"): (d / "tests" / (m + ".py")).write_text("import unittest\n" + textwrap.dedent(body))
+            for m in ("test_castle_activation_exec", "test_castle_provider", "test_castle_activation", "test_castle_debug_fly", "test_input_recorder"): (d / "tests" / (m + ".py")).write_text("import unittest\n" + textwrap.dedent(body))
             (d / "step.sh").write_text(step)
             # GitHub runs a `run:` block as `bash -e {0}`: reproduce exactly that shell
             r = subprocess.run(["bash", "-e", str(d / "step.sh")], cwd=d, env={"PATH": "/usr/bin:/bin:/usr/local/bin", "RUNNER_TEMP": str(d), "HOME": str(d)}, capture_output=True, text=True)
@@ -30,7 +30,7 @@ class ExecStep(unittest.TestCase):
     def test_a_passing_suite_passes_the_step(self):
         code, out = self.run_step("class T(unittest.TestCase):\n    def test_a(self): pass\n    def test_b(self): pass\n")
         self.assertEqual(code, 0, out)
-        self.assertIn("Ran 8 tests", out)
+        self.assertIn("Ran 10 tests", out)
 
     def test_an_intentionally_failing_test_fails_the_step(self):
         code, out = self.run_step("class T(unittest.TestCase):\n    def test_a(self): pass\n    def test_fails(self): self.fail('intentional')\n")
