@@ -1,23 +1,15 @@
-# Castle of Illusion: early object activation for 16:9 (GAMEPLAY-CHANGING)
+# Castle of Illusion: object activation for 16:9 (GAMEPLAY-CHANGING)
 
-An opt-in variant, separate from the presentation-only package [`castle-of-illusion`](../castle-of-illusion/README.md), sharing its provider byte for byte. **Two typed ROM edits** and no guest code: the right column lookahead 0x180 -> 0x200 (`0x6d5cc`) and the initial-fill bound 0x280 -> 0x300 (`0x6d788`). **The static edits stay active whatever the presentation settings, including Original mode and narrower aspects.** The manifest claims `aspect_max = "16:9"`; the provider's wider presentation coverage is not advertised for this variant. There is no left change: the original object window test deletes every object left of the camera (see the 21:9 README), and the 16:9 picture adds only a 39 px margin.
+An opt-in variant, separate from the presentation-only package [`castle-of-illusion`](../castle-of-illusion/README.md) (the unmodified-gameplay alternative, which this never modifies). It shares that package's provider byte for byte and the 21:9 / 32:9 variants' guest code, generated from one template (`scripts/gen_castle_retry.py`) with its own lookaheads: **right 0x200, left 0x100, initial-fill bound 0x400**. It changes which layout objects exist and when (objects farther away are alive earlier), so it is **gameplay-changing**; the static edits and hooks stay active whatever the presentation settings.
 
-## Why exactly these two (ablation, identity-based)
-* lookahead alone: sections between the initial fill's reach and the new lookahead are never loaded (20 of 122 sampled objects missing);
-* lookahead + the initial-fill bound: **0 of 250** original layout objects missing across all 29 stages, **no pool-full event** (the original has none either), +0.00% guest cost;
-* the row-loader span (`0x6d59d`) and the right deletion limit are not needed at this window and are left out on purpose.
-* The retry of the 21:9 project is not needed at this window: no allocation failure in 29 stages with repeated direction changes. Whether it would ever be needed beyond those stages is not known.
+## Why this replaced the two-edit package
+The earlier 16:9 package was two typed edits (right lookahead 0x200, initial-fill bound 0x300) and no guest code. On a deterministic route (hold right, the same guest-frame trajectory in every build; stable layout-object identities = the level-data pointer the loader stores in each pool slot) it **lost original objects**: 13 of 254 identities over 26 stages never existed at a frame boundary (2-3 per affected stage, all created in the level-start fill). Cause (measured): the original right deletion limit (0x280, a test on screen x + 128) stayed while columns were loaded farther out, and the original unsigned window test also deletes everything left of the camera; a typed edit of the limit alone (0x1b14 -> 0x300) still lost 1 (stage 2-0), with the fill-bound edit removed it lost 3. The common code (signed window test, limits that follow the lookaheads, retry, deferral) loses 0 in the same runs (36 identities that the original does not create at the same time are created early, which is the point). A minimal edit set is therefore **not** sufficient for 16:9 and was dropped.
 
-Objects created by the column loader already inside the visible 16:9 picture: right scroll 18-19% -> 13%; left scroll unchanged (37-47%); level-start initial fill 63-66% -> 46-48%. Allocated objects that never get a visible pixel: 21% -> 46% (the 0x80 px of extra window mostly lie beyond a 16:9 view).
+## What it supports / measured (private image, aggregates; method as in the 32:9 README)
+* Pool: never full on any of the 29 stages (max 28 of 32 slots on the hold-right route, 31 on the right/left route; original 25/26); retry ring: 0 allocation failures, 0 expirations, 0 ring-full drops, queue maximum 11 of 16, 163 deferral attempts (all later loaded or dropped on leaving the window).
+* Identities: 0 original identities lost on the deterministic route (26 stages with objects). Score/damage events: identical to the original on 27 of 29 stages; stages 3-5/3-6 differ in the number of damage events (earlier activation changes enemy contact), which is an expected gameplay difference. The route collects no items, so item collection was not exercised.
+* Executable tests: `tests/test_castle_activation_exec.py` runs all 39 scenarios for this variant (deferral, reservation, CCR, RAM ownership, window edges at right 0x200).
+* Package identity `5fb716d2315a0466f455d276e46e44bb305882ac5b49a14f4afb6fbd7541ae9a`; effective image `57a27b4ab1733e5462d2fe8a899d2758d10ba3a5c23b685c20d413de79da2bdd`. Product `marinocg/segarecomp` main `8d419ab`. Unpublished source project: no `release.json`, no catalog entry.
 
-## Identity and validation revisions
-Package identity (deterministic): `0799bc25b2201579b7541de495b4da9133bafbc110dfe71b0fb834c11b02f122`; effective image SHA-256 `1a16046a81bcc31cc70e39b60459dd3372bcc9feb49e46b221df40f80fb292ba` over `Castle of Illusion (USA, Europe)` (`2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f`); validated against product main `8d419ab`; this package's sources did not change in this revision.
-
-## Stage inventory
-All 29 stages the in-game stage select accepts were run with the passive script (see the 21:9 README for the list and the scrolling/arena split); an active script (jumps, throws, left excursions) ran in 0-1, 0-2, 1-3, 4-0, 4-2. No guest stop, no missing original object. Pixel-level continuity was **not** measured for this package.
-
-## Determinism, save states, launcher
-Two straight runs (stage 4-0) give identical event streams; a quick-save restore taken 88 frames earlier replays the 103-event window identically (no guest code is injected, unlike the 21:9 package). The product's launcher flow (verify against the exact image, approval of the native code, install, build, select, saves isolated from Vanilla) ran green on the real image through `launcher_schema3_flow_test` for both this package and the 21:9 package.
-
-## Limits
-Left lookahead unchanged; item, damage, collision and RNG behavior not compared beyond object identity and kill/collect events; no boss defeated; audio clean (0 faults, 0 clipping). The provider's 48-piece-per-frame collection limit (see the 21:9 README) was measured only for the 21:9 variant (the original's maximum was 19 dropped pieces per frame there); it was not measured for this package.
+## Not verified
+Items, damage by cause, collisions, non-visual triggers, RNG effects, boss completion and natural level progression were not verified for this variant (see the 32:9 README, Acceptance).

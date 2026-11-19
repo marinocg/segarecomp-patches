@@ -6,18 +6,23 @@ import hashlib, os, pathlib, re, shutil, struct, subprocess, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ASM = ROOT / "patches/genesis/castle-of-illusion-activation-21x9/src/retry.asm"
+ASM_DIR = lambda v: ROOT / f"patches/genesis/castle-of-illusion-activation-{v}/src/retry.asm"
 STATE = 0xFFFC00
 STUB_RTS = {"slot_scan": 0x3300, "next_entry": 0x3400, "streamer_tail": 0x3600, "vertical_loader": 0x3500, "level_init": 0x3700, "cull_continue": 0x3800, "cull_delete": 0x3900}
 SLOT = lambda i: STATE + 0x10 + 8 * i
 LOG = 0xFF0300          # stub counters: +0 loader calls, +4 d2, +6 d5, +8 a2, +c a1, +10 fail knob, +14 loop, +18 next, +1c vertical, +20 tail, +24 level init
-_leas = [int(v, 16) for v in re.findall(r"lea (0x[0-9a-f]+)\(a1\),a1", ASM.read_text()) if int(v, 16) >= 0x3000]
-WINDOW_L = 0x4000 - min(v for v in _leas if v < 0x4000)          # left lookahead the retry window uses (column bias 0x4000 keeps the shifts unsigned)
-WINDOW_R = max(v for v in _leas if v > 0x4000) - 0x4000          # right lookahead
-CULL_LEFT = -int(re.search(r"cmpi\.w #(-0x[0-9a-f]+),d4", ASM.read_text()).group(1), 16)   # object deleted below -CULL_LEFT (d4 = screen x + 128)
-CULL_RIGHT = int(re.search(r"cmpi\.w #(0x[0-9a-f]+),d4", ASM.read_text()).group(1), 16)
+def consts(asm):
+    """(window_left, window_right, cull_left, cull_right) the retry code of `asm` was generated with."""
+    text = asm.read_text()
+    leas = [int(v, 16) for v in re.findall(r"lea (0x[0-9a-f]+)\(a1\),a1", text) if int(v, 16) >= 0x3000]
+    return (0x4000 - min(v for v in leas if v < 0x4000), max(v for v in leas if v > 0x4000) - 0x4000,
+            -int(re.search(r"cmpi\.w #(-0x[0-9a-f]+),d4", text).group(1), 16), int(re.search(r"cmpi\.w #(0x[0-9a-f]+),d4", text).group(1), 16))
+WINDOW_L, WINDOW_R, CULL_LEFT, CULL_RIGHT = consts(ASM)
+CALLER = 0x3C00     # a faithful caller of the section loader: JSR section_load; ADDI.W #$80,D0 (as both real callers do); the CCR capture; the marker (LOG+0x3C); RTS
 SYM = {"section_load": 0x3000, "section_load_body": 0x3006, "slot_scan": 0x3300, "next_entry": 0x3400, "streamer_tail": 0x3600, "vertical_loader": 0x3500, "level_init": 0x3700, "cull_continue": 0x3800, "cull_delete": 0x3900}
 FAIL_SITE = 0x3200
-MAP = {0x00060c80: 0x2000, 0x00060cc0: 0x2100, 0x00060e00: 0x2300, 0x00061000: 0x2600, 0x00061060: 0x2700}
+MAP = {0x00060c80: 0x2000, 0x00060d40: 0x2100, 0x00060e00: 0x2300, 0x00061000: 0x2600, 0x00061060: 0x2700, 0x00061100: 0x2800}
+STATE_END = 0xFCB4      # the retry state and its diagnostics occupy 0xFFFC00..0xFFFCB3
 
 
 def available():
@@ -36,7 +41,7 @@ def _stubs(entry, fail_hook, hooks):
     body += struct.pack(">HI", 0x33C2, LOG + 4) + struct.pack(">HI", 0x33C5, LOG + 6) + struct.pack(">HI", 0x23CA, LOG + 8) + struct.pack(">HI", 0x23C9, LOG + 12)
     body += bytes.fromhex("0a3c0010")                                 # eori #$10,ccr: the synthetic loader DELIBERATELY changes X on every call (the real one's add.w/add.w d3,d3 do)
     body += struct.pack(">HI", 0x52B9, LOG)                           # calls += 1
-    body += struct.pack(">HI", 0x4AB9, LOG + 0x10) + bytes.fromhex("6706")   # tst.l knob; beq ok
+    body += struct.pack(">HI", 0x4AB9, LOG + 0x10) + bytes.fromhex("6708")   # tst.l knob; beq ok (skips the 8 bytes of "moveq #0,d6; jmp FAIL_SITE")
     body += bytes.fromhex("7C00") + jmp(FAIL_SITE)                    # allocation failure: d6 = 0 (the scan is exhausted), jump to the patched site
     body += bytes.fromhex("4e75")
     img[0x3006:0x3006 + len(body)] = body
@@ -48,11 +53,13 @@ def _stubs(entry, fail_hook, hooks):
         code = struct.pack(">HI", 0x40F9, LOG + 0x38) + code                                  # move.w sr,abs.l: capture the CCR at the continuation, before the marker
         if sym == "vertical_loader": code = struct.pack(">HII", 0x33F9, 0x00FFFC0E, LOG + 0x30) + code        # snapshot the retry-state key at the original vertical loader's entry
         img[a:a + len(code)] = code
+    code = struct.pack(">HI", 0x4EB9, 0x3000) + bytes.fromhex("06400080") + struct.pack(">HI", 0x40F9, LOG + 0x38) + struct.pack(">HII", 0x23FC, 1, LOG + 0x3C) + struct.pack(">H", 0x4E75)
+    img[CALLER:CALLER + len(code)] = code
     return img
 
 
 class Harness:
-    def __init__(self, asm=None, mapping=None, free_len=0x800, state_end=0xFC30):
+    def __init__(self, asm=None, mapping=None, free_len=0x900, state_end=STATE_END):
         self.cli, self.sdk, self.cc = os.environ["SEGARECOMP_CLI"], pathlib.Path(os.environ["SEGARECOMP_SDK_DIR"]), os.environ.get("SEGARECOMP_CC", "cc")
         self.work = pathlib.Path(tempfile.mkdtemp(prefix="castle-activation-exec-"))
         text = (asm or ASM).read_text()
@@ -61,7 +68,7 @@ class Harness:
         text = re.sub(r"^free usa-europe .*$", "free fixture 0x2000 0x%x 0x00" % free_len, text, flags=re.M).replace("org usa-europe", "org fixture")
         proj = self.work / "proj"; (proj / "asm").mkdir(parents=True); (proj / "asm/retry.asm").write_text(text)
         entry, fail_hook, frame_hook, reset = 0x2000, 0x2100, 0x2300, 0x2600
-        hooks = {"entry": entry, "fail": fail_hook, "frame": frame_hook, "reset": reset, "cull": 0x2700, "noop": 0x3600}
+        hooks = {"entry": entry, "fail": fail_hook, "frame": frame_hook, "reset": reset, "cull": 0x2700, "noop": 0x3600, "caller": 0x3C00}
         image = bytes(_stubs(entry, fail_hook, hooks))
         sha = hashlib.sha256(image).hexdigest()
         toml = f'[mod]\nid = "castle-exec"\nversion = "1.0.0"\nname = "Exec"\nlicense = "CC0-1.0"\n\n[target]\nplatform = "genesis"\n\n[[target.revision]]\nlabel = "fixture"\nsha256 = "{sha}"\n\n[[source]]\nkind = "guest-asm"\npath = "asm/retry.asm"\ncpu = "m68k"\n'

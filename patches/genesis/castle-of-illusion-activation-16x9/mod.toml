@@ -22,6 +22,11 @@ path = "src/provider.c"
 kind = "rom-edit-set"
 path = "edits/activation.edits"
 
+[[source]]
+kind = "guest-asm"
+path = "src/retry.asm"
+cpu = "m68k"
+
 [build]
 header_repair = "genesis-checksum"
 
@@ -188,3 +193,57 @@ components = ["scenery", "actors"]
 [[scene]]
 id = "a16x64-b16"
 components = ["scenery", "actors"]
+
+[[symbol]]
+name = "section_load"
+revision = "usa-europe"
+address = "0x6d612"
+provenance = "verified"
+
+[[symbol]]
+name = "section_load_body"
+revision = "usa-europe"
+address = "0x6d618"
+provenance = "verified"
+
+[[symbol]]
+name = "slot_scan"
+revision = "usa-europe"
+address = "0x6d66e"
+provenance = "verified"
+
+[[symbol]]
+name = "next_entry"
+revision = "usa-europe"
+address = "0x6d6a6"
+provenance = "verified"
+
+[[symbol]]
+name = "streamer_tail"
+revision = "usa-europe"
+address = "0x6d53c"
+provenance = "verified"
+
+[[symbol]]
+name = "vertical_loader"
+revision = "usa-europe"
+address = "0x6d550"
+provenance = "verified"
+
+[[symbol]]
+name = "level_init"
+revision = "usa-europe"
+address = "0x6d6b4"
+provenance = "verified"
+
+[[symbol]]
+name = "cull_continue"
+revision = "usa-europe"
+address = "0x1b20"
+provenance = "verified"
+
+[[symbol]]
+name = "cull_delete"
+revision = "usa-europe"
+address = "0x1c94"
+provenance = "verified"

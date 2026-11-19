@@ -10,6 +10,8 @@ except ImportError: tomllib = None
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROJECT = ROOT / "patches/genesis/castle-of-illusion"
 SDK, CC = os.environ.get("SEGARECOMP_SDK_DIR"), os.environ.get("SEGARECOMP_CC", "cc")
+if os.environ.get("SEGARECOMP_REQUIRE_EXEC") == "1" and (not SDK or tomllib is None):
+    raise RuntimeError("SEGARECOMP_REQUIRE_EXEC=1 but SEGARECOMP_SDK_DIR is not set or Python lacks tomllib: the provider tests would be skipped")
 
 HARNESS = r'''
 #include <segarecomp_mod_genesis.h>

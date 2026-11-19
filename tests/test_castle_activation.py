@@ -7,7 +7,7 @@ import os, pathlib, re, subprocess, sys, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
-import lint_layout
+import lint_layout, gen_castle_retry
 
 GAME = ROOT / "patches" / "genesis"
 MAIN = GAME / "castle-of-illusion"
@@ -29,10 +29,12 @@ class Activation(unittest.TestCase):
         lint_layout.lint(ROOT, errs)
         self.assertEqual(errs, [])
 
-    def test_16x9_is_the_two_necessary_typed_edits_and_no_guest_code(self):
+    def test_16x9_uses_the_common_guest_code_with_its_own_lookaheads(self):
+        # The earlier two-edit 16:9 package lost original layout objects (measured: 13 of 254 identities over 26 stages on a deterministic route; 0 with the common code): the right deletion limit stayed at the original 0x280 while columns were
+        # loaded at 0x200, so edge objects were deleted on creation and never requested again. 16:9 therefore shares the 21:9/32:9 code and edits, with right 0x200 / left 0x100.
         e = {x[2]: (x[3], x[4]) for x in edits(P16)}
-        self.assertEqual(e, {"0x0006d5cc": ("0x0180", "0x0200"), "0x0006d788": ("0x0280", "0x0300")})     # right lookahead and the initial-fill bound
-        self.assertFalse((P16 / "src/retry.asm").exists())
+        self.assertEqual(e["0x0006d5cc"], ("0x0180", "0x0200")); self.assertEqual(e["0x0006d5d2"], ("0x0071", "0x0100")); self.assertEqual(e["0x0006d788"], ("0x0280", "0x0400"))
+        self.assertTrue((P16 / "src/retry.asm").exists()); self.assertIn('kind = "guest-asm"', (P16 / "mod.toml").read_text()); self.assertIn('aspect_max = "16:9"', (P16 / "mod.toml").read_text())
 
     def test_21x9_window_edits_and_hooks(self):
         e = {x[2]: (x[3], x[4]) for x in edits(P21)}
@@ -43,7 +45,7 @@ class Activation(unittest.TestCase):
         self.assertEqual(e["0x0006d59d"], ("0x04", "0x06"))          # row-loader span
         # five six-byte hooks, each one an absolute jump into the injected block
         self.assertEqual(e["0x00001b12"], ("0c4402806400017c", "4ef9000610604e71"))   # CMPI #$280,D4 / BCC.W (an UNSIGNED test that deleted every object left of the camera) -> jump to the signed window test
-        for site, old, new in (("0x0006d612", "48e725207600", "4ef900060c80"), ("0x0006d676", "51cefff6602a", "4ef900060cc0"), ("0x0006d536", "4df8fa806114", "4ef900060e00"),
+        for site, old, new in (("0x0006d612", "48e725207600", "4ef900060c80"), ("0x0006d676", "51cefff6602a", "4ef900060d40"), ("0x0006d536", "4df8fa806114", "4ef900060e00"),
                                ("0x0000963c", "4eb90006d6b4", "4eb900061000")):
             self.assertEqual(e[site], (old, new))
 
@@ -53,29 +55,25 @@ class Activation(unittest.TestCase):
         self.assertEqual(e["0x0006d676"], ("51cefff6602a", "4ef900060d40"))          # the fail hook moved to make room for the deferral in the entry hook
         asm = (P32 / "src/retry.asm").read_text()
         self.assertIn("lea 0x42c0(a1),a1", asm); self.assertIn("lea 0x3e80(a1),a1", asm)          # the retry window equals the lookaheads
-        self.assertIn("cmpi.w #20,d3", asm)                                                      # the deferral threshold (objects in the layout pool)
         self.assertIn('aspect_max = "32:9"', (P32 / "mod.toml").read_text())
         for blk in re.findall(r"^org usa-europe (0x[0-9a-f]+)", asm, flags=re.M): self.assertTrue(0x60c80 <= int(blk, 16) < 0x61280, blk)   # inside the blank area the project frees
 
-    def test_32x9_state_stays_inside_its_extent_and_exits_are_original_continuations(self):
-        asm = (P32 / "src/retry.asm").read_text()
-        addrs = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", asm) if a.startswith("fffc")}
-        self.assertTrue(addrs and all(0xFFFC00 <= a <= 0xFFFCAB for a in addrs), sorted(hex(a) for a in addrs))
-        self.assertNotRegex(asm, r"\b(trap|stop|reset|rte)\b")
-        self.assertEqual(asm.count("jmp @"), 7)
-        self.assertNotIn("0xfffa84,", asm.replace("move.w 0xfffa84,d3", "").replace("movea.w 0xfffa84,a1", ""), "the camera is only read, never written")
+    def test_retry_state_and_diagnostics_stay_inside_their_extent(self):
+        for p in (P16, P21, P32):
+            asm = (p / "src/retry.asm").read_text()
+            addrs = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", asm) if a.startswith("fffc")}
+            self.assertTrue(addrs and all(0xFFFC00 <= a <= 0xFFFCB3 for a in addrs), (p.name, sorted(hex(a) for a in addrs)))
+            self.assertNotRegex(asm, r"\b(trap|stop|reset|rte)\b")
+            self.assertEqual(asm.count("jmp @"), 7, "every exit returns to an original continuation")
+            self.assertIn("cmpi.w #20,d3", asm); self.assertIn("cmpi.w #12,d3", asm)       # deferral threshold; speculative cap (16 slots, 4 reserved for genuine failures)
+        self.assertIn("lea 0x4280(a1),a1", (P21 / "src/retry.asm").read_text()); self.assertIn("lea 0x3f00(a1),a1", (P21 / "src/retry.asm").read_text())
 
-    def test_retry_state_stays_inside_its_extent(self):
-        asm = (P21 / "src/retry.asm").read_text()
-        addrs = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", asm) if a.startswith("fffc")}
-        self.assertTrue(addrs and all(0xFFFC00 <= a <= 0xFFFC2F for a in addrs), sorted(hex(a) for a in addrs))
-        self.assertNotRegex(asm, r"\b(trap|stop|reset|rte)\b")
-        self.assertEqual(asm.count("jmp @"), 7)                       # every exit returns to an original continuation
-        self.assertIn("lea 0x4280(a1),a1", asm); self.assertIn("lea 0x3f00(a1),a1", asm)   # the retry window equals the lookaheads (0x4000 is a column bias that keeps the shifts unsigned)
+    def test_the_retry_asm_of_both_variants_is_generated_from_one_template(self):
+        import gen_castle_retry
+        for name, p in (("16x9", P16), ("21x9", P21), ("32x9", P32)): self.assertEqual((p / "src/retry.asm").read_text(), gen_castle_retry.generate(name), name + ": run scripts/gen_castle_retry.py")
 
     def test_asm_lives_under_src_and_is_declared(self):
-        self.assertIn('kind = "guest-asm"', (P21 / "mod.toml").read_text()); self.assertIn('kind = "guest-asm"', (P32 / "mod.toml").read_text())
-        self.assertNotIn("guest-asm", (P16 / "mod.toml").read_text())
+        [self.assertIn('kind = "guest-asm"', (p / "mod.toml").read_text()) for p in (P16, P21, P32)]
 
     @unittest.skipUnless(CLI, "set SEGARECOMP_CLI to run the product's `mod check`")
     def test_product_mod_check(self):

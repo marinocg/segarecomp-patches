@@ -1,6 +1,7 @@
-"""Functional tests of the ACTUAL injected retry code (castle-of-illusion-activation-21x9/src/retry.asm): assembled by the product, executed natively on a synthetic image against stubs of the original loader.
-Each scenario asserts the exact continuation PATH taken (which original continuation ran, how often, and where the run stopped), the CCR, every register, and the COMPLETE work RAM image (everything except the
-documented retry-state extent 0xFC00..0xFC2F, the test stubs' counters 0x0300..0x033F, and the stack area 0xFF00.. whose pointer is asserted to return to its initial value).
+"""Functional tests of the ACTUAL injected retry/deferral code of ALL THREE activation packages (castle-of-illusion-activation-16x9, -21x9 and -32x9, generated from one template by scripts/gen_castle_retry.py): assembled by the product, executed natively
+on a synthetic image against stubs of the original loader. Every test runs once per variant. Each scenario asserts the exact continuation PATH (which original continuation ran, how often, where the run stopped), every register, the stack pointer, the CCR where it
+is live, and the COMPLETE work-RAM image except the documented extent 0xFC00..0xFCB3 (retry state + diagnostics), the stubs' counters 0x0300..0x033F and the stack area 0xFF00.. (its pointer is asserted).
+CCR liveness (README): the original section loader has two callers (0x6d5ac, 0x6d604), both followed by ADDI.W #$80, which rewrites X,N,Z,V,C; d3/d6/a3 are dead there. The fixture's `ret_addi` stub is exactly that caller continuation.
 Skipped (never silently passed) without SEGARECOMP_CLI + SEGARECOMP_SDK_DIR; CI sets SEGARECOMP_REQUIRE_EXEC=1 so a skip there is a failure."""
 import os, re, struct, sys, pathlib, unittest
 
@@ -10,194 +11,338 @@ import castle_activation_exec_support as S
 if os.environ.get("SEGARECOMP_REQUIRE_EXEC") == "1" and not S.available():
     raise RuntimeError("SEGARECOMP_REQUIRE_EXEC=1 but SEGARECOMP_CLI / SEGARECOMP_SDK_DIR are not set: the executable tests would be skipped")
 
-KEY = 0x5AC3
+KEY, SLOTS, SPEC_CAP, THRESHOLD, EXT_END = 0x5AC3, 16, 12, 20, S.STATE_END
 CAMX, CAMY = 0x0400, 0x0100
 X, N, Z, V, C = 0x10, 0x08, 0x04, 0x02, 0x01
-SR_USER = 0x00
-
-
-def w(v): return struct.pack(">H", v)
-def state(key=KEY, tmp=(0, 0), fail=0, retrying=0, slots=()):
-    b = bytearray(0x30)
-    b[0:4] = w(tmp[0]) + w(tmp[1]); b[8] = fail; b[9] = retrying; b[0xE:0x10] = w(key)
-    for i, (c, r, a) in enumerate(slots): b[0x10 + 8 * i:0x18 + 8 * i] = w(c) + w(r) + w(a) + w(0)
-    return bytes(b)
-def seed(st, camx=CAMX, camy=CAMY, ca00=0x0040, knob=0, extra=None):
-    ram = {0xFC00: st, 0xFA84: w(camx), 0xFA80: w(camy), 0xCA00: w(ca00), 0x0310: struct.pack(">I", knob), 0x1000: bytes(range(256)) * 4, 0x8000: bytes(range(255, -1, -1)) * 8}
-    ram.update(extra or {}); return ram
-def slots_of(o): return [struct.unpack(">HHH", o["state"][0x10 + 8 * i:0x16 + 8 * i]) for i in range(4)]
-def cnt(o, off): return struct.unpack(">I", o["log"][off:off + 4])[0]
-def paths(o):
-    """The continuations that ran: {name: count}; zero entries omitted."""
-    names = {"calls": 0, "scan": 0x14, "next": 0x18, "vert": 0x1C, "tail": 0x20, "level": 0x24, "cull_continue": 0x28, "cull_delete": 0x2C}
-    return {k: cnt(o, v) for k, v in names.items() if cnt(o, v)}
+COUNT = {"fail": 0xA0, "ok": 0xA2, "expired": 0xA4, "drop": 0xA6, "defer": 0xA8, "kept": 0xAA, "inval": 0xAC, "latency": 0xAE, "frames": 0xB0, "maxocc": 0xB2}
+POOL, STACK = 0xD400, 0xFFFF80
 REGS = {"d0": 0x11111111, "d1": 0x22222222, "d2": 0x33333333, "d3": 0x44444444, "d4": 0x00000007, "d5": 0x66666666, "d6": 0x77777777, "d7": 0x88888888,
         "a0": 0x0000AAAA, "a1": 0x0000BBBB, "a2": 0x0000CCCC, "a3": 0xFFFFD040, "a4": 0x0000EEEE, "a5": 0x0000F228}
 SP0 = 0x01000000
 
 
-@unittest.skipUnless(S.available(), "set SEGARECOMP_CLI and SEGARECOMP_SDK_DIR (the product's platforms directory) to execute the injected code")
-class RetryCode(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls): cls.h = S.Harness()
+def w(v): return struct.pack(">H", v)
+def state(key=KEY, tmp=(0, 0), fail=0, retrying=0, slots=(), fc0a=0, counters=None):
+    b = bytearray(EXT_END - 0xFC00)
+    b[0:4] = w(tmp[0]) + w(tmp[1]); b[8] = fail; b[9] = retrying; b[0xA] = fc0a; b[0xE:0x10] = w(key)
+    for i, s in enumerate(slots): b[0x10 + 8 * i:0x18 + 8 * i] = w(s[0]) + w(s[1]) + w(s[2]) + w(s[3] if len(s) > 3 else 0)
+    for k, v in (counters or {}).items(): b[COUNT[k]:COUNT[k] + 2] = w(v)
+    return bytes(b)
+def pool(n): return {POOL + 0x40 * i: w(0x0083) for i in range(n)}
+def seed(st, n_pool=0, camx=CAMX, camy=CAMY, ca00=0x0040, knob=0, extra=None):
+    ram = {0xFC00: st, 0xFA84: w(camx), 0xFA80: w(camy), 0xCA00: w(ca00), 0x0310: struct.pack(">I", knob), 0x1000: bytes(range(256)) * 4, 0x8000: bytes(range(255, -1, -1)) * 8}
+    ram.update(pool(n_pool)); ram.update(extra or {}); return ram
+def ring(o): return [struct.unpack(">HHH", o["state"][0x10 + 8 * i:0x16 + 8 * i]) for i in range(SLOTS)]
+def ctr(o, name): return struct.unpack(">H", o["state"][COUNT[name]:COUNT[name] + 2])[0]
+def cnt(o, off): return struct.unpack(">I", o["log"][off:off + 4])[0]
+def paths(o):
+    names = {"calls": 0, "scan": 0x14, "next": 0x18, "vert": 0x1C, "tail": 0x20, "level": 0x24, "cull_continue": 0x28, "cull_delete": 0x2C, "ret_addi": 0x3C}
+    return {k: cnt(o, v) for k, v in names.items() if cnt(o, v)}
 
-    def run_hook(self, where, regs=None, ram=None, sr=SR_USER):
-        return self.h.run(where, {**REGS, **(regs or {})}, ram, ccr=sr & 0x1F)
 
-    def baseline(self, ram, regs=None, sr=SR_USER):
-        return self.h.run("noop", {**REGS, **(regs or {})}, ram, ccr=sr & 0x1F)
+def make(variant):
+    asm = S.ASM_DIR(variant)
+    WL, WR, CULL_L, CULL_R = S.consts(asm)
 
-    def assert_same_ram_and_registers(self, o, base, keep=()):
-        self.assertEqual(o["hash"], base["hash"], "the complete work RAM image (outside the documented extents) is unchanged")
-        self.assertEqual(o["a7"], SP0, "the stack pointer returned to its initial value")
-        for k, v in REGS.items():
-            if k not in keep: self.assertEqual(o[k], v, k)
+    @unittest.skipUnless(S.available(), "set SEGARECOMP_CLI and SEGARECOMP_SDK_DIR (the product's platforms directory) to execute the injected code")
+    class Code(unittest.TestCase):
+        VARIANT = variant
 
-    # ---- constants and static properties -------------------------------------------------------------------------------------------------------------------
-    def test_shipped_constants(self):
-        self.assertEqual((S.WINDOW_R, S.WINDOW_L, S.CULL_LEFT, S.CULL_RIGHT), (0x280, 0x100, 0x200, 0x380))
-        self.assertEqual(((CAMX - S.WINDOW_L) >> 7) - 1, 5); self.assertEqual(((CAMX + S.WINDOW_R) >> 7) + 1, 14)
+        @classmethod
+        def setUpClass(cls): cls.h = S.Harness(asm=asm)
 
-    def test_no_hook_writes_the_x_flag(self):
-        text = S.ASM.read_text()
-        writers = re.findall(r"^\s+(add\w*|sub\w*|neg\w*|asl\S*|asr\S*|lsl\S*|lsr\S*|rox\S*|abcd|sbcd|nbcd|move\S*\s+\S+,\s*ccr|move\S*\s+\S+,\s*sr)\b", text, flags=re.M)
-        self.assertEqual(writers, [], "an instruction that writes X (or the whole CCR/SR) in a hook; X would no longer be preserved for the original continuation")
+        def run_hook(self, where, regs=None, ram=None, sr=0): return self.h.run(where, {**REGS, **(regs or {})}, ram, ccr=sr & 0x1F)
+        def baseline(self, ram, regs=None, sr=0): return self.h.run("noop", {**REGS, **(regs or {})}, ram, ccr=sr & 0x1F)
 
-    # ---- initialization and level reset --------------------------------------------------------------------------------------------------------------------
-    def test_cold_start_initializes_before_any_use(self):
-        garbage = state(key=0x1234, slots=[(10, 3, 7), (11, 3, 9), (12, 3, 5), (13, 3, 24)], fail=1, retrying=1)
-        o = self.run_hook("frame", ram=seed(garbage))
-        self.assertEqual(o["state"], state(), "the ring is cleared and armed before the vertical loader and before any retry")
-        self.assertEqual(paths(o), {"vert": 1, "tail": 1}); self.assertEqual(o["pc"], S.STUB_RTS["streamer_tail"] + 16)
-        # ... and the clearing happened BEFORE the original vertical loader ran (the stub snapshots the key at its entry)
-        self.assertEqual(struct.unpack(">H", o["log"][0x30:0x32])[0], KEY)
+        def assert_same_ram_and_registers(self, o, base, keep=(), sp=SP0):
+            self.assertEqual(o["hash"], base["hash"], "the complete work RAM image (outside the documented extent) is unchanged")
+            self.assertEqual(o["a7"], sp, "the stack pointer returned to its initial value")
+            for k, v in REGS.items():
+                if k not in keep: self.assertEqual(o[k], v, k)
 
-    def test_level_reset_clears_all_four_and_continues_into_the_original(self):
-        full = state(slots=[(10, 3, 24), (11, 3, 12), (12, 3, 5), (13, 3, 1)], fail=1, retrying=1)
-        for sr in (SR_USER, SR_USER | X):
-            ram = seed(full); o = self.run_hook("reset", ram=ram, sr=sr)
-            self.assertEqual(o["state"], state()); self.assertEqual(paths(o), {"level": 1}); self.assertEqual(o["pc"], S.STUB_RTS["level_init"] + 16)
-            self.assertEqual(o["ccr"] & X, sr & X, "X is preserved"); self.assert_same_ram_and_registers(o, self.baseline(ram, sr=sr))
+        # ---- constants, static properties, RAM ownership ---------------------------------------------------------------------------------------------------
+        def test_shipped_constants(self):
+            exp = {"16x9": (0x100, 0x200, 0x200, 0x300), "21x9": (0x100, 0x280, 0x200, 0x380), "32x9": (0x180, 0x2C0, 0x280, 0x3C0)}[variant]
+            self.assertEqual((WL, WR, CULL_L, CULL_R), exp)
+            self.assertEqual(((CAMX - WL) >> 7) - 1, {"16x9": 5, "21x9": 5, "32x9": 4}[variant]); self.assertEqual(((CAMX + WR) >> 7) + 1, {"16x9": 13, "21x9": 14, "32x9": 14}[variant])
+            self.assertIn("cmpi.w #%d,d3" % THRESHOLD, asm.read_text()); self.assertIn("cmpi.w #%d,d3" % SPEC_CAP, asm.read_text())
 
-    # ---- frame hook ------------------------------------------------------------------------------------------------------------------------------------------
-    def test_frame_hook_registers_stack_ram_and_x(self):
-        for st in (state(), state(slots=[(10, 3, 24)])):
-            for sr in (SR_USER, SR_USER | X, SR_USER | N | C):
-                ram = seed(st); o = self.run_hook("frame", ram=ram, sr=sr)
-                self.assertEqual(o["a6"], 0xFFFFFA80, "a6 is set exactly as the original LEA did")
-                if "calls" not in paths(o):     # when the original loader runs (a retry) it sets the CCR itself: the stub's ADDQ writes X, as the real loader's arithmetic does
-                    self.assertEqual(o["ccr"] & X, sr & X, "X is preserved")
-                self.assertEqual(o["pc"], S.STUB_RTS["streamer_tail"] + 16)
-                self.assertEqual(o["a7"], SP0); self.assertEqual(o["hash"], self.baseline(ram, sr=sr)["hash"])
-                for k, v in REGS.items():
-                    if k != "a6": self.assertEqual(o[k], v, k)
+        def test_only_the_frame_hook_writes_x_and_every_other_block_is_flag_neutral_where_it_matters(self):
+            text = asm.read_text()
+            blocks = re.split(r"^org usa-europe (0x[0-9a-f]+)$", text, flags=re.M)      # [header, addr, body, addr, body, ...]
+            by = {int(blocks[i], 16): blocks[i + 1] for i in range(1, len(blocks), 2)}
+            writers = re.compile(r"^\s+(add\w*|sub\w*|neg\w*|asl\S*|asr\S*|lsl\S*|lsr\S*|rox\S*|abcd|sbcd|nbcd|move\S*\s+\S+,\s*ccr|move\S*\s+\S+,\s*sr)\b", re.M)
+            for addr, name in ((0x60C80, "entry_hook"), (0x60D40, "fail_hook"), (0x61000, "level_reset"), (0x61060, "left_cull"), (0x61100, "defer_sec")):
+                self.assertEqual(writers.findall(by[addr]), [], "%s writes X (diagnostics use LEA/MOVEA/MOVE; the decision uses LEA/ROR/ANDI/CMP)" % name)
+            self.assertTrue(writers.findall(by[0x60E00]), "the frame hook's extra loader calls and counters do write X: documented, X is dead at its continuation")
 
-    def test_the_hook_does_not_preserve_x_across_extra_loader_calls_so_x_must_be_dead_at_the_continuation(self):
-        # The synthetic loader DELIBERATELY changes X on every call (EORI #$10,CCR, then its counter ADDQ rewrites X from the carry), exactly as the real loader's ADD.W/ADD.W D3,D3 do. Injected code cannot read X (the product assembler
-        # has no ADDX/ROXL and forbids SR access), so the hook neither saves nor restores it: after a retry X is whatever the last extra loader call left. This test PINS that fact (and thereby the assumption): if X were live at the original
-        # continuation (streamer tail 0x6d53c, whose first instruction MOVE.W 4(A6),D0 rewrites N/Z/V/C but not X, returning into the per-frame update at 0x9808) the retry would change guest behaviour. README: X was forced to 0 and to 1 right before
-        # that continuation in the real image over 3,002 scrolling frames and the complete machine digest of every frame was identical, so X is dead there on every executed path.
-        for sr in (SR_USER | X, SR_USER):
-            o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24)])), sr=sr)
-            self.assertEqual(paths(o).get("calls"), 1)
-            self.assertEqual(o["ccr"] & X, 0, "after the loader's last ADDQ X is the carry of that addition (0): the entry X is NOT preserved")
-        o = self.run_hook("frame", ram=seed(state()), sr=SR_USER | X)
-        self.assertEqual(o["ccr"] & X, X, "with nothing queued the hook runs no extra loader call and X is exactly the original vertical loader's")
+        def test_guest_ram_ownership_of_state_and_diagnostics(self):
+            text = asm.read_text()
+            absolute = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", text)}
+            owned = {a for a in absolute if 0xFFFC00 <= a < 0xFFFD00}
+            self.assertTrue(owned and all(0xFFFC00 <= a < 0xFFFC00 + (EXT_END - 0xFC00) for a in owned), sorted(hex(a) for a in owned))
+            self.assertEqual(SLOTS * 8 + 0x10, 0x90); self.assertLessEqual(0xFC00 + 0x90, 0xFCA0, "the ring ends before the diagnostics")
+            self.assertEqual(S.STATE_END, 0xFCB4)
+            # the work RAM below the stack: the game's initial SSP is 0xFFFF00; the state (0xFFFC00..0xFFFCB3) begins 0x300 bytes below it (the stack's maximum depth was not measured), in a range the original never addresses (checked against the image locally, README)
+            self.assertNotRegex(text, r"\b(trap|stop|reset|rte)\b"); self.assertEqual(text.count("jmp @"), 7)
 
-    def test_retry_success_rebuilds_the_loader_arguments_and_clears_the_slot(self):
-        o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24), (11, 3, 5)])))
-        self.assertEqual(paths(o), {"calls": 2, "vert": 1, "tail": 1})      # both slots are served in one invocation (no starvation); the original loader ran twice
-        self.assertEqual([s[2] for s in slots_of(o)[:2]], [0, 0])
-        log = o["log"]; self.assertEqual(struct.unpack(">HH", log[4:8]), (11, 3))
-        self.assertEqual(struct.unpack(">I", log[8:12])[0], 0xFFFFCA40); self.assertEqual(struct.unpack(">I", log[12:16])[0], 0xFFFFCA02)
+        # ---- initialization and level reset --------------------------------------------------------------------------------------------------------------------
+        def test_cold_start_initializes_before_any_use(self):
+            garbage = state(key=0x1234, slots=[(10 + i, 3, 24 - i) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1)
+            o = self.run_hook("frame", ram=seed(garbage))
+            self.assertEqual(o["state"][:0xA0], state()[:0xA0], "the whole ring is cleared and armed before the vertical loader and before any retry")
+            self.assertEqual(paths(o), {"vert": 1, "tail": 1}); self.assertEqual(o["pc"], S.STUB_RTS["streamer_tail"] + 16)
+            self.assertEqual(struct.unpack(">H", o["log"][0x30:0x32])[0], KEY, "armed BEFORE the original vertical loader ran")
 
-    def test_retry_failure_keeps_the_slot_and_ages_it(self):
-        o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24)]), knob=1))
-        self.assertEqual(slots_of(o)[0], (10, 3, 23)); self.assertEqual(paths(o)["calls"], 1)
+        def test_level_reset_clears_the_ring_and_continues_into_the_original(self):
+            full = state(slots=[(10 + i, 3, 24) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1, counters={"fail": 7})
+            for sr in (0, X, N | Z | V | C, X | C):
+                ram = seed(full); o = self.run_hook("reset", ram=ram, sr=sr)
+                self.assertEqual(o["state"][:0x90], state()[:0x90]); self.assertEqual(ctr(o, "fail"), 7, "diagnostics are cumulative, not level state")
+                self.assertEqual(paths(o), {"level": 1}); self.assertEqual(o["pc"], S.STUB_RTS["level_init"] + 16)
+                self.assertEqual(o["ccr"] & X, sr & X, "X is preserved"); self.assert_same_ram_and_registers(o, self.baseline(ram, sr=sr))
 
-    def test_expiry_after_the_last_attempt(self):
-        o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 1)]), knob=1))
-        self.assertEqual(slots_of(o)[0][2], 0); self.assertEqual(paths(o)["calls"], 1)
+        # ---- frame hook -----------------------------------------------------------------------------------------------------------------------------------
+        def test_frame_hook_registers_stack_ram_and_x(self):
+            for st in (state(), state(slots=[(10, 3, 24)])):
+                for sr in (0, X, N | C):
+                    ram = seed(st); o = self.run_hook("frame", ram=ram, sr=sr)
+                    self.assertEqual(o["a6"], 0xFFFFFA80, "a6 is set exactly as the original LEA did")
+                    if "calls" not in paths(o): self.assertEqual(o["ccr"] & X, sr & X, "X is preserved when no extra loader call ran")
+                    self.assertEqual(o["pc"], S.STUB_RTS["streamer_tail"] + 16); self.assertEqual(o["a7"], SP0); self.assertEqual(o["hash"], self.baseline(ram, sr=sr)["hash"])
+                    for k, v in REGS.items():
+                        if k != "a6": self.assertEqual(o[k], v, k)
 
-    def test_invalid_slot_is_dropped_without_a_load(self):
-        for c, r in ((40, 3), (10, 30), (2, 3), (0, 3), (6, 3 - 5)):
-            if r < 0: continue
-            o = self.run_hook("frame", ram=seed(state(slots=[(c, r, 24)])))
-            self.assertEqual(slots_of(o)[0][2], 0, (c, r)); self.assertNotIn("calls", paths(o), (c, r))
+        def test_the_hook_does_not_preserve_x_across_extra_loader_calls_so_x_must_be_dead_at_the_continuation(self):
+            # The synthetic loader DELIBERATELY changes X on every call (EORI #$10,CCR, then its counter ADDQ rewrites X), as the real loader's ADD.W/MULU do. Injected code cannot read X (no ADDX/ROXL, SR forbidden), so a retry leaves X as the last extra
+            # loader call set it. PINNED here, together with the assumption (README: X forced to 0 and to 1 at the continuation gave a bit-identical machine digest on 3,002 frames).
+            for sr in (X, 0):
+                o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24)])), sr=sr)
+                self.assertEqual(paths(o).get("calls"), 1); self.assertEqual(o["ccr"] & X, 0)
+            o = self.run_hook("frame", ram=seed(state()), sr=X); self.assertEqual(o["ccr"] & X, X)
 
-    def test_window_edges(self):
-        # kept: columns 5..14, rows 0..7 for CAMX=0x400, CAMY=0x100; dropped just outside
-        for (c, r), keep in (((5, 0), True), ((4, 0), False), ((14, 7), True), ((15, 7), False), ((10, 8), False), ((10, 7), True)):
-            o = self.run_hook("frame", ram=seed(state(slots=[(c, r, 24)])))
-            self.assertEqual("calls" in paths(o), keep, (c, r))
+        def test_retry_success_rebuilds_the_loader_arguments_and_clears_the_slot(self):
+            o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24, 0), (11, 3, 5, 0)])))
+            self.assertEqual(paths(o), {"calls": 2, "vert": 1, "tail": 1})
+            self.assertEqual([s[2] for s in ring(o)[:2]], [0, 0]); self.assertEqual(ctr(o, "ok"), 2)
+            self.assertEqual(struct.unpack(">HH", o["log"][4:8]), (11, 3)); self.assertEqual(struct.unpack(">I", o["log"][8:12])[0], 0xFFFFCA40); self.assertEqual(struct.unpack(">I", o["log"][12:16])[0], 0xFFFFCA02)
 
-    # ---- fail hook -------------------------------------------------------------------------------------------------------------------------------------------
-    def test_enqueue_continuation_registers_and_flags(self):
-        for word, nz in ((0x8001, N), (0x0001, 0)):
-            for sr in (SR_USER, SR_USER | X, SR_USER | N | Z | V | C):
-                ram = seed(state(tmp=(10, 3)), extra={0xD000: w(word)}); o = self.run_hook("fail", {"d6": 0}, ram, sr)
-                self.assertEqual(slots_of(o)[0], (10, 3, 24)); self.assertEqual(o["state"][8], 1)
-                self.assertEqual(paths(o), {"next": 1}); self.assertEqual(o["pc"], S.STUB_RTS["next_entry"] + 16)
-                self.assertEqual(o["d6"] & 0xFFFF, 0xFFFF, "the original DBF ran to -1 (scan exhausted)")
-                self.assertEqual(o["ccr"], (sr & X) | nz, "the CCR equals the one the original path had: the last TST of the scan (Z=0, V=0, C=0, N from the slot word); X untouched")
-                self.assert_same_ram_and_registers(o, self.baseline(ram, {"d6": 0}, sr), keep=("d6",))
+        def test_retry_failure_keeps_the_slot_and_ages_it(self):
+            o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24)]), knob=1))
+            self.assertEqual(ring(o)[0], (10, 3, 23)); self.assertEqual(paths(o)["calls"], 1)
 
-    def test_scan_continues_while_slots_remain(self):
-        ram = seed(state(tmp=(10, 3))); o = self.run_hook("fail", {"d6": 3}, ram, SR_USER | X | Z)
-        self.assertEqual(paths(o), {"scan": 1}); self.assertEqual(o["state"], state(tmp=(10, 3))); self.assertEqual(o["ccr"], X | Z, "the original DBF does not touch the CCR")
+        def test_expiry_after_the_last_attempt(self):
+            o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 1)]), knob=1))
+            self.assertEqual(ring(o)[0][2], 0); self.assertEqual(ctr(o, "expired"), 1)
 
-    def test_dedup(self):
-        o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 3), slots=[(10, 3, 9)], fail=0)))
-        self.assertEqual(slots_of(o), [(10, 3, 9), (0, 0, 0), (0, 0, 0), (0, 0, 0)]); self.assertEqual(paths(o), {"next": 1})
+        def test_invalid_slot_is_dropped_without_a_load_and_counted(self):
+            for c, r in ((40, 3), (10, 30), (2, 3), (0, 3)):
+                o = self.run_hook("frame", ram=seed(state(slots=[(c, r, 24)])))
+                self.assertEqual(ring(o)[0][2], 0, (c, r)); self.assertNotIn("calls", paths(o), (c, r)); self.assertEqual(ctr(o, "inval"), 1)
 
-    def test_same_column_other_row_is_a_different_section(self):
-        o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 4), slots=[(10, 3, 9)])))
-        self.assertEqual(slots_of(o)[:2], [(10, 3, 9), (10, 4, 24)])
+        def test_window_edges_follow_the_variant_lookaheads(self):
+            lo, hi = ((CAMX - WL) >> 7) - 1, ((CAMX + WR) >> 7) + 1
+            for (c, r), keep in (((lo, 0), True), ((lo - 1, 0), False), ((hi, 7), True), ((hi + 1, 7), False), ((10, 8), False), ((10, 7), True)):
+                o = self.run_hook("frame", ram=seed(state(slots=[(c, r, 24)])))
+                self.assertEqual("calls" in paths(o), keep, (c, r))
 
-    def test_distinct_section_takes_the_next_slot(self):
-        o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(11, 3), slots=[(10, 3, 9)])))
-        self.assertEqual(slots_of(o)[:2], [(10, 3, 9), (11, 3, 24)])
+        def test_pending_demand_latency_and_frame_counter_are_measured(self):
+            o = self.run_hook("frame", ram=seed(state(slots=[(10, 3, 24, 3), (11, 3, 24, 3), (12, 3, 24, 3)], counters={"frames": 10})))
+            self.assertEqual(ctr(o, "frames"), 11); self.assertEqual(ctr(o, "maxocc"), 3, "three occupied slots seen at this invocation")
+            self.assertEqual(ctr(o, "latency"), 8, "stamp 3, completed at invocation 11: eight streamer invocations")
 
-    def test_queue_full_drops_the_fifth_without_touching_the_four(self):
-        full = [(10, 3, 9), (11, 3, 8), (12, 3, 7), (13, 3, 6)]
-        o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(14, 3), slots=full)))
-        self.assertEqual(slots_of(o), full); self.assertEqual(o["state"][8], 1); self.assertEqual(paths(o), {"next": 1})
+        # ---- fail hook (genuine allocation failure) ------------------------------------------------------------------------------------------------------------
+        def test_enqueue_continuation_registers_and_the_exact_ccr(self):
+            # The CCR at next_entry is dead in the original (LEA/DBRA, every later use preceded by a flag-setting instruction), but the hook reproduces it exactly anyway: the last TST of the scan (Z=0,V=0,C=0, N from the slot word), X untouched.
+            for word, nz in ((0x8001, N), (0x0001, 0)):
+                for sr in (0, X, N | Z | V | C, X | Z, X | N | V | C):
+                    ram = seed(state(tmp=(10, 3)), extra={0xD000: w(word)}); o = self.run_hook("fail", {"d6": 0}, ram, sr)
+                    self.assertEqual(ring(o)[0], (10, 3, 24)); self.assertEqual(o["state"][8], 1); self.assertEqual(ctr(o, "fail"), 1)
+                    self.assertEqual(struct.unpack(">H", o["state"][0x16:0x18])[0], 0, "stamp = the frame counter (0 here)")
+                    self.assertEqual(paths(o), {"next": 1}); self.assertEqual(o["pc"], S.STUB_RTS["next_entry"] + 16)
+                    self.assertEqual(o["d6"] & 0xFFFF, 0xFFFF); self.assertEqual(o["ccr"], (sr & X) | nz)
+                    self.assert_same_ram_and_registers(o, self.baseline(ram, {"d6": 0}, sr), keep=("d6",))
 
-    def test_no_enqueue_while_retrying_or_with_a_bad_key(self):
-        o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 3), retrying=1)))
-        self.assertEqual(slots_of(o)[0], (0, 0, 0)); self.assertEqual(o["state"][8], 1)
-        o = self.run_hook("fail", {"d6": 0}, seed(state(key=0, tmp=(10, 3))))
-        self.assertEqual(slots_of(o)[0], (0, 0, 0)); self.assertEqual(paths(o), {"next": 1})
+        def test_every_fail_hook_exit_leaves_the_same_ccr_and_registers(self):
+            # queue, duplicate, full ring, retrying and bad key all end at next_entry with the flags of the original path
+            full = [(30 + i, 3, 9) for i in range(SLOTS)]
+            for st in (state(tmp=(10, 3)), state(tmp=(10, 3), slots=[(10, 3, 9)]), state(tmp=(10, 3), slots=full), state(tmp=(10, 3), retrying=1), state(key=0, tmp=(10, 3))):
+                for sr in (0, X | N | Z | V | C, X):
+                    ram = seed(st, extra={0xD000: w(0x0001)}); o = self.run_hook("fail", {"d6": 0}, ram, sr)
+                    self.assertEqual(paths(o), {"next": 1}); self.assertEqual(o["ccr"], sr & X); self.assert_same_ram_and_registers(o, self.baseline(ram, {"d6": 0}, sr), keep=("d6",))
 
-    # ---- entry hook ------------------------------------------------------------------------------------------------------------------------------------------
-    def test_entry_hook_records_the_call_and_reproduces_the_displaced_instructions(self):
-        regs = {"d2": 0x0000000A, "d5": 0x00000003, "d7": 0x12345678, "a2": 0x0000CA40}
-        ram = seed(state()); o = self.run_hook("entry", regs, ram)
-        self.assertEqual(o["state"][0:4], w(10) + w(3), "the (column,row) of the call in progress")
-        self.assertEqual(paths(o), {"calls": 1})                            # the original loader body ran once
-        log = o["log"]; self.assertEqual(struct.unpack(">HH", log[4:8]), (10, 3)); self.assertEqual(struct.unpack(">I", log[8:12])[0], 0xCA40)
-        self.assertEqual(o["d3"], 0, "the displaced MOVEQ #0,D3 ran"); self.assertEqual(o["a7"], SP0)
+        def test_scan_continues_while_slots_remain(self):
+            ram = seed(state(tmp=(10, 3))); o = self.run_hook("fail", {"d6": 3}, ram, X | Z)
+            self.assertEqual(paths(o), {"scan": 1}); self.assertEqual(o["state"], state(tmp=(10, 3))); self.assertEqual(o["ccr"], X | Z, "the original DBF does not touch the CCR")
 
-    # ---- left deletion ---------------------------------------------------------------------------------------------------------------------------------------
-    def test_left_cull_still_deletes_a_dead_slot_left_of_the_camera(self):
-        # the builder runs over a stale draw list at a level change; a freed slot (type word 0) left of the camera was removed by the original unsigned test (a1 would be 0 -> odd-address crash)
-        for typ, deleted in ((0x0000, True), (0x0083, False)):
-            ram = seed(state(), extra={0xD0C0: w(typ)}); o = self.run_hook("cull", {"d4": 0xFF38, "a0": 0xFFFFD0C0}, ram)
-            self.assertEqual(paths(o), {"cull_delete": 1} if deleted else {"cull_continue": 1}, hex(typ))
-        ram = seed(state(), extra={0xD0C0: w(0)}); o = self.run_hook("cull", {"d4": 0x0080, "a0": 0xFFFFD0C0}, ram)
-        self.assertEqual(paths(o), {"cull_continue": 1}, "right of the camera the original behavior is unchanged (no type test)")
+        def test_dedup_and_a_distinct_section(self):
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 3), slots=[(10, 3, 9)])))
+            self.assertEqual(ring(o)[:2], [(10, 3, 9), (0, 0, 0)])
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 4), slots=[(10, 3, 9)]))); self.assertEqual(ring(o)[:2], [(10, 3, 9), (10, 4, 24)])
 
-    def test_left_cull_is_signed_and_moves_both_limits(self):
-        # d4 = screen x + 128. The original unsigned CMPI #$280/BCC deleted EVERY object left of the camera.
-        for d4, deleted in ((0x0005, False), (0x0000, False), (0xFFFF, False), (0x10000 - S.CULL_LEFT, False), (0x10000 - S.CULL_LEFT - 1, True), (0x8000, True),
-                            (S.CULL_RIGHT - 1, False), (S.CULL_RIGHT, True), (0x7000, True)):
-            for sr in (SR_USER, SR_USER | X):
-                ram = seed(state(), extra={0xD000: w(0x0083)}); o = self.run_hook("cull", {"d4": d4, "a0": 0xFFFFD000}, ram, sr)
-                self.assertEqual(paths(o), {"cull_delete": 1} if deleted else {"cull_continue": 1}, hex(d4))
-                self.assertEqual(o["pc"], S.STUB_RTS["cull_delete" if deleted else "cull_continue"] + 16)
-                self.assertEqual(o["ccr"] & X, sr & X, "X preserved"); self.assertEqual(o["d4"], d4, "d4 is not modified (the later sprite code reads it)")
-                self.assert_same_ram_and_registers(o, self.baseline(ram, {"d4": d4, "a0": 0xFFFFD000}, sr), keep=("d4", "a0"))
+        def test_queue_full_drops_the_newcomer_without_touching_the_others_and_counts_it(self):
+            full = [(30 + i, 3, 9 - i % 5) for i in range(SLOTS)]
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(14, 3), slots=full)))
+            self.assertEqual(ring(o), full); self.assertEqual(ctr(o, "drop"), 1); self.assertEqual(o["state"][8], 1); self.assertEqual(paths(o), {"next": 1})
 
+        def test_no_enqueue_while_retrying_or_with_a_bad_key(self):
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 3), retrying=1))); self.assertEqual(ring(o)[0], (0, 0, 0)); self.assertEqual(o["state"][8], 1)
+            o = self.run_hook("fail", {"d6": 0}, seed(state(key=0, tmp=(10, 3)))); self.assertEqual(ring(o)[0], (0, 0, 0)); self.assertEqual(paths(o), {"next": 1})
+
+        # ---- entry hook and the deferral -------------------------------------------------------------------------------------------------------------------
+        def entry(self, col, row, n_pool, retrying=0, key=KEY, slots=(), camx=CAMX, sr=0, extra=None):
+            """The original loader called with (col, row): the stack holds a return address (the harness stops at the first RTS it reaches)."""
+            ram = seed(state(key=key, retrying=retrying, slots=slots), n_pool, camx=camx, extra={STACK & 0xFFFF: struct.pack(">I", S.SYM["next_entry"]), **(extra or {})})
+            regs = {**REGS, "d2": col, "d5": row, "a7": STACK}
+            return ram, self.h.run("entry", regs, ram, ccr=sr & 0x1F), regs
+
+        def defer_rts(self, retrying=False):
+            base = 0x2800; found = [base + i for i in range(0, 0x100, 2) if self.h.image[base + i:base + i + 2] == b"\x4e\x75"]
+            return found[0 if retrying else -1]
+
+        def returned(self, o, retrying=False):
+            self.assertEqual(o["pc"], self.defer_rts(retrying), "stopped at the deferral's own RTS: the original loader body never ran"); self.assertEqual(paths(o), {}); self.assertEqual(o["a7"], STACK)
+
+        def test_entry_below_the_threshold_nothing_is_deferred_even_far_beyond_the_window(self):
+            for col in (30, 0, 12, 11):
+                ram, o, regs = self.entry(col, 3, THRESHOLD - 1)
+                self.assertEqual(paths(o), {"calls": 1}, col); self.assertEqual(ring(o), [(0, 0, 0)] * SLOTS); self.assertEqual(ctr(o, "defer"), 0); self.assertEqual(o["d3"], 0, "the displaced MOVEQ #0,D3 ran")
+
+        def test_at_the_threshold_only_speculative_columns_are_deferred(self):
+            # camera 0x400: the original window is columns (0x400-0x71..0x400+0x180)>>7 = 6..11 (one more column is kept on the left: left of (cam-0xF1)>>7 = 6)
+            for col, deferred in ((12, True), (30, True), (11, False), (8, False), (6, False), (5, True), (0, True)):
+                ram, o, regs = self.entry(col, 3, THRESHOLD)
+                self.assertEqual("calls" in paths(o), not deferred, col); self.assertEqual(ctr(o, "defer"), 1 if deferred else 0, col); self.assertEqual(ring(o)[0][:3] == (col, 3, 24), deferred, col)
+
+        def test_the_decision_follows_the_camera_only(self):
+            for camx, col, deferred in ((0, 4, True), (0, 3, False), (0x80, 5, True), (0x1000, 35, False), (0x1000, 36, True)):
+                ram, o, regs = self.entry(col, 2, THRESHOLD, camx=camx); self.assertEqual("calls" in paths(o), not deferred, (hex(camx), col))
+            ram, o, regs = self.entry(0, 1, THRESHOLD, camx=0x10); self.assertIn("calls", paths(o), "near the level start the left limit is negative: nothing on the left is speculative")
+
+        def test_the_early_return_is_exact_for_the_caller_and_the_decision_is_x_neutral(self):
+            # What the caller can observe after a deferral: registers, stack, RAM and the CCR AFTER its own ADDI.W #$80,D0. The hook leaves N/Z/V/C arbitrary (dead) but its decision (and the diagnostics) never write X.
+            for sr in range(0, 32):
+                ram, o, regs = self.entry(12, 3, THRESHOLD, sr=sr)
+                self.assertEqual(o["pc"], self.defer_rts(), "stopped at the deferral's RTS")                  # the run stops at the first RTS; the caller's continuation is exercised by test_the_callers_ccr_is_independent...
+                for k, v in regs.items():
+                    if k in ("a7", "d3", "d6", "a3"): continue
+                    self.assertEqual(o[k], v, k)
+                self.assertEqual(o["sr"] & X, sr & X, "the decision is X-neutral (belt and braces: X is dead at the caller's ADDI)")
+                self.assertEqual(o["hash"], self.baseline(ram, sr=sr)["hash"]); self.assertEqual(ring(o)[0][:3], (12, 3, 24))
+
+        def test_the_callers_ccr_and_registers_after_its_addi_are_the_same_whether_the_section_was_deferred_or_loaded(self):
+            # A faithful caller (JSR section_load; ADDI.W #$80,D0; CCR capture): after its own ADDI the CCR no longer depends on the entry flags or on what the hook (or the stub loader, which flips X) did to them.
+            expect = None
+            for sr in range(0, 32):
+                results = {}
+                for tag, n_pool in (("deferred", THRESHOLD), ("loaded", 0)):
+                    ram = seed(state(), n_pool, extra={STACK & 0xFFFF: struct.pack(">I", 0)})
+                    o = self.h.run("caller", {**REGS, "d2": 12, "d5": 3, "a7": STACK}, ram, ccr=sr)
+                    self.assertEqual(paths(o).get("ret_addi"), 1, (tag, sr)); self.assertEqual(("calls" in paths(o)), tag == "loaded", (tag, sr))
+                    results[tag] = o
+                d, l = results["deferred"], results["loaded"]
+                self.assertEqual(d["ccr"], l["ccr"], "the caller sees the same CCR after its ADDI (entry CCR %02x)" % sr)
+                for k in ("d0", "d1", "d2", "d4", "d5", "d7", "a0", "a1", "a2", "a4", "a5"): self.assertEqual(d[k], l[k], k)
+                expect = d["ccr"] if expect is None else expect
+                self.assertEqual(d["ccr"], expect, "independent of the entry flags")
+            r = (REGS["d0"] & 0xFFFF) + 0x80
+            self.assertEqual(expect, (N if r & 0x8000 else 0) | (Z if (r & 0xFFFF) == 0 else 0) | (C | X if r > 0xFFFF else 0), "the CCR of ADDI.W #$80,D0 on the caller's d0")
+
+        def test_both_enqueue_paths_stamp_the_frame_counter_for_the_latency_measure(self):
+            ram, o, regs = self.entry(12, 3, THRESHOLD); ram[0xFC00] = state(counters={"frames": 5}); ram, o, regs = self.entry(12, 3, THRESHOLD, extra={0xFC00 + COUNT["frames"]: w(5)})
+            self.assertEqual(struct.unpack(">H", o["state"][0x16:0x18])[0], 5, "deferral stamps the streamer-invocation counter")
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 3), counters={"frames": 9}))); self.assertEqual(struct.unpack(">H", o["state"][0x16:0x18])[0], 9, "so does a genuine failure")
+
+        def test_a_deferral_returns_exactly_like_a_loader_that_loaded_nothing(self):
+            ram, o, regs = self.entry(12, 3, THRESHOLD); self.returned(o)
+            for k, v in regs.items():
+                if k in ("a7", "d3", "d6", "a3"): continue
+                self.assertEqual(o[k], v, k)
+            self.assertEqual(o["hash"], self.baseline(ram)["hash"], "no guest RAM outside the retry state changed"); self.assertEqual(o["state"][0:4], w(12) + w(3))
+
+        def test_inside_a_retry_the_section_keeps_waiting_and_is_flagged(self):
+            ram, o, regs = self.entry(12, 3, THRESHOLD, retrying=1)
+            self.assertEqual(ring(o), [(0, 0, 0)] * SLOTS); self.assertEqual(o["state"][8], 1); self.assertEqual(o["state"][0xA], 1); self.returned(o, retrying=True)
+
+        def test_an_invalid_state_key_disables_the_deferral(self):
+            ram, o, regs = self.entry(12, 3, THRESHOLD, key=0); self.assertEqual(paths(o), {"calls": 1}); self.assertEqual(ring(o), [(0, 0, 0)] * SLOTS)
+
+        # ---- the queue policy: speculative deferrals can never displace genuine failures --------------------------------------------------------------------------
+        def spec_slots(self, n, base=20): return [(base + i, 3, 24, 0) for i in range(n)]
+
+        def test_speculative_deferrals_stop_at_the_cap_and_load_normally_beyond_it(self):
+            for used, deferred in ((SPEC_CAP - 1, True), (SPEC_CAP, False), (SLOTS, False)):
+                ram, o, regs = self.entry(12, 3, THRESHOLD, slots=self.spec_slots(used))
+                self.assertEqual("calls" in paths(o), not deferred, used)
+                if deferred: self.assertEqual(ring(o)[used][:3], (12, 3, 24))
+                else: self.assertEqual(ring(o)[:used], [s[:3] for s in self.spec_slots(used)]); self.assertEqual(ctr(o, "defer"), 0, "no new deferral, nothing displaced, nothing dropped"); self.assertEqual(ctr(o, "drop"), 0)
+
+        def test_a_genuine_failure_still_finds_a_slot_when_speculative_work_filled_the_cap(self):
+            spec = self.spec_slots(SPEC_CAP)
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(11, 3), slots=spec)))
+            self.assertEqual(ring(o)[SPEC_CAP], (11, 3, 24), "an original-window section that fails to allocate is queued in a reserved slot"); self.assertEqual(ctr(o, "drop"), 0)
+            for k in range(SLOTS - SPEC_CAP):       # all reserved slots usable by genuine failures
+                spec = spec + [(60 + k, 3, 24, 0)] if k else spec
+            full_but_one = spec + [(60 + k, 3, 24, 0) for k in range(SLOTS - SPEC_CAP - 1)] if False else None
+
+        def test_speculative_work_cannot_permanently_displace_essential_work(self):
+            # Sequence: the cap is full of speculative sections; an essential section fails and is queued; the speculative demand keeps coming and is refused (loaded normally); the essential section is retried and loaded; nothing was dropped.
+            spec = self.spec_slots(SPEC_CAP)
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(11, 3), slots=spec)))
+            queued = [s[:3] for s in ring(o) if s[2]]; self.assertIn((11, 3, 24), queued)
+            ram, o2, regs = self.entry(12, 3, THRESHOLD, slots=[tuple(s) + (0,) for s in queued])       # more speculative demand: the ring has 13 used (>= cap): it loads instead of queueing
+            self.assertIn("calls", paths(o2)); self.assertEqual(ctr(o2, "drop"), 0)
+            o3 = self.run_hook("frame", ram=seed(state(slots=[(11, 3, 24, 0)]), THRESHOLD - 1))            # the essential section is reconsidered at the next streamer invocation and loads
+            self.assertEqual(ring(o3)[0][2], 0); self.assertEqual(ctr(o3, "ok"), 1); self.assertEqual(paths(o3).get("calls"), 1)
+
+        def test_a_full_ring_of_speculative_sections_cannot_arise(self):
+            # even a ring that is entirely speculative (16) is only reachable by genuine failures; a deferral never takes slot 13..16
+            for used in range(SPEC_CAP, SLOTS):
+                ram, o, regs = self.entry(12, 3, THRESHOLD, slots=self.spec_slots(used)); self.assertNotIn(12, [s[0] for s in ring(o)])
+
+        # ---- the retry with a deferral inside it ------------------------------------------------------------------------------------------------------------
+        def frame(self, slots, n_pool, camx=CAMX, knob=0): return self.h.run("frame", REGS, seed(state(slots=slots), n_pool, camx=camx, knob=knob), ccr=0)
+
+        def test_a_deferred_section_keeps_its_age_while_it_waits(self):
+            o = self.frame([(12, 3, 24, 0), (11, 3, 5, 0)], THRESHOLD)
+            s = ring(o); self.assertEqual(s[0], (12, 3, 24)); self.assertEqual(ctr(o, "kept"), 1); self.assertEqual(s[1][2], 0); self.assertEqual(ctr(o, "ok"), 1); self.assertEqual(paths(o).get("calls"), 1)
+
+        def test_once_the_pool_has_room_the_deferred_section_loads(self):
+            o = self.frame([(12, 3, 24, 0)], THRESHOLD - 1); self.assertEqual(ring(o)[0][2], 0); self.assertEqual(ctr(o, "ok"), 1)
+
+        def test_a_deferred_section_that_leaves_the_retry_window_is_dropped_and_counted(self):
+            o = self.frame([(40, 3, 24, 0)], THRESHOLD); self.assertEqual(ring(o)[0][2], 0); self.assertEqual(ctr(o, "inval"), 1); self.assertNotIn("calls", paths(o))
+
+        def test_a_real_allocation_failure_still_ages_and_expires(self):
+            o = self.frame([(11, 3, 1, 0)], 0, knob=1); self.assertEqual(ring(o)[0][2], 0); self.assertEqual(ctr(o, "expired"), 1)
+
+        def test_the_frame_hook_leaves_registers_and_ram_alone(self):
+            ram = seed(state(slots=[(12, 3, 24, 0)]), THRESHOLD); o = self.h.run("frame", REGS, ram, ccr=0); base = self.h.run("noop", REGS, ram, ccr=0)
+            self.assertEqual(o["hash"], base["hash"]); self.assertEqual(o["a7"], SP0)
+            for k, v in REGS.items():
+                if k != "a6": self.assertEqual(o[k], v, k)
+
+        # ---- left deletion ---------------------------------------------------------------------------------------------------------------------------------
+        def test_left_cull_still_deletes_a_dead_slot_left_of_the_camera(self):
+            for typ, deleted in ((0x0000, True), (0x0083, False)):
+                ram = seed(state(), extra={0xD0C0: w(typ)}); o = self.run_hook("cull", {"d4": 0xFF38, "a0": 0xFFFFD0C0}, ram)
+                self.assertEqual(paths(o), {"cull_delete": 1} if deleted else {"cull_continue": 1}, hex(typ))
+            ram = seed(state(), extra={0xD0C0: w(0)}); o = self.run_hook("cull", {"d4": 0x0080, "a0": 0xFFFFD0C0}, ram); self.assertEqual(paths(o), {"cull_continue": 1})
+
+        def test_left_cull_is_signed_and_moves_both_limits(self):
+            for d4, deleted in ((5, False), (0, False), (0xFFFF, False), (0x10000 - CULL_L, False), (0x10000 - CULL_L - 1, True), (0x8000, True), (CULL_R - 1, False), (CULL_R, True), (0x7000, True)):
+                for sr in (0, X, N | Z | V | C):
+                    ram = seed(state(), extra={0xD000: w(0x0083)}); o = self.run_hook("cull", {"d4": d4, "a0": 0xFFFFD000}, ram, sr)
+                    self.assertEqual(paths(o), {"cull_delete": 1} if deleted else {"cull_continue": 1}, hex(d4)); self.assertEqual(o["d4"], d4)
+                    self.assertEqual(o["ccr"] & X, sr & X, "X preserved"); self.assert_same_ram_and_registers(o, self.baseline(ram, {"d4": d4, "a0": 0xFFFFD000}, sr), keep=("d4", "a0"))
+
+    Code.__name__ = Code.__qualname__ = "Code" + variant
+    return Code
+
+
+Code16 = make("16x9")
+Code21 = make("21x9")
+Code32 = make("32x9")
 
 if __name__ == "__main__":
     unittest.main()
