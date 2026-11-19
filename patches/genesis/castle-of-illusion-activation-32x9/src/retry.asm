@@ -4,7 +4,8 @@
 ;   entry_hook (section loader entry)  : records (column,row); DEFERS the section (queue it and return, as the loader would after loading nothing) when the layout pool (0xD400..0xDBFF, 32 slots) holds at least 20 objects AND the column
 ;                                         lies beyond the ORIGINAL game's window (right of (camera+0x180)>>7, left of (camera-0xF1)>>7) AND fewer than 12 ring slots are in use (the last 4 are kept for genuine allocation failures:
 ;                                         past that a speculative section is simply loaded as the original would); otherwise the displaced MOVEM d2/d5/d7/a2 (as four pushes) and MOVEQ #0,d3
-;   fail_hook  (pool scan exhausted)   : queues the section (deduplicated by column+row) unless a retry is running or the state key is invalid; the displaced DBF/BRA
+;   fail_hook  (pool scan exhausted)   : queues the section (deduplicated by column+row) unless a retry is running or the state key is invalid; a section beyond the original window (speculative, same test as the deferral) is queued only while fewer than 12 slots are
+;                                         in use, so speculative work, whether deferred or failed, never takes one of the 4 reserved slots; the displaced DBF/BRA
 ;   frame_hook (streamer)              : arms the state, runs the displaced LEA/BSR, retries every queued section once per streamer invocation; a section deferred again in a retry keeps its age (it is waiting, not failing)
 ;   level_reset                        : clears the state BEFORE the original level initialization
 ;   left_cull (0x1b12)                 : signed window test [-(left lookahead+0x100), right limit) instead of the unsigned [0,0x280); dead slots of a stale draw list are still deleted
@@ -14,8 +15,9 @@
 ; and cannot preserve X (the product assembler has no ADDX/ROXL and forbids SR access): X is dead there on every executed path measured, not proven (README).
 ; State (work RAM, never written by the original game): 0xfffc00..0xfffc8f: +0 col.w +2 row.w of the call in progress, +8 fail.b, +9 retrying.b, +0xa deferred-in-retry.b, +0xe key.w 0x5ac3, 16 slots at +0x10 (8 bytes: col.w row.w age.w stamp.w;
 ; age 0 = empty; stamp = the frame counter at enqueue). Diagnostics only, never read by the game, words: 0xfffca0 fail events queued, +2 retry successes, +4 expired, +6 ring-full drops, +8 deferral attempts, +0xa deferred retries kept waiting,
-; +0xc invalidated (left the retry window), +0xe max recovery latency (streamer invocations from enqueue to load), 0xfffcb0 streamer invocation counter, +2 max ring occupancy seen.
-free usa-europe 0x00060c80 0x00000600 0xff
+; +0xc invalidated (left the retry window), +0xe max recovery latency (streamer invocations from enqueue to load), 0xfffcb0 streamer invocation counter, +2 max ring occupancy seen, +4 speculative failures not queued (ring at the cap).
+; The ring and the key are cleared at cold start and at every level reset; the diagnostics are cleared ONLY at cold start (work RAM is undefined at power-on), so they are cumulative across levels within a session.
+free usa-europe 0x00060c80 0x00000980 0xff
 org usa-europe 0x00060c80
 entry_hook:
   move.w d2,0xfffc00
@@ -73,6 +75,39 @@ fail_hook:
   movea.w 0xfffca0,a0
   lea 1(a0),a0
   move.w a0,0xfffca0
+  movea.w 0xfffa84,a0
+  lea 0x180(a0),a0
+  move.w a0,d0
+  ror.w #7,d0
+  andi.w #0x1ff,d0
+  move.w 0xfffc00,d1
+  cmp.w d0,d1
+  bgt.s fspec
+  lea -0x271(a0),a0
+  move.w a0,d0
+  bmi.s fess
+  ror.w #7,d0
+  andi.w #0x1ff,d0
+  cmp.w d0,d1
+  bge.s fess
+fspec:
+  lea 0xfffc10,a0
+  moveq #15,d0
+  moveq #1,d1
+fcnt:
+  tst.w 4(a0)
+  beq.s fcz
+  rol.l #1,d1
+fcz:
+  lea 8(a0),a0
+  dbra d0,fcnt
+  cmpi.l #4096,d1
+  blt.s fess
+  movea.w 0xfffcb4,a0
+  lea 1(a0),a0
+  move.w a0,0xfffcb4
+  bra.s done
+fess:
   lea 0xfffc10,a0
   moveq #15,d0
 dup1:
@@ -114,14 +149,14 @@ mark:
   jmp @next_entry
 again:
   jmp @slot_scan
-org usa-europe 0x00060e00
+org usa-europe 0x00060f00
 frame_hook:
   cmpi.w #0x5ac3,0xfffc0e
   beq.s keyok0
   move.l a0,-(sp)
   move.l d0,-(sp)
   lea 0xfffc00,a0
-  moveq #35,d0
+  moveq #45,d0
 clrf:
   clr.l (a0)+
   dbra d0,clrf
@@ -260,7 +295,7 @@ nomax:
   move.l (sp)+,d1
   move.l (sp)+,d0
   jmp @streamer_tail
-org usa-europe 0x00061000
+org usa-europe 0x00061200
 level_reset:
   move.l a0,-(sp)
   move.l d0,-(sp)
@@ -273,7 +308,7 @@ clrr:
   movea.l (sp)+,a0
   move.w #0x5ac3,0xfffc0e
   jmp @level_init
-org usa-europe 0x00061060
+org usa-europe 0x00061260
 left_cull:
   cmpi.w #-0x280,d4
   blt.s cull_it
@@ -287,7 +322,7 @@ keep:
   jmp @cull_continue
 cull_it:
   jmp @cull_delete
-org usa-europe 0x00061100
+org usa-europe 0x00061300
 defer_sec:
   tst.b 0xfffc09
   beq.s dq

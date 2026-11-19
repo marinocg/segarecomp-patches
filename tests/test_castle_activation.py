@@ -44,9 +44,9 @@ class Activation(unittest.TestCase):
         self.assertNotIn("0x00001b14", e)                             # the right deletion limit lives in the left_cull hook (one signed window test), not as a constant edit
         self.assertEqual(e["0x0006d59d"], ("0x04", "0x06"))          # row-loader span
         # five six-byte hooks, each one an absolute jump into the injected block
-        self.assertEqual(e["0x00001b12"], ("0c4402806400017c", "4ef9000610604e71"))   # CMPI #$280,D4 / BCC.W (an UNSIGNED test that deleted every object left of the camera) -> jump to the signed window test
-        for site, old, new in (("0x0006d612", "48e725207600", "4ef900060c80"), ("0x0006d676", "51cefff6602a", "4ef900060d40"), ("0x0006d536", "4df8fa806114", "4ef900060e00"),
-                               ("0x0000963c", "4eb90006d6b4", "4eb900061000")):
+        self.assertEqual(e["0x00001b12"], ("0c4402806400017c", "4ef9000612604e71"))   # CMPI #$280,D4 / BCC.W (an UNSIGNED test that deleted every object left of the camera) -> jump to the signed window test
+        for site, old, new in (("0x0006d612", "48e725207600", "4ef900060c80"), ("0x0006d676", "51cefff6602a", "4ef900060d40"), ("0x0006d536", "4df8fa806114", "4ef900060f00"),
+                               ("0x0000963c", "4eb90006d6b4", "4eb900061200")):
             self.assertEqual(e[site], (old, new))
 
     def test_32x9_window_edits_hooks_and_deferral_constants(self):
@@ -56,14 +56,14 @@ class Activation(unittest.TestCase):
         asm = (P32 / "src/retry.asm").read_text()
         self.assertIn("lea 0x42c0(a1),a1", asm); self.assertIn("lea 0x3e80(a1),a1", asm)          # the retry window equals the lookaheads
         self.assertIn('aspect_max = "32:9"', (P32 / "mod.toml").read_text())
-        for blk in re.findall(r"^org usa-europe (0x[0-9a-f]+)", asm, flags=re.M): self.assertTrue(0x60c80 <= int(blk, 16) < 0x61280, blk)   # inside the blank area the project frees
+        for blk in re.findall(r"^org usa-europe (0x[0-9a-f]+)", asm, flags=re.M): self.assertTrue(0x60c80 <= int(blk, 16) < 0x61600, blk)   # inside the blank area the project frees
 
     def test_retry_state_and_diagnostics_stay_inside_their_extent(self):
         for p in (P16, P21, P32):
             asm = (p / "src/retry.asm").read_text()
             addrs = {int(a, 16) for a in re.findall(r"0x(ff[0-9a-f]{4})\b", asm) if a.startswith("fffc")}
-            self.assertTrue(addrs and all(0xFFFC00 <= a <= 0xFFFCB3 for a in addrs), (p.name, sorted(hex(a) for a in addrs)))
-            self.assertNotRegex(asm, r"\b(trap|stop|reset|rte)\b")
+            self.assertTrue(addrs and all(0xFFFC00 <= a <= 0xFFFCB5 for a in addrs), (p.name, sorted(hex(a) for a in addrs)))
+            self.assertNotRegex(re.sub(r"(?m)^;.*$", "", asm), r"\b(trap|stop|reset|rte)\b")
             self.assertEqual(asm.count("jmp @"), 7, "every exit returns to an original continuation")
             self.assertIn("cmpi.w #20,d3", asm); self.assertIn("cmpi.w #12,d3", asm)       # deferral threshold; speculative cap (16 slots, 4 reserved for genuine failures)
         self.assertIn("lea 0x4280(a1),a1", (P21 / "src/retry.asm").read_text()); self.assertIn("lea 0x3f00(a1),a1", (P21 / "src/retry.asm").read_text())

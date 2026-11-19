@@ -21,8 +21,8 @@ WINDOW_L, WINDOW_R, CULL_LEFT, CULL_RIGHT = consts(ASM)
 CALLER = 0x3C00     # a faithful caller of the section loader: JSR section_load; ADDI.W #$80,D0 (as both real callers do); the CCR capture; the marker (LOG+0x3C); RTS
 SYM = {"section_load": 0x3000, "section_load_body": 0x3006, "slot_scan": 0x3300, "next_entry": 0x3400, "streamer_tail": 0x3600, "vertical_loader": 0x3500, "level_init": 0x3700, "cull_continue": 0x3800, "cull_delete": 0x3900}
 FAIL_SITE = 0x3200
-MAP = {0x00060c80: 0x2000, 0x00060d40: 0x2100, 0x00060e00: 0x2300, 0x00061000: 0x2600, 0x00061060: 0x2700, 0x00061100: 0x2800}
-STATE_END = 0xFCB4      # the retry state and its diagnostics occupy 0xFFFC00..0xFFFCB3
+MAP = {0x00060c80: 0x2000, 0x00060d40: 0x2100, 0x00060f00: 0x2400, 0x00061200: 0x2800, 0x00061260: 0x2840, 0x00061300: 0x2900}
+STATE_END = 0xFCB6      # the retry state and its diagnostics occupy 0xFFFC00..0xFFFCB5
 
 
 def available():
@@ -41,8 +41,8 @@ def _stubs(entry, fail_hook, hooks):
     body += struct.pack(">HI", 0x33C2, LOG + 4) + struct.pack(">HI", 0x33C5, LOG + 6) + struct.pack(">HI", 0x23CA, LOG + 8) + struct.pack(">HI", 0x23C9, LOG + 12)
     body += bytes.fromhex("0a3c0010")                                 # eori #$10,ccr: the synthetic loader DELIBERATELY changes X on every call (the real one's add.w/add.w d3,d3 do)
     body += struct.pack(">HI", 0x52B9, LOG)                           # calls += 1
-    body += struct.pack(">HI", 0x4AB9, LOG + 0x10) + bytes.fromhex("6708")   # tst.l knob; beq ok (skips the 8 bytes of "moveq #0,d6; jmp FAIL_SITE")
-    body += bytes.fromhex("7C00") + jmp(FAIL_SITE)                    # allocation failure: d6 = 0 (the scan is exhausted), jump to the patched site
+    body += struct.pack(">HI", 0x4AB9, LOG + 0x10) + bytes.fromhex("670c")   # tst.l knob; beq ok (skips the 12 bytes of "lea $dc00.w,a3; moveq #0,d6; jmp FAIL_SITE")
+    body += bytes.fromhex("47f8dc00" "7C00") + jmp(FAIL_SITE)                    # allocation failure: a3 = the end of the pool scan (the real loader reloads a3 before scanning; the hook's entry decision uses a3 as scratch because it is dead there), d6 = 0, jump to the patched site
     body += bytes.fromhex("4e75")
     img[0x3006:0x3006 + len(body)] = body
     img[FAIL_SITE:FAIL_SITE + 6] = jmp(fail_hook)
@@ -59,7 +59,7 @@ def _stubs(entry, fail_hook, hooks):
 
 
 class Harness:
-    def __init__(self, asm=None, mapping=None, free_len=0x900, state_end=STATE_END):
+    def __init__(self, asm=None, mapping=None, free_len=0x1000, state_end=STATE_END):
         self.cli, self.sdk, self.cc = os.environ["SEGARECOMP_CLI"], pathlib.Path(os.environ["SEGARECOMP_SDK_DIR"]), os.environ.get("SEGARECOMP_CC", "cc")
         self.work = pathlib.Path(tempfile.mkdtemp(prefix="castle-activation-exec-"))
         text = (asm or ASM).read_text()
@@ -67,8 +67,8 @@ class Harness:
             text = text.replace("0x%08x" % old, "0x%04x" % new)
         text = re.sub(r"^free usa-europe .*$", "free fixture 0x2000 0x%x 0x00" % free_len, text, flags=re.M).replace("org usa-europe", "org fixture")
         proj = self.work / "proj"; (proj / "asm").mkdir(parents=True); (proj / "asm/retry.asm").write_text(text)
-        entry, fail_hook, frame_hook, reset = 0x2000, 0x2100, 0x2300, 0x2600
-        hooks = {"entry": entry, "fail": fail_hook, "frame": frame_hook, "reset": reset, "cull": 0x2700, "noop": 0x3600, "caller": 0x3C00}
+        entry, fail_hook, frame_hook, reset = 0x2000, 0x2100, 0x2400, 0x2800
+        hooks = {"entry": entry, "fail": fail_hook, "frame": frame_hook, "reset": reset, "cull": 0x2840, "noop": 0x3600, "caller": 0x3C00}
         image = bytes(_stubs(entry, fail_hook, hooks))
         sha = hashlib.sha256(image).hexdigest()
         toml = f'[mod]\nid = "castle-exec"\nversion = "1.0.0"\nname = "Exec"\nlicense = "CC0-1.0"\n\n[target]\nplatform = "genesis"\n\n[[target.revision]]\nlabel = "fixture"\nsha256 = "{sha}"\n\n[[source]]\nkind = "guest-asm"\npath = "asm/retry.asm"\ncpu = "m68k"\n'

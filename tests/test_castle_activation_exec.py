@@ -14,7 +14,7 @@ if os.environ.get("SEGARECOMP_REQUIRE_EXEC") == "1" and not S.available():
 KEY, SLOTS, SPEC_CAP, THRESHOLD, EXT_END = 0x5AC3, 16, 12, 20, S.STATE_END
 CAMX, CAMY = 0x0400, 0x0100
 X, N, Z, V, C = 0x10, 0x08, 0x04, 0x02, 0x01
-COUNT = {"fail": 0xA0, "ok": 0xA2, "expired": 0xA4, "drop": 0xA6, "defer": 0xA8, "kept": 0xAA, "inval": 0xAC, "latency": 0xAE, "frames": 0xB0, "maxocc": 0xB2}
+COUNT = {"fail": 0xA0, "ok": 0xA2, "expired": 0xA4, "drop": 0xA6, "defer": 0xA8, "kept": 0xAA, "inval": 0xAC, "latency": 0xAE, "frames": 0xB0, "maxocc": 0xB2, "specdrop": 0xB4}
 POOL, STACK = 0xD400, 0xFFFF80
 REGS = {"d0": 0x11111111, "d1": 0x22222222, "d2": 0x33333333, "d3": 0x44444444, "d4": 0x00000007, "d5": 0x66666666, "d6": 0x77777777, "d7": 0x88888888,
         "a0": 0x0000AAAA, "a1": 0x0000BBBB, "a2": 0x0000CCCC, "a3": 0xFFFFD040, "a4": 0x0000EEEE, "a5": 0x0000F228}
@@ -72,9 +72,9 @@ def make(variant):
             blocks = re.split(r"^org usa-europe (0x[0-9a-f]+)$", text, flags=re.M)      # [header, addr, body, addr, body, ...]
             by = {int(blocks[i], 16): blocks[i + 1] for i in range(1, len(blocks), 2)}
             writers = re.compile(r"^\s+(add\w*|sub\w*|neg\w*|asl\S*|asr\S*|lsl\S*|lsr\S*|rox\S*|abcd|sbcd|nbcd|move\S*\s+\S+,\s*ccr|move\S*\s+\S+,\s*sr)\b", re.M)
-            for addr, name in ((0x60C80, "entry_hook"), (0x60D40, "fail_hook"), (0x61000, "level_reset"), (0x61060, "left_cull"), (0x61100, "defer_sec")):
+            for addr, name in ((0x60C80, "entry_hook"), (0x60D40, "fail_hook"), (0x61200, "level_reset"), (0x61260, "left_cull"), (0x61300, "defer_sec")):
                 self.assertEqual(writers.findall(by[addr]), [], "%s writes X (diagnostics use LEA/MOVEA/MOVE; the decision uses LEA/ROR/ANDI/CMP)" % name)
-            self.assertTrue(writers.findall(by[0x60E00]), "the frame hook's extra loader calls and counters do write X: documented, X is dead at its continuation")
+            self.assertTrue(writers.findall(by[0x60F00]), "the frame hook's extra loader calls and counters do write X: documented, X is dead at its continuation")
 
         def test_guest_ram_ownership_of_state_and_diagnostics(self):
             text = asm.read_text()
@@ -82,23 +82,26 @@ def make(variant):
             owned = {a for a in absolute if 0xFFFC00 <= a < 0xFFFD00}
             self.assertTrue(owned and all(0xFFFC00 <= a < 0xFFFC00 + (EXT_END - 0xFC00) for a in owned), sorted(hex(a) for a in owned))
             self.assertEqual(SLOTS * 8 + 0x10, 0x90); self.assertLessEqual(0xFC00 + 0x90, 0xFCA0, "the ring ends before the diagnostics")
-            self.assertEqual(S.STATE_END, 0xFCB4)
+            self.assertEqual(S.STATE_END, 0xFCB6)
             # the work RAM below the stack: the game's initial SSP is 0xFFFF00; the state (0xFFFC00..0xFFFCB3) begins 0x300 bytes below it (the stack's maximum depth was not measured), in a range the original never addresses (checked against the image locally, README)
-            self.assertNotRegex(text, r"\b(trap|stop|reset|rte)\b"); self.assertEqual(text.count("jmp @"), 7)
+            self.assertNotRegex(re.sub(r"(?m)^;.*$", "", text), r"\b(trap|stop|reset|rte)\b"); self.assertEqual(text.count("jmp @"), 7)
 
         # ---- initialization and level reset --------------------------------------------------------------------------------------------------------------------
         def test_cold_start_initializes_before_any_use(self):
-            garbage = state(key=0x1234, slots=[(10 + i, 3, 24 - i) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1)
+            # work RAM is undefined at power-on: a wrong key clears the WHOLE extent, ring AND cumulative diagnostics
+            garbage = state(key=0x1234, slots=[(10 + i, 3, 24 - i) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1, counters={k: 0x7777 for k in COUNT})
             o = self.run_hook("frame", ram=seed(garbage))
-            self.assertEqual(o["state"][:0xA0], state()[:0xA0], "the whole ring is cleared and armed before the vertical loader and before any retry")
+            self.assertEqual(o["state"][:0xA0], state()[:0xA0], "the ring is cleared and armed before the vertical loader and before any retry")
+            self.assertEqual([ctr(o, k) for k in COUNT if k not in ("frames", "maxocc")], [0] * (len(COUNT) - 2), "the diagnostics start at zero")
+            self.assertEqual((ctr(o, "frames"), ctr(o, "maxocc")), (1, 0), "this invocation counted itself")
             self.assertEqual(paths(o), {"vert": 1, "tail": 1}); self.assertEqual(o["pc"], S.STUB_RTS["streamer_tail"] + 16)
             self.assertEqual(struct.unpack(">H", o["log"][0x30:0x32])[0], KEY, "armed BEFORE the original vertical loader ran")
 
         def test_level_reset_clears_the_ring_and_continues_into_the_original(self):
-            full = state(slots=[(10 + i, 3, 24) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1, counters={"fail": 7})
+            full = state(slots=[(10 + i, 3, 24) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1, counters={"fail": 7, "defer": 9, "latency": 33})
             for sr in (0, X, N | Z | V | C, X | C):
                 ram = seed(full); o = self.run_hook("reset", ram=ram, sr=sr)
-                self.assertEqual(o["state"][:0x90], state()[:0x90]); self.assertEqual(ctr(o, "fail"), 7, "diagnostics are cumulative, not level state")
+                self.assertEqual(o["state"][:0x90], state()[:0x90]); self.assertEqual((ctr(o, "fail"), ctr(o, "defer"), ctr(o, "latency")), (7, 9, 33), "diagnostics are cumulative across levels, not level state")
                 self.assertEqual(paths(o), {"level": 1}); self.assertEqual(o["pc"], S.STUB_RTS["level_init"] + 16)
                 self.assertEqual(o["ccr"] & X, sr & X, "X is preserved"); self.assert_same_ram_and_registers(o, self.baseline(ram, sr=sr))
 
@@ -180,10 +183,23 @@ def make(variant):
             self.assertEqual(ring(o)[:2], [(10, 3, 9), (0, 0, 0)])
             o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 4), slots=[(10, 3, 9)]))); self.assertEqual(ring(o)[:2], [(10, 3, 9), (10, 4, 24)])
 
-        def test_queue_full_drops_the_newcomer_without_touching_the_others_and_counts_it(self):
+        def test_queue_full_drops_an_essential_newcomer_without_touching_the_others_and_counts_it(self):
             full = [(30 + i, 3, 9 - i % 5) for i in range(SLOTS)]
-            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(14, 3), slots=full)))
-            self.assertEqual(ring(o), full); self.assertEqual(ctr(o, "drop"), 1); self.assertEqual(o["state"][8], 1); self.assertEqual(paths(o), {"next": 1})
+            o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(8, 3), slots=full)))           # column 8 is inside the original window at camera 0x400
+            self.assertEqual(ring(o), full); self.assertEqual(ctr(o, "drop"), 1); self.assertEqual(ctr(o, "specdrop"), 0); self.assertEqual(o["state"][8], 1); self.assertEqual(paths(o), {"next": 1})
+
+        def test_a_speculative_failure_is_queued_only_below_the_cap(self):
+            # a speculative column (14 > 11 at camera 0x400) that FAILED to allocate takes a slot only while fewer than 12 are in use; the reserved slots stay free for original-window sections
+            for used, queued in ((SPEC_CAP - 1, True), (SPEC_CAP, False), (SLOTS - 1, False)):
+                o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(14, 3), slots=[(40 + i, 3, 24, 0) for i in range(used)])))
+                self.assertEqual((14, 3, 24) in ring(o), queued, used); self.assertEqual(ctr(o, "specdrop"), 0 if queued else 1, used); self.assertEqual(ctr(o, "drop"), 0)
+                self.assertEqual(paths(o), {"next": 1}); self.assertEqual(o["state"][8], 1, "the fail flag is set either way: the original path continued")
+            for used in (SPEC_CAP, SLOTS - 1):    # an ESSENTIAL failure uses every free slot, reserved or not
+                o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(9, 3), slots=[(40 + i, 3, 24, 0) for i in range(used)])))
+                self.assertIn((9, 3, 24), ring(o), used); self.assertEqual(ctr(o, "specdrop"), 0)
+            for sr in (0, X, N | Z | V | C, X | N):    # the classification and the count never disturb the exact CCR of the original path
+                o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(14, 3), slots=[(40 + i, 3, 24, 0) for i in range(SPEC_CAP)]), extra={0xD000: w(0x0001)}), sr)
+                self.assertEqual(o["ccr"], sr & X)
 
         def test_no_enqueue_while_retrying_or_with_a_bad_key(self):
             o = self.run_hook("fail", {"d6": 0}, seed(state(tmp=(10, 3), retrying=1))); self.assertEqual(ring(o)[0], (0, 0, 0)); self.assertEqual(o["state"][8], 1)
@@ -197,7 +213,7 @@ def make(variant):
             return ram, self.h.run("entry", regs, ram, ccr=sr & 0x1F), regs
 
         def defer_rts(self, retrying=False):
-            base = 0x2800; found = [base + i for i in range(0, 0x100, 2) if self.h.image[base + i:base + i + 2] == b"\x4e\x75"]
+            base = 0x2900; found = [base + i for i in range(0, 0x100, 2) if self.h.image[base + i:base + i + 2] == b"\x4e\x75"]
             return found[0 if retrying else -1]
 
         def returned(self, o, retrying=False):
@@ -321,6 +337,76 @@ def make(variant):
             self.assertEqual(o["hash"], base["hash"]); self.assertEqual(o["a7"], SP0)
             for k, v in REGS.items():
                 if k != "a6": self.assertEqual(o[k], v, k)
+
+        # ---- the saturated lifecycle: persistent queue state chained across real executions ---------------------------------------------------------------------
+        def chain_entry(self, st, col, row, n_pool, camx=CAMX):
+            """One call of the original loader (the stub fails to allocate iff the modelled pool is full); the returned ring state is the NEXT call's input."""
+            ram = seed(st, n_pool, camx=camx, knob=1 if n_pool >= 32 else 0, extra={STACK & 0xFFFF: struct.pack(">I", S.SYM["next_entry"])})
+            o = self.h.run("entry", {**REGS, "d2": col, "d5": row, "a7": STACK}, ram, ccr=0); return o["state"], o
+        def chain_frame(self, st, n_pool, camx=CAMX):
+            o = self.h.run("frame", REGS, seed(st, n_pool, camx=camx, knob=1 if n_pool >= 32 else 0), ccr=0); return o["state"], o
+        @staticmethod
+        def used(st): return sum(1 for i in range(SLOTS) if struct.unpack(">H", st[0x14 + 8 * i:0x16 + 8 * i])[0])
+        @staticmethod
+        def slots(st): return [(struct.unpack(">HH", st[0x10 + 8 * i:0x14 + 8 * i]), struct.unpack(">H", st[0x14 + 8 * i:0x16 + 8 * i])[0]) for i in range(SLOTS) if struct.unpack(">H", st[0x14 + 8 * i:0x16 + 8 * i])[0]]
+        @staticmethod
+        def c(st, name): return struct.unpack(">H", st[COUNT[name]:COUNT[name] + 2])[0]
+
+        def test_essential_work_survives_sustained_speculative_pressure_and_recovers(self):
+            st = state()
+            SPEC = [(12 + i, r) for r in (3, 4) for i in range(10)]           # 20 speculative sections (columns beyond the original window at camera 0x400, which spans columns 6..11)
+            ESS = [(6, 3), (7, 3), (8, 3), (9, 3)]                             # the original window: these four are what the player needs NOW
+            # phase 1: the pool is full. The first 12 speculative sections are deferred; the rest are loaded as the original would, FAIL to allocate, and must be dropped, not queued
+            for col, row in SPEC:
+                st, o = self.chain_entry(st, col, row, 32); self.assertLessEqual(self.used(st), SPEC_CAP, (col, row))
+            self.assertEqual(self.used(st), SPEC_CAP); self.assertEqual(self.c(st, "defer"), SPEC_CAP); self.assertEqual(self.c(st, "specdrop"), len(SPEC) - SPEC_CAP)
+            # phase 2: four ORIGINAL-WINDOW sections fail to allocate: every one must be queued although the speculative work already filled its cap
+            for col, row in ESS:
+                st, o = self.chain_entry(st, col, row, 32); self.assertIn(((col, row), 24), self.slots(st), (col, row))
+            self.assertEqual(self.used(st), SLOTS); self.assertEqual(self.c(st, "drop"), 0)
+            # more speculative demand while the ring is full: nothing is queued, nothing displaced, the essential slots are untouched
+            before = self.slots(st)
+            for col, row in SPEC[:6]:
+                st, o = self.chain_entry(st, col, row, 32)
+            self.assertEqual(self.slots(st), before)
+            # phase 3: sustained pressure (pool stays full) for 10 streamer invocations: speculative sections wait with their age, the essential ones are retried and fail (their age counts down)
+            for k in range(10): st, o = self.chain_frame(st, 32)
+            ess_ages = {key: age for key, age in self.slots(st) if key in ESS}
+            self.assertEqual(sorted(ess_ages), ESS); self.assertTrue(all(a == 24 - 10 for a in ess_ages.values()), ess_ages)
+            self.assertEqual(sorted(k for k, a in self.slots(st) if k in SPEC and a == 24), sorted(k for k, a in self.slots(st) if k in SPEC), "speculative waiting never ages")
+            self.assertEqual(self.c(st, "expired"), 0)
+            # phase 4: camera movement: the camera advances 2 columns; sections now left of the retry window are invalidated and counted, the essential ones that are still inside the window stay
+            st, o = self.chain_frame(st, 32, camx=CAMX + 0x100)
+            self.assertGreaterEqual(self.c(st, "inval"), 0)
+            # phase 5: the pool frees up (a boss dies, a screen clears): ONE streamer invocation loads every pending essential section still in the window, and the speculative ones follow
+            st, o = self.chain_frame(st, 10, camx=CAMX + 0x100)
+            left = {key for key, a in self.slots(st)}
+            self.assertFalse(left & set(ESS), "every essential section that was pending and still in the window loaded: " + str(left & set(ESS)))
+            self.assertEqual(self.c(st, "expired"), 0, "nothing essential expired because of speculative work")
+            self.assertGreaterEqual(self.c(st, "latency"), 10)
+
+        def test_a_speculative_section_cannot_expire_an_essential_one_in_a_long_mixed_run(self):
+            import random
+            rng = random.Random(0xC57)
+            st = state(); camx = CAMX; pool = 0; essential_pending = set(); lost_to_displacement = 0
+            for step in range(70):
+                pool = max(0, min(32, pool + rng.choice((-6, -3, 0, 2, 5, 9))))
+                camx = max(0x80, camx + rng.choice((-0x80, -0x40, 0, 0x40, 0x80, 0x100)))
+                lo, hi = max(0, (camx - 0xF1) >> 7), (camx + 0x180) >> 7                       # the original window's columns
+                kind = rng.choice(("spec", "ess", "ess", "frame"))
+                before_used, before_slots = self.used(st), self.slots(st)
+                if kind == "frame":
+                    st, o = self.chain_frame(st, pool, camx=camx)
+                else:
+                    col = rng.randint(hi + 1, hi + 12) if kind == "spec" else rng.randint(max(lo, 1), max(lo, hi)); row = rng.randint(0, 5)
+                    st, o = self.chain_entry(st, col, row, pool, camx=camx)
+                    if kind == "spec":
+                        self.assertTrue(self.used(st) <= max(SPEC_CAP, before_used), "a speculative section must never raise the ring above the cap (step %d)" % step)
+                    elif pool >= 32:                                                              # an essential failure: it MUST be queued unless it was already queued or the ring was genuinely full of essential work
+                        keys = {k for k, a in before_slots}
+                        if (col, row) not in keys and before_used < SLOTS: self.assertIn(((col, row), 24), self.slots(st), "essential failure lost (step %d)" % step)
+                self.assertLessEqual(self.used(st), SLOTS)
+            self.assertEqual(self.c(st, "drop"), self.c(st, "drop"))
 
         # ---- left deletion ---------------------------------------------------------------------------------------------------------------------------------
         def test_left_cull_still_deletes_a_dead_slot_left_of_the_camera(self):
