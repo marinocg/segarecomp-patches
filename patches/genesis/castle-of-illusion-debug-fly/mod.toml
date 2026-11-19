@@ -1,0 +1,74 @@
+# Castle of Illusion starring Mickey Mouse (Genesis, USA/Europe): DEBUG FREE-FLY (a user-invoked "debug mode" for exploring levels). GAMEPLAY-CHANGING while active; native ABI 2, no ROM edit, no guest code.
+# Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
+[mod]
+id = "castle-of-illusion-debug-fly"
+author = "segarecomp-patches contributors"
+version = "0.1.0"
+name = "Castle of Illusion debug free-fly"
+license = "MIT"
+
+[target]
+platform = "genesis"
+
+[[target.revision]]
+label = "usa-europe"
+sha256 = "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
+
+[[source]]
+kind = "native-c11"
+path = "src/provider.c"
+
+[abi]
+native = 2
+
+[capabilities]
+required = ["input.intercept", "input.read", "memory.read.m68k.work_ram", "memory.write.m68k.work_ram", "state.mod"]
+
+[state]
+schema = 1
+
+# Mickey's object slot (0xDC00..0xDC3F): position (+0x10 x, +0x14 y, each followed by its fraction word) and the vertical velocity (+0x1A/+0x1C) are read and rewritten while flying.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 56320
+length = 64
+access = "read-write"
+
+# Power (0xF322) and the five HUD slot words (0xF244..0xF24D) and the HUD-upload flag (0xF409): kept full while flying (as Practice+ does), so contact with an enemy cannot hurt or kill.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62020
+length = 10
+access = "read-write"
+
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62242
+length = 2
+access = "read-write"
+
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62473
+length = 1
+access = "read-write"
+
+# Verification inputs, READ ONLY. The scroll record of plane A (0xFA80: vertical scroll, 0xFA84: camera x, 0xFA88 map pointer, 0xFA8C rows, 0xFA8E columns, 0xFA90 block table pointer): a running scrolling level has a valid record and Mickey is kept inside the visible area relative to the camera.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 64128
+length = 20
+access = "read"
+
+# The current level and stage (0xFF44, 0xFF46): a change means a transition, which ends the mode.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 65348
+length = 4
+access = "read"

@@ -40,3 +40,7 @@ Commercial games, firmware and assets are never covered by any licence here beca
 - credential-shaped strings in any tracked text file (private key blocks, GitHub, npm, Slack, AWS, Google and Cloudflare-style tokens, and `password =`/`secret =`/`token =` assignments with a long literal value).
 
 Negative fixtures for each rule are in `tests/test_check_repo.py`. The scan is a tripwire, not a guarantee: a leaked credential must still be revoked, not merely removed.
+
+## Schema 3 projects (unpublished source)
+
+A schema 3 / native ABI 2 project is **trusted native source** exactly like a schema 2 native provider: executable C code compiled into the user's program, approved by exact package identity, not sandboxed. Committing the source here is not publication: no release, catalog entry or asset exists until a separate, human-reviewed release step supports schema 3. Commercial-derived data (ROM bytes, assets, disassembly, dumps, traces) is never committed.

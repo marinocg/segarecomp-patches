@@ -42,8 +42,8 @@ class Layout(unittest.TestCase):
         r, d = self.project(); (d / "release.json").unlink(); self.expect(r, "missing release.json")
     def test_missing_source(self):
         r, d = self.project(); shutil.rmtree(d / "source"); self.expect(r, "missing source")
-    def test_mod_toml_reserved(self):
-        r, d = self.project(); (d / "mod.toml").write_text("x"); self.expect(r, "reserved for schema 3")
+    def test_mod_toml_beside_release_json(self):
+        r, d = self.project(); (d / "mod.toml").write_text("[mod]\n"); self.expect(r, "release.json cannot accompany mod.toml")
     def test_undeclared_source_file(self):
         r, d = self.project(); (d / "source" / "extra.bin.txt").write_text("x"); self.expect(r, "not a declared package file")
     def test_provider_without_native_package(self):

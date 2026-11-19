@@ -7,13 +7,14 @@ A package is manifest.json + game.bps (+ provider.c), written by the product's o
 entry order, deflate level 9). Needs no game image. Also writes DIR/SHA256SUMS.
 """
 import argparse, hashlib, importlib.util, json, pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("--segapatch", required=True); ap.add_argument("--out", required=True)
-    ap.add_argument("--root", default=str(ROOT)); a = ap.parse_args(argv)
+    ap.add_argument("--root", default=str(ROOT)); ap.add_argument("--segarecomp"); ap.add_argument("--sdk-dir"); ap.add_argument("--cc"); a = ap.parse_args(argv)
     spec = importlib.util.spec_from_file_location("segapatch", a.segapatch); sp = importlib.util.module_from_spec(spec); spec.loader.exec_module(sp)
     root, out = pathlib.Path(a.root), pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     sums, bad = [], 0
@@ -27,6 +28,14 @@ def main(argv=None):
             ok = h == p["package_sha256"] and target.stat().st_size == p["package_size"]
             print(("ok   " if ok else "FAIL ") + p["package_file"], h)
             bad += not ok; sums.append(f"{h}  {p['package_file']}")
+    if a.segarecomp:   # unpublished schema 3 projects: rebuilt by the product's own `mod pack` into out/unpublished/ (never SHA256SUMS, never a release asset)
+        import check_repo, lint_layout
+        extra = [x for k, v in (("--cc", a.cc), ("--sdk-dir", a.sdk_dir)) if v for x in (k, v)]
+        for d in lint_layout.mod_projects(root):
+            target = out / "unpublished" / f"{d.name}.segapatch"; target.parent.mkdir(parents=True, exist_ok=True)
+            ok, info, data = check_repo.pack_mod_project(a.segarecomp, d, target, extra)
+            print(("ok   " if ok else "FAIL ") + f"unpublished/{target.name}", info.get("package_identity", ""))
+            bad += not ok
     (out / "SHA256SUMS").write_text("\n".join(sorted(sums, key=lambda l: l.split("  ")[1])) + "\n")
     return 1 if bad else 0
 
