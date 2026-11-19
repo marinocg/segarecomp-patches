@@ -6,7 +6,7 @@
 The log must be one complete, straight-through recording: `START <f>`, `REC <f> <p1> <p2>` per change, `TICK <f>` heartbeats, one `END <f>` (the recorder's explicit end: player 2 pressed Start). Anything else is REFUSED (no script is written):
 no START, no valid initial sample at the START frame, no END (incomplete: the window was closed early), a LOAD line (a state was loaded), a malformed line, more than one START (the guest was reset), frame numbers that repeat or go backwards (quick-load, rewind, or a duplicated log), lines after END, a gap above 600 frames between any two lines (lost log lines), or a script over the runtime's capacity.
 Outputs (button masks and frame numbers only: no commercial data):
-  <prefix>.headless.txt   `<frame>:<player>:0x<mask>,...` for SEGARECOMP_PAD_SCRIPT of a headless capture program. EXACT: the headless path applies each entry at its guest frame. Player 2's Start (the end marker) is removed; all held buttons are released at END.
+  <prefix>.headless.txt   `<frame>:<player>:0x<mask>,...` for SEGARECOMP_PAD_SCRIPT of a headless capture program. EXACT: the headless path applies each entry at its guest frame. Player 2's Start (the end marker) is removed. No entry is keyed at END (the capture ends there and would never apply it); nothing is held past the run.
   <prefix>.viewer.txt     `<frame> <buttons>` (U D L R A B C S, `-` none) for SEGARECOMP_VIEWER_PAD_SCRIPT. The viewer keys each line by the published frame sequence when one is attached and by host poll otherwise (a build without it can drift): the file is a watching aid; the headless replay is the acceptance path. Player 1 only. Ends with a `Q` line at END.
   <prefix>.summary.json   start, end (= the session's duration in guest frames), entries per script, and the capture window (first/count/stride) whose LAST sample is exactly the END frame, plus the pad-entry count a replay must report."""
 import argparse, json, re, sys
@@ -39,6 +39,8 @@ def validate(ev):
     ends = [e for e in ev if e[0] == "END"]
     if not ends: raise Refused("incomplete recording: no END line (press player 2's Start to end a recording; closing the window early loses the duration)")
     if len(ends) != 1 or ev[-1][0] != "END": raise Refused("lines follow END or END is duplicated")
+    if ends[0][1] < 2: raise Refused("the recording is shorter than 2 frames")
+    if any(e[0] == "REC" and e[1] >= ends[0][1] for e in ev): raise Refused("a controller sample at or after the END frame")
     prev = None
     for k, f, _, _ in ev:
         if prev is not None:
@@ -61,9 +63,8 @@ def convert(ev):
         p2 &= ~P2_START
         if p1 != l1: viewer.append("%d %s" % (f, letters(p1))); headless.append((f, 1, p1)); l1 = p1
         if p2 != l2: headless.append((f, 2, p2)); l2 = p2
-    for pl, last in ((1, l1), (2, l2)):                  # final held buttons: released at END so a longer replay does not hold them
-        if last: headless.append((end, pl, 0))
-    if l1: viewer.append("%d -" % end)
+    # No release entry at END: the capture window ends AT the END frame and genesis_frame_capture_run returns as soon as its last sample is taken, so an entry keyed at END is never applied (the applied count would then fall short). The headless run stops at END anyway: nothing is held past it.
+    if l1: viewer.append("%d -" % end)       # the viewer keeps its release (it quits at END; harmless)
     viewer.append("%d Q" % end)
     if len(viewer) > MAX_VIEWER: raise Refused("%d viewer lines exceed the viewer's pad-script capacity (%d): record a shorter route or replay it headless" % (len(viewer), MAX_VIEWER))
     if len(headless) > MAX_HEADLESS: raise Refused("%d entries exceed the headless pad-script capacity (%d): record a shorter route" % (len(headless), MAX_HEADLESS))
@@ -79,7 +80,7 @@ if __name__ == "__main__":
     except Refused as e: sys.exit("REFUSED: %s" % e)
     open(a.out + ".viewer.txt", "w").write("\n".join(viewer) + "\n")
     open(a.out + ".headless.txt", "w").write(",".join(headless))
-    count = 64 if end >= 63 else 1; stride = max(1, end // 63); first = max(0, end - stride * (count - 1))      # the last capture sample is exactly the END frame
+    count = min(64, end); stride = max(1, (end - 1) // max(1, count - 1)); first = end - stride * (count - 1)      # first >= 1 (the product rejects 0); the last capture sample is exactly the END frame
     json.dump({"start": start, "end": end, "duration_frames": end - start, "headless_entries": len(headless), "viewer_lines": len(viewer),
                "capture_first": first, "capture_count": count, "capture_stride": stride, "capture_last": first + stride * (count - 1), "expected_pad_entries": len(headless)}, open(a.out + ".summary.json", "w"))
     print("complete recording: guest frames %d..%d (%.1f s), %d headless entries, %d viewer lines" % (start, end, (end - start) / 60.0, len(headless), len(viewer)))

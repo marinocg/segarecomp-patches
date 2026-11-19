@@ -73,10 +73,10 @@ class Tools(unittest.TestCase):
         with self.assertRaises(R.Refused) as c: self.conv(*rows)
         return str(c.exception)
 
-    def test_a_complete_recording_gives_exact_headless_entries_duration_and_released_final_buttons(self):
+    def test_a_complete_recording_gives_headless_entries_duration_and_no_entry_keyed_at_end(self):
         start, end, v, h = self.conv(*self.GOOD)
         self.assertEqual((start, end), (0, 1000))
-        self.assertEqual(h, ["0:1:0x00", "0:2:0x00", "100:1:0x80", "104:1:0x00", "500:1:0x28", "700:1:0x08", "700:2:0x40", "1000:1:0x00", "1000:2:0x00"])   # P2 Start stripped; both ports; held buttons released at END
+        self.assertEqual(h, ["0:1:0x00", "0:2:0x00", "100:1:0x80", "104:1:0x00", "500:1:0x28", "700:1:0x08", "700:2:0x40"])   # P2 Start stripped; both ports; held buttons released at END
         self.assertEqual(v, ["0 -", "100 S", "104 -", "500 RC", "700 R", "1000 -", "1000 Q"])
 
     def test_the_duration_includes_unchanged_input_after_the_last_change(self):
@@ -135,13 +135,26 @@ class Tools(unittest.TestCase):
         self.assertTrue(any("END frame" in b for b in S.accept(dict(ok, frame_stride=300, frame_count=4), sm)))
 
     def test_the_capture_window_ends_exactly_on_the_end_frame(self):
-        for end in (63, 64, 500, 3700, 99999):
+        for end in (2, 3, 63, 64, 65, 500, 3700, 99999):
             rows = ["START 0", "REC 0 00 00"] + ["TICK %d" % t for t in range(300, end, 300)] + ["END %d" % end]
             with tempfile.TemporaryDirectory() as d:
                 d = pathlib.Path(d); (d / "l").write_text("".join('"line":"%s"\n' % r for r in rows))
                 r = subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "l"), "--out", str(d / "x")], capture_output=True, text=True); self.assertEqual(r.returncode, 0, r.stderr)
                 m = json.loads((d / "x.summary.json").read_text())
-                self.assertEqual(m["capture_first"] + m["capture_stride"] * (m["capture_count"] - 1), end); self.assertGreaterEqual(m["capture_first"], 0); self.assertLessEqual(m["capture_count"], 64)
+                self.assertEqual(m["capture_first"] + m["capture_stride"] * (m["capture_count"] - 1), end); self.assertGreaterEqual(m["capture_first"], 1, "the product rejects capture_first = 0"); self.assertLessEqual(m["capture_count"], 64)
+
+    def test_a_button_held_at_end_gets_no_release_entry_and_the_expected_count_matches(self):
+        # regression: a release keyed at END may or may not be applied before genesis_frame_capture_run returns (it returned in a real run only because the sample frame is published after the entry's frame was reached); the script must not depend on it
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d); (d / "l").write_text("".join('"line":"%s"\n' % r for r in ("START 0", "REC 0 00 00", "TICK 300", "REC 500 08 40", "TICK 600", "TICK 900", "TICK 1200", "END 1500")))
+            r = subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "l"), "--out", str(d / "x")], capture_output=True, text=True); self.assertEqual(r.returncode, 0, r.stderr)
+            entries = (d / "x.headless.txt").read_text().split(",")
+            self.assertEqual(entries, ["0:1:0x00", "0:2:0x00", "500:1:0x08", "500:2:0x40"]); self.assertTrue(all(int(e.split(":")[0]) < 1500 for e in entries))
+            m = json.loads((d / "x.summary.json").read_text()); self.assertEqual(m["expected_pad_entries"], 4); self.assertEqual((m["capture_first"], m["capture_last"]), (51, 1500))
+
+    def test_a_controller_sample_at_or_after_end_is_refused(self):
+        self.assertIn("at or after the END", self.refused("START 0", "REC 0 00 00", "REC 10 08 00", "END 10"))
+        self.assertIn("shorter than 2", self.refused("START 0", "REC 0 00 00", "END 1"))
 
     def test_summarize_capture_decodes_the_observables_and_lists_events(self):
         def sample(score, power, level, x, y, cam): return (score.to_bytes(4, "big") + b"".join((0x807C if i < power else 0x807D).to_bytes(2, "big") for i in range(5)) + level[0].to_bytes(2, "big") + level[1].to_bytes(2, "big") + x.to_bytes(2, "big") + y.to_bytes(2, "big") + cam.to_bytes(2, "big")).hex()
