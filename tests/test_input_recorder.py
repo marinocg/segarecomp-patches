@@ -49,6 +49,14 @@ class Recorder(unittest.TestCase):
         out = [l for l in self.run_script(lines) if l.startswith("log ")]
         self.assertEqual(out, ["log START 10", "log REC 10 00 00", "log END 50"])
 
+    def test_a_state_load_invalidates_the_recording_explicitly(self):
+        lines = ["init", "pad 0", "frame 10", "phase input", "pad 08", "frame 20", "phase input", "load", "pad 04", "frame 12", "phase input", "frame 400", "phase input"]
+        out = [l for l in self.run_script(lines) if l.startswith("log ")]
+        self.assertEqual(out, ["log START 10", "log REC 10 00 00", "log REC 20 08 00", "log LOAD 20"])
+        self.assertEqual(R.parse(''.join('"line":"%s"\n' % l[4:] for l in out)).__len__(), 4)
+        with self.assertRaises(R.Refused) as c: R.convert(R.parse(''.join('"line":"%s"\n' % l[4:] for l in out + ["log END 400"])))
+        self.assertIn("loaded", str(c.exception))
+
     def test_manifest_is_read_and_log_only(self):
         m = tomllib.loads((PROJECT / "mod.toml").read_text())
         self.assertEqual(sorted(m["capabilities"]["required"]), ["host.log", "input.read"]); self.assertNotIn("memory", m); self.assertEqual([s["kind"] for s in m["source"]], ["native-c11"])
@@ -80,13 +88,18 @@ class Tools(unittest.TestCase):
         self.assertIn("no START", self.refused("REC 0 00 00", "END 10"))
         self.assertIn("more than one START", self.refused("START 0", "REC 0 00 00", "START 5", "END 10"))
         self.assertIn("backwards", self.refused("START 0", "REC 0 00 00", "REC 90 08 00", "REC 80 00 00", "END 100"))        # quick-load / rewind
-        self.assertIn("duplicated frame", self.refused("START 0", "REC 5 08 00", "REC 5 00 00", "END 10"))
+        self.assertIn("duplicated frame", self.refused("START 0", "REC 0 00 00", "REC 5 08 00", "REC 5 00 00", "END 10"))
         self.assertIn("follow END", self.refused("START 0", "REC 0 00 00", "END 10", "REC 12 08 00"))
         self.assertIn("lost lines", self.refused("START 0", "REC 0 00 00", "TICK 300", "END 2000"))
         with self.assertRaises(R.Refused): self.conv()
+        self.assertIn("initial controller sample", self.refused("START 0", "REC 4 08 00", "END 10"))
+        self.assertIn("initial controller sample", self.refused("START 0", "TICK 0", "END 10"))
+        self.assertIn("a state was loaded", self.refused("START 0", "REC 0 00 00", "LOAD 5", "END 10"))
+        for bad in ('REC 5 8 00', 'REC 5 zz 00', 'END', 'TICK x', 'START 0 1'):
+            with self.assertRaises(R.Refused): R.parse('"line":"%s"\n' % bad)
 
     def route(self, changes, two_ports=False):
-        rows, f = ["START 0"], 0
+        rows, f = ["START 0", "REC 0 00 00"], 0
         for i in range(changes):
             f += 2; rows.append("REC %d %02x %02x" % (f, 0x08 if i % 2 == 0 else 0x04, (0x40 if i % 2 == 0 else 0x20) if two_ports else 0))
             if f % 300 == 0: rows.append("TICK %d" % f)
@@ -112,6 +125,23 @@ class Tools(unittest.TestCase):
             (d / "e.log").write_text(self.log("START 0", "REC 0 00 00", "TICK 300"))
             r = subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "e.log"), "--out", str(d / "y")], capture_output=True, text=True)
             self.assertNotEqual(r.returncode, 0); self.assertIn("REFUSED", r.stderr); self.assertFalse((d / "y.headless.txt").exists())
+
+    def test_headless_acceptance_requires_the_exact_endpoint_outcome_and_all_pad_entries(self):
+        sm = {"end": 1000, "capture_first": 10, "capture_count": 4, "capture_stride": 330, "expected_pad_entries": 9}
+        ok = {"outcome": "window_complete", "frames_captured": 4, "first_frame": 10, "frame_stride": 330, "frame_count": 4, "pad_entries_applied": 9}
+        self.assertEqual(S.accept(ok, sm), [])
+        for k, v in (("outcome", "io_error"), ("frames_captured", 3), ("pad_entries_applied", 8), ("first_frame", 40)):
+            self.assertTrue(S.accept(dict(ok, **{k: v}), sm), k)
+        self.assertTrue(any("END frame" in b for b in S.accept(dict(ok, frame_stride=300, frame_count=4), sm)))
+
+    def test_the_capture_window_ends_exactly_on_the_end_frame(self):
+        for end in (63, 64, 500, 3700, 99999):
+            rows = ["START 0", "REC 0 00 00"] + ["TICK %d" % t for t in range(300, end, 300)] + ["END %d" % end]
+            with tempfile.TemporaryDirectory() as d:
+                d = pathlib.Path(d); (d / "l").write_text("".join('"line":"%s"\n' % r for r in rows))
+                r = subprocess.run([sys.executable, str(ROOT / "tools/record_to_pad_script.py"), str(d / "l"), "--out", str(d / "x")], capture_output=True, text=True); self.assertEqual(r.returncode, 0, r.stderr)
+                m = json.loads((d / "x.summary.json").read_text())
+                self.assertEqual(m["capture_first"] + m["capture_stride"] * (m["capture_count"] - 1), end); self.assertGreaterEqual(m["capture_first"], 0); self.assertLessEqual(m["capture_count"], 64)
 
     def test_summarize_capture_decodes_the_observables_and_lists_events(self):
         def sample(score, power, level, x, y, cam): return (score.to_bytes(4, "big") + b"".join((0x807C if i < power else 0x807D).to_bytes(2, "big") for i in range(5)) + level[0].to_bytes(2, "big") + level[1].to_bytes(2, "big") + x.to_bytes(2, "big") + y.to_bytes(2, "big") + cam.to_bytes(2, "big")).hex()

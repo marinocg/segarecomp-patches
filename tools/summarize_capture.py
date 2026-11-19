@@ -37,10 +37,30 @@ def summarize(text):
     return j, rows, events
 
 
+def accept(j, summary):
+    """The headless acceptance checks against the recording's summary.json: the run completed its capture window, every pad entry was applied, and the last sample is exactly the END frame. Returns a list of failures."""
+    bad = []
+    if j.get("outcome") != "window_complete": bad.append("outcome is %r, not window_complete" % j.get("outcome"))
+    if j.get("frames_captured") != summary["capture_count"]: bad.append("captured %s frames, expected %d" % (j.get("frames_captured"), summary["capture_count"]))
+    if (j.get("first_frame"), j.get("frame_stride"), j.get("frame_count")) != (summary["capture_first"], summary["capture_stride"], summary["capture_count"]): bad.append("the capture window is not the recording's (first/stride/count)")
+    last = j.get("first_frame", 0) + j.get("frame_stride", 0) * (j.get("frames_captured", 0) - 1)
+    if last != summary["end"]: bad.append("the last sample is frame %s, not the recording's END frame %d" % (last, summary["end"]))
+    if j.get("pad_entries_applied") != summary["expected_pad_entries"]: bad.append("%s pad entries applied, expected %d (the script was truncated or not fully reached)" % (j.get("pad_entries_applied"), summary["expected_pad_entries"]))
+    return bad
+
+
 if __name__ == "__main__":
-    text = open(sys.argv[1], errors="replace").read() if len(sys.argv) > 1 else sys.stdin.read()
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument("capture"); ap.add_argument("--recording", help="the recording's .summary.json: enables the acceptance checks (exit status 1 on any failure)")
+    a = ap.parse_args()
+    text = open(a.capture, errors="replace").read()
     j, rows, events = summarize(text)
     print("outcome %s, %d samples, final work-RAM SHA-256 %s" % (j["outcome"], len(rows), j.get("final_work_ram_sha256", "")))
     print("sample   score power level  x     y     camera")
     for r in rows: print("%-8d %-6d %-5d %02x%02x  %-5d %-5d %d" % ((r["ordinal"], r["score"], r["power"]) + r["level"] + (r["x"], r["y"], r["cam"])))
     print("events:", events if events else "none")
+    if a.recording:
+        bad = accept(j, json.load(open(a.recording)))
+        for b in bad: print("ACCEPTANCE FAILED:", b)
+        if not bad: print("acceptance: the run completed, applied all %d pad entries and its last sample is the END frame" % j["pad_entries_applied"])
+        sys.exit(1 if bad else 0)

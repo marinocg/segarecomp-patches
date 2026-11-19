@@ -1,11 +1,13 @@
 /* Castle of Illusion (Genesis, USA/Europe): INPUT RECORDER, one native ABI 2 provider (strict C11). A developer tool: it reads player 1's and player 2's controller once per guest frame (the `input` phase; `host.frame` is the guest frame number) and
- * logs `START <frame>` at the first sample, `REC <frame> <pad1> <pad2>` (hexadecimal masks) whenever either pad changed, `TICK <frame>` every 300 frames (a heartbeat that bounds an unmarked end) and `END <frame>` when player 2 presses Start (the explicit end of the recording; nothing is logged after it). It never writes anything to the game and never intercepts the pad, so a recorded session plays exactly as an unrecorded one.
+ * logs `START <frame>` at the first sample, `REC <frame> <pad1> <pad2>` (hexadecimal masks) whenever either pad changed, `TICK <frame>` every 300 frames (a heartbeat that bounds an unmarked end) and `LOAD <frame>` if a state is loaded (the recording is then invalid) and `END <frame>` when player 2 presses Start (the explicit end of the recording; nothing is logged after it). It never writes anything to the game and never intercepts the pad, so a recorded session plays exactly as an unrecorded one.
  * The lines reach the viewer's standard error as `MOD_LOG {"line":"REC ..."}`; tools/record_to_pad_script.py turns them into guest-frame-keyed pad scripts. No commercial data is involved: a recording is a list of button masks and frame numbers. */
 #include <segarecomp_mod_genesis.h>
 
 #define TICK_FRAMES 300U        /* a heartbeat every 5 s: the longest an unnoticed end can go unbounded */
 #define P2_START 0x80U          /* player 2's Start is the explicit END marker (the 1-player game does not use it; the converter strips it from the scripts) */
 
+static SegaModHost g_host;      /* a copy of the host table (its log function and the latest frame): the load callback receives no host */
+static uint32_t have_host;
 static uint32_t last1 = 0xFFFFFFFFU, last2 = 0xFFFFFFFFU, next_tick, started, ended, dummy_state;
 
 static void hex2(char *out, uint32_t *n, uint32_t v) {
@@ -44,17 +46,25 @@ static void sample(const SegaModHost *h) {
 
 static int provider_init(void *state, const SegaModHost *host) {
   (void)state;
+  g_host = *host; have_host = 1U;
   return host->platform == SEGA_MOD_PLATFORM ? 0 : 1;
 }
 
 static void provider_phase(void *state, const SegaModHost *host) {
   (void)state;
+  g_host = *host; have_host = 1U;
   if (host->phase == SEGA_MOD_PHASE_RESET) { last1 = last2 = 0xFFFFFFFFU; started = ended = next_tick = 0U; }
   else if (host->phase == SEGA_MOD_PHASE_INPUT) sample(host);
 }
 
 static int provider_save(void *state, uint8_t *out, uint32_t cap, uint32_t *len) { (void)state; (void)out; (void)cap; *len = 0U; return 0; }
-static int provider_load(void *state, const uint8_t *in, uint32_t len) { (void)state; (void)in; last1 = last2 = 0xFFFFFFFFU; next_tick = 0U; return len == 0U ? 0 : 1; }   /* a state load rewinds the frame numbers: the next lines go backwards and the converter refuses the session */
+/* A state load (quick-load, rewind, restore) runs this callback: it explicitly INVALIDATES the recording by logging `LOAD <frame>` (the converter refuses any LOAD) and stops logging; timestamps and heartbeats alone cannot detect every restore. */
+static int provider_load(void *state, const uint8_t *in, uint32_t len) {
+  (void)state; (void)in;
+  if (have_host != 0U && started != 0U && ended == 0U) emit(&g_host, "LOAD", g_host.frame, 0, 0U, 0U);
+  ended = 1U;
+  return len == 0U ? 0 : 1;
+}
 
 static const SegaModProvider provider = {sizeof(SegaModProvider), SEGA_MOD_ABI_MAJOR, 0U, SEGA_MOD_PLATFORM, "castle-of-illusion-input-recorder", 1U, provider_init, provider_phase, NULL, provider_save, provider_load,
                                          {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}};
