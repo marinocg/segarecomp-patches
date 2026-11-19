@@ -15,6 +15,7 @@ if os.environ.get("SEGARECOMP_REQUIRE_EXEC") == "1" and (not SDK or tomllib is N
 
 MICKEY, X, Y, VY_LO, VY_HI = 0xDC00, 0xDC10, 0xDC14, 0xDC1A, 0xDC1C
 POWER, HUD, HUDF, CAMX, CAMY = 0xF322, 0xF244, 0xF409, 0xFA84, 0xFA80
+REC, LEVEL = 0xFA80, 0xFF44
 UP, DOWN, LEFT, RIGHT, B, C, A, START = 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80
 CHORD = A | B | C
 
@@ -44,8 +45,11 @@ class Fly(unittest.TestCase):
         return r.stdout.splitlines()
 
     @staticmethod
-    def world(x=300, y=120, camx=200, camy=0, power=3):
-        return ["ram %x 2 %x" % (X, x), "ram %x 2 %x" % (Y, y), "ram %x 2 %x" % (CAMX, camx), "ram %x 2 %x" % (CAMY, camy), "ram %x 2 %x" % (POWER, power), "ram %x 2 %x" % (VY_LO, 0x6000), "ram %x 2 %x" % (VY_HI, 0xFFFD)]
+    def world(x=300, y=120, camx=200, camy=0, power=3, record=True, slot=1, level=(0, 0)):
+        """A running scrolling level with a live Mickey (record, slot, power, level id, pause flag) on fabricated RAM."""
+        r = ["ram %x 2 %x" % (REC + 8, 0xFF if record else 0), "ram %x 2 %x" % (REC + 12, 16 if record else 0), "ram %x 2 %x" % (REC + 14, 240 if record else 0), "ram %x 2 %x" % (REC + 16, 0xFF if record else 0), "ram %x 2 %x" % (REC + 18, 0)]
+        return r + ["ram %x 2 %x" % (X, x), "ram %x 2 %x" % (Y, y), "ram %x 2 %x" % (MICKEY, slot), "ram %x 2 %x" % (CAMX, camx), "ram %x 2 %x" % (CAMY, camy), "ram %x 2 %x" % (POWER, power),
+                    "ram %x 2 %x" % (VY_LO, 0x6000), "ram %x 2 %x" % (VY_HI, 0xFFFD), "ram %x 2 %x" % (LEVEL, level[0]), "ram %x 2 %x" % (LEVEL + 2, level[1])]
 
     def frame(self, pad, n=1, world=(), first=False):
         """n frames with the given pad sample; returns the mock's output lines."""
@@ -124,20 +128,75 @@ class Fly(unittest.TestCase):
         out = self.fly([0], self.world(power=5)); self.assertIsNone(self.last(out, POWER), "no write per frame when already full")
         out = self.run_script(self.frame(0, 3, self.world(power=2), first=True)); self.assertIsNone(self.last(out, POWER), "not flying: untouched")
 
+    # ---- hardening: verified state only, no stale coordinates -------------------------------------------------------------------------------------
+    def phase(self, pad, ph=("input", "post-input", "frame-end")): return ["pad %x" % pad, "frame 1"] + ["phase " + p for p in ph]
+
+    def test_activation_is_refused_unless_a_playable_level_with_a_live_mickey_is_verified(self):
+        for kw in (dict(record=False), dict(slot=0), dict(power=0), dict(power=6)):
+            out = self.run_script(["init"] + self.world(**kw) + self.phase(CHORD) + self.phase(RIGHT))
+            self.assertEqual([l for l in out if l.startswith(("write", "setpad"))], [], "refused: no write, and the game keeps its pad (%s)" % kw)
+
+    def test_the_mode_ends_by_itself_without_writing_when_the_state_stops_being_verified(self):
+        def scenario(change):
+            lines = ["init"] + self.world() + self.phase(CHORD) + self.phase(0) + self.phase(RIGHT) + ["echo CHANGE\n"] + change + self.phase(RIGHT) + self.phase(RIGHT) + self.phase(DOWN)
+            out = self.run_script(lines); return out[out.index("CHANGE"):]
+        changes = {"level transition": ["ram %x 2 %x" % (LEVEL + 2, 1)], "menu / cutscene / load (record zeroed)": ["ram %x 2 %x" % (REC + 8, 0)], "Mickey's slot freed": ["ram %x 2 %x" % (MICKEY, 0)],
+                   "death (power 0)": ["ram %x 2 %x" % (POWER, 0)], "respawn / restart (Mickey moved by 200)": ["ram %x 2 %x" % (X, 100)], "respawn vertically": ["ram %x 2 %x" % (Y, 400)]}
+        for name, ch in changes.items():
+            tail = scenario(ch)
+            self.assertEqual([l for l in tail if l.startswith(("write", "setpad"))], [], name + ": nothing is written again and the pad is the game's again")
+
+    def test_after_the_mode_ended_a_new_level_is_never_given_the_old_coordinates_and_a_new_chord_starts_from_the_new_state(self):
+        lines = ["init"] + self.world(300, 120) + self.phase(CHORD) + self.phase(0) + self.phase(RIGHT) + self.world(48, 127, 0, 0, 3, True, 1, (0, 1)) + self.phase(0) + ["pad 0", "frame 9", "phase input", "phase post-input", "phase frame-end", "echo NEWLEVEL\n"]
+        lines += self.phase(0) + self.phase(CHORD) + self.phase(0) + self.phase(RIGHT)
+        out = self.run_script(lines); tail = out[out.index("NEWLEVEL"):]
+        self.assertEqual(self.last(tail, X), 51, "the new chord starts from the NEW level's Mickey (48), not from the old coordinates")
+
+    def test_start_still_reaches_the_game_so_a_flying_player_can_pause(self):
+        out = self.run_script(["init"] + self.world() + self.phase(CHORD) + self.phase(0) + self.phase(START) + self.phase(START | RIGHT))
+        self.assertEqual(self.setpads(out)[-2:], [START, START], "Start passes; the d-pad does not")
+        # no pause flag is read or relied on: while the game is paused only the tracked position changes, and it is asserted again when the game runs
+        self.assertEqual(self.last(out, X), 303)
+
+    def test_the_toggling_chord_never_reaches_the_game_on_either_edge_nor_while_held(self):
+        out = self.run_script(["init"] + self.world() + self.phase(CHORD | RIGHT) + self.phase(CHORD | RIGHT) + self.phase(0) + self.phase(CHORD | LEFT) + self.phase(CHORD | LEFT) + self.phase(B | C) + self.phase(0) + self.phase(RIGHT))
+        pads = self.setpads(out)
+        # entering (chord+right, chord+right, release): nothing reaches the game. Leaving (chord+left, chord+left held, then only B+C still down): no A/B/C on the toggling frame, none while held or partially held;
+        # the d-pad, which is not part of the chord, passes. Once all three buttons are up the game gets its pad untouched again (no further override).
+        self.assertEqual(pads, [0, 0, 0, LEFT, LEFT, 0])
+
+    def test_a_chord_in_an_unverified_state_is_left_to_the_game(self):
+        out = self.run_script(["init"] + self.world(record=False) + self.phase(CHORD | RIGHT) + self.phase(0))
+        self.assertEqual(self.setpads(out), [], "refused: the game keeps seeing its buttons")
+
+    def test_restore_mid_frame_and_at_a_frame_boundary(self):
+        base = ["init"] + self.world(310, 130) + self.phase(CHORD) + self.phase(0) + self.phase(RIGHT)
+        out = self.run_script(base + ["save"]); blob = next(l for l in out if l.startswith("state")).split()[1:]; self.assertEqual(len(blob), 24)
+        # at a frame boundary: loaded, then a normal frame continues from the saved position (the guest RAM is restored with it; here it still holds the same values)
+        out2 = self.run_script(["init"] + self.world(313, 130) + ["load " + " ".join(blob)] + self.phase(RIGHT))
+        self.assertEqual(self.last(out2, X), 316)
+        # mid-frame: the first frame after the load runs only post-input and frame-end (no input sample): the stale pad must not move him, and the position written is the saved one
+        out3 = self.run_script(["init"] + self.world(313, 130) + ["load " + " ".join(blob), "pad 8", "frame 2", "phase post-input", "phase frame-end"])
+        self.assertEqual((self.last(out3, X), self.last(out3, Y)), (313, 130))
+        # a state saved while flying, restored into another level: the first verification ends the mode, nothing stale is written into that level
+        out4 = self.run_script(["init"] + self.world(48, 127, 0, 0, 3, True, 1, (0, 1)) + ["load " + " ".join(blob)] + self.phase(RIGHT) + self.phase(RIGHT))
+        self.assertEqual([l for l in out4 if l.startswith("write ")], [], "no stale coordinate is written into a level the state was not saved in")
+
     # ---- safety ----------------------------------------------------------------------------------------------------------------------------------------
     def test_only_declared_ranges_are_written_and_nothing_faults(self):
         out = self.fly([RIGHT, DOWN, A | LEFT, UP])
         self.assertNotIn("FAULT", out)
         m = tomllib.loads((PROJECT / "mod.toml").read_text()); ok = [(x["offset"], x["offset"] + x["length"]) for x in m["memory"] if x["access"] in ("write", "read-write")]
         for off, w, _ in self.writes(out): self.assertTrue(any(lo <= off and off + w <= hi for lo, hi in ok), hex(off))
-        self.assertEqual(sorted(x["access"] for x in m["memory"]), ["read", "read-write", "read-write", "read-write", "read-write"])
+        self.assertEqual(sorted(x["access"] for x in m["memory"]), ["read", "read", "read-write", "read-write", "read-write", "read-write"])
 
     def test_state_roundtrip_and_corrupt_state(self):
         out = self.run_script(["init"] + self.world(310, 130) + ["pad %x" % CHORD, "frame 1", "phase input", "phase post-input", "phase frame-end", "save"])
         blob = next(l for l in out if l.startswith("state")).split()[1:]
         out2 = self.run_script(["init"] + self.world(310, 130) + ["load " + " ".join(blob), "pad %x" % RIGHT, "frame 2", "phase input", "phase post-input"])
         self.assertIn("load 0", out2); self.assertEqual(self.last(out2, X), 313, "still flying after a restore, from the saved position")
-        self.assertIn("load 1", self.run_script(["init", "load 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00"]))
+        self.assertIn("load 1", self.run_script(["init", "load 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"]))
+        self.assertIn("load 1", self.run_script(["init", "load " + " ".join(["00"] * 16)]), "the previous 16-byte format is refused")
 
     def test_manifest_scope(self):
         m = tomllib.loads((PROJECT / "mod.toml").read_text())

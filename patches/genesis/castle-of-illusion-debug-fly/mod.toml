@@ -57,10 +57,18 @@ offset = 62473
 length = 1
 access = "read-write"
 
-# The game's scroll record of plane A (0xFA80: vertical scroll, 0xFA84: camera x): READ ONLY; Mickey is kept inside the visible area relative to it.
+# Verification inputs, READ ONLY. The scroll record of plane A (0xFA80: vertical scroll, 0xFA84: camera x, 0xFA88 map pointer, 0xFA8C rows, 0xFA8E columns, 0xFA90 block table pointer): a running scrolling level has a valid record and Mickey is kept inside the visible area relative to the camera.
 [[memory]]
 revision = "usa-europe"
 space = "m68k.work_ram"
 offset = 64128
-length = 8
+length = 20
+access = "read"
+
+# The current level and stage (0xFF44, 0xFF46): a change means a transition, which ends the mode.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 65348
+length = 4
 access = "read"

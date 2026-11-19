@@ -28,10 +28,15 @@ def state(key=KEY, tmp=(0, 0), fail=0, retrying=0, slots=(), fc0a=0, counters=No
     for i, s in enumerate(slots): b[0x10 + 8 * i:0x18 + 8 * i] = w(s[0]) + w(s[1]) + w(s[2]) + w(s[3] if len(s) > 3 else 0)
     for k, v in (counters or {}).items(): b[COUNT[k]:COUNT[k] + 2] = w(v)
     return bytes(b)
+# nonzero guard bytes immediately before and after the declared extent (0xFFFC00..0xFFFCB5): a stray write, or a clear that overshoots the extent, changes the full-RAM hash and the `above` window
+GUARD = {0xFBFC: b"\xa5\xa5\xa5\xa5", 0xFCB6: b"\x5a\x5a\x5a\x5a", 0xFCBA: b"\x3c\x3c\x3c\x3c"}
+GUARD_ABOVE = b"\x5a\x5a\x5a\x5a\x3c\x3c\x3c\x3c"
+
+
 def pool(n): return {POOL + 0x40 * i: w(0x0083) for i in range(n)}
 def seed(st, n_pool=0, camx=CAMX, camy=CAMY, ca00=0x0040, knob=0, extra=None):
     ram = {0xFC00: st, 0xFA84: w(camx), 0xFA80: w(camy), 0xCA00: w(ca00), 0x0310: struct.pack(">I", knob), 0x1000: bytes(range(256)) * 4, 0x8000: bytes(range(255, -1, -1)) * 8}
-    ram.update(pool(n_pool)); ram.update(extra or {}); return ram
+    ram.update(GUARD); ram.update(pool(n_pool)); ram.update(extra or {}); return ram
 def ring(o): return [struct.unpack(">HHH", o["state"][0x10 + 8 * i:0x16 + 8 * i]) for i in range(SLOTS)]
 def ctr(o, name): return struct.unpack(">H", o["state"][COUNT[name]:COUNT[name] + 2])[0]
 def cnt(o, off): return struct.unpack(">I", o["log"][off:off + 4])[0]
@@ -87,15 +92,39 @@ def make(variant):
             self.assertNotRegex(re.sub(r"(?m)^;.*$", "", text), r"\b(trap|stop|reset|rte)\b"); self.assertEqual(text.count("jmp @"), 7)
 
         # ---- initialization and level reset --------------------------------------------------------------------------------------------------------------------
-        def test_cold_start_initializes_before_any_use(self):
-            # work RAM is undefined at power-on: a wrong key clears the WHOLE extent, ring AND cumulative diagnostics
-            garbage = state(key=0x1234, slots=[(10 + i, 3, 24 - i) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1, counters={k: 0x7777 for k in COUNT})
-            o = self.run_hook("frame", ram=seed(garbage))
-            self.assertEqual(o["state"][:0xA0], state()[:0xA0], "the ring is cleared and armed before the vertical loader and before any retry")
-            self.assertEqual([ctr(o, k) for k in COUNT if k not in ("frames", "maxocc")], [0] * (len(COUNT) - 2), "the diagnostics start at zero")
-            self.assertEqual((ctr(o, "frames"), ctr(o, "maxocc")), (1, 0), "this invocation counted itself")
+        COLD = dict(key=0x1234, slots=[(10 + i, 3, 24 - i) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1, counters={k: 0x7777 for k in COUNT})
+
+        def assert_extent_cold(self, state_bytes, frames=0):
+            """The whole declared extent is zero except the armed key (and the invocation counter); nothing beyond it moved."""
+            expect = bytearray(state()); expect[COUNT["frames"]:COUNT["frames"] + 2] = w(frames)
+            self.assertEqual(bytes(state_bytes), bytes(expect), "every byte of the 0xB6-byte extent, the last diagnostic word included, is cleared")
+
+        def test_cold_start_through_the_frame_hook_first(self):
+            # work RAM is undefined at power-on: a wrong key clears the WHOLE extent, ring AND cumulative diagnostics, and exactly that extent
+            ram = seed(state(**self.COLD)); o = self.run_hook("frame", ram=ram)
+            self.assert_extent_cold(o["state"], frames=1)
+            self.assertEqual(o["above"][:8], GUARD_ABOVE, "the bytes just above the extent are untouched (no rounding overshoot)")
+            self.assertEqual(o["hash"], self.baseline(ram)["hash"], "the bytes just below the extent and everything else are untouched")
             self.assertEqual(paths(o), {"vert": 1, "tail": 1}); self.assertEqual(o["pc"], S.STUB_RTS["streamer_tail"] + 16)
             self.assertEqual(struct.unpack(">H", o["log"][0x30:0x32])[0], KEY, "armed BEFORE the original vertical loader ran")
+
+        def test_cold_start_through_the_level_reset_first_then_the_streamer(self):
+            # the real power-on order can be: level initialization (the reset hook) BEFORE the first streamer invocation. The reset hook must treat an invalid key as a cold start itself.
+            ram = seed(state(**self.COLD)); o = self.run_hook("reset", ram=ram)
+            self.assert_extent_cold(o["state"], frames=0)
+            self.assertEqual(o["above"][:8], GUARD_ABOVE); self.assertEqual(o["hash"], self.baseline(ram)["hash"]); self.assertEqual(paths(o), {"level": 1})
+            o2 = self.run_hook("frame", ram=seed(o["state"]))                      # ... then the first streamer invocation sees a valid key and must not clear again nor skip anything
+            self.assert_extent_cold(o2["state"], frames=1); self.assertEqual(o2["above"][:8], GUARD_ABOVE)
+            # diagnostics gathered after that are NOT lost by a later level reset (valid key): the cumulative semantics
+            o3 = self.run_hook("reset", ram=seed(state(counters={"fail": 5, "defer": 7, "specdrop": 3, "maxocc": 9}, slots=[(10, 3, 9, 1)])))
+            self.assertEqual([ctr(o3, k) for k in ("fail", "defer", "specdrop", "maxocc")], [5, 7, 3, 9]); self.assertEqual(ring(o3), [(0, 0, 0)] * SLOTS)
+            self.assertEqual(o3["above"][:8], GUARD_ABOVE); self.assertEqual(o3["hash"], self.baseline(seed(state(counters={"fail": 5, "defer": 7, "specdrop": 3, "maxocc": 9}, slots=[(10, 3, 9, 1)])))["hash"])
+
+        def test_the_last_diagnostic_word_is_part_of_the_cleared_extent(self):
+            # the 0xB6-byte extent ends with the word at 0xFCB4 (speculative failures not queued): both cold paths clear it, and only it among the bytes of the rounded 0xB8
+            for where in ("reset", "frame"):
+                o = self.run_hook(where, ram=seed(state(key=0, counters={"specdrop": 0xFFFF})))
+                self.assertEqual(ctr(o, "specdrop"), 0, where); self.assertEqual(o["above"][:8], GUARD_ABOVE, where)
 
         def test_level_reset_clears_the_ring_and_continues_into_the_original(self):
             full = state(slots=[(10 + i, 3, 24) for i in range(SLOTS)], fail=1, retrying=1, fc0a=1, counters={"fail": 7, "defer": 9, "latency": 33})

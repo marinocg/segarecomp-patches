@@ -29,7 +29,8 @@ TEMPLATE = """; Castle of Illusion {label} object activation: wider section look
 ; State (work RAM, never written by the original game): 0xfffc00..0xfffc8f: +0 col.w +2 row.w of the call in progress, +8 fail.b, +9 retrying.b, +0xa deferred-in-retry.b, +0xe key.w 0x5ac3, {SLOTS} slots at +0x10 (8 bytes: col.w row.w age.w stamp.w;
 ; age 0 = empty; stamp = the frame counter at enqueue). Diagnostics only, never read by the game, words: 0xfffca0 fail events queued, +2 retry successes, +4 expired, +6 ring-full drops, +8 deferral attempts, +0xa deferred retries kept waiting,
 ; +0xc invalidated (left the retry window), +0xe max recovery latency (streamer invocations from enqueue to load), 0xfffcb0 streamer invocation counter, +2 max ring occupancy seen, +4 speculative failures not queued (ring at the cap).
-; The ring and the key are cleared at cold start and at every level reset; the diagnostics are cleared ONLY at cold start (work RAM is undefined at power-on), so they are cumulative across levels within a session.
+; COLD START = the key is not valid, whichever hook runs first (the level-reset hook may run before the first streamer invocation): the whole declared extent (0xB6 bytes exactly: 45 longs + 1 word) is cleared. A level reset with a valid key clears only the key's ring (0x90 bytes);
+; the diagnostics therefore accumulate across levels within a session. Nothing outside 0xFFFC00..0xFFFCB5 is written.
 free usa-europe 0x00060c80 0x00000980 0xff
 org usa-europe 0x00060c80
 entry_hook:
@@ -173,6 +174,7 @@ frame_hook:
 clrf:
   clr.l (a0)+
   dbra d0,clrf
+  clr.w (a0)
   move.l (sp)+,d0
   movea.l (sp)+,a0
   move.w #0x5ac3,0xfffc0e
@@ -313,10 +315,20 @@ level_reset:
   move.l a0,-(sp)
   move.l d0,-(sp)
   lea 0xfffc00,a0
+  cmpi.w #0x5ac3,0xfffc0e
+  beq.s rring
+  moveq #{CLRALL},d0
+rall:
+  clr.l (a0)+
+  dbra d0,rall
+  clr.w (a0)
+  bra.s rdone
+rring:
   moveq #{CLR},d0
 clrr:
   clr.l (a0)+
   dbra d0,clrr
+rdone:
   move.l (sp)+,d0
   movea.l (sp)+,a0
   move.w #0x5ac3,0xfffc0e
@@ -408,7 +420,7 @@ ddone:
 
 def generate(name):
     v = VARIANTS[name]
-    return TEMPLATE.format(SPECBIT=1 << (SLOTS - RESERVE), CLRALL=(EXT_END - 0xFC00 + 3) // 4 - 1, label=v["label"], R=v["R"], L=v["L"], T=THRESHOLD, SPEC=SLOTS - RESERVE, RESERVE=RESERVE, SLOTS=SLOTS, S1=SLOTS - 1, CLR=(0x10 + 8 * SLOTS) // 4 - 1,
+    return TEMPLATE.format(SPECBIT=1 << (SLOTS - RESERVE), CLRALL=(EXT_END - 0xFC00) // 4 - 1, label=v["label"], R=v["R"], L=v["L"], T=THRESHOLD, SPEC=SLOTS - RESERVE, RESERVE=RESERVE, SLOTS=SLOTS, S1=SLOTS - 1, CLR=(0x10 + 8 * SLOTS) // 4 - 1,
                            WL=0x4000 - v["L"], WR=0x4000 + v["R"], CL=v["L"] + 0x100, CR=v["R"] + 0x100)
 
 
