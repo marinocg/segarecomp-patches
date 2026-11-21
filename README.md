@@ -54,8 +54,10 @@ segarecomp needs a build that includes the patch installer and native patch SDK.
 
 ```text
 patches/<platform>/<game>/   README.md, release.json, source/ (reviewed provider source and BPS deltas)
-catalog/index.json           static catalog derived from every release.json
-docs/                        installation, compatibility, authoring, releases
+catalog/index.json           static catalog of every PUBLISHED package, derived from release.json (also served on the site)
+catalog/schema/              versioned JSON Schemas of the catalog and release.json
+docs/                        installation, compatibility, authoring, releases, catalog format, artifact hosting, analytics and SEO
+site/                        Astro/Starlight documentation and catalog site (GitHub Pages)
 scripts/                     repository checks (no commercial data needed)
 ```
 
@@ -75,4 +77,4 @@ SEGA, Sega Genesis, Mega Drive, Sonic the Hedgehog and Streets of Rage are trade
 
 Published at https://marinocg.github.io/segarecomp-patches/ (GitHub Pages, deployed from `main` by `.github/workflows/pages.yml`).
 
-`site/` is an Astro + Starlight project (static output, built-in Pagefind search). Build it with `cd site && npm ci && npm run build`; CI also runs the link checker, a search test and every code sample of the [getting-started guide](site/src/content/docs/getting-started.md). Imported product documentation follows the pinned-revision rule in [docs/product-docs.md](docs/product-docs.md). Repository policy: [trust and licensing](docs/policy.md), [layout and versioning](docs/layout-and-versioning.md), [publication restrictions](docs/publication-restrictions.md), [repository settings](docs/repository-settings.md).
+`site/` is an Astro + Starlight project (static output, built-in Pagefind search). Build it with `cd site && npm ci && npm run build`; CI also runs the link checker, a search test and every code sample of the [getting-started guide](site/src/content/docs/getting-started.md). Imported product documentation follows the pinned-revision rule in [docs/product-docs.md](docs/product-docs.md). The catalog is also published as JSON at <https://marinocg.github.io/segarecomp-patches/catalog/index.json> with its schemas under `/schema/` ([catalog format](docs/catalog-format.md)). The site loads Google Tag Manager only after explicit consent ([analytics and privacy](docs/analytics-and-privacy.md)); metadata, structured data, sitemap and robots are described in [seo](docs/seo.md). Releases: [lifecycle](docs/releases.md), [artifact hosting](docs/artifact-hosting.md). Repository policy: [trust and licensing](docs/policy.md), [layout and versioning](docs/layout-and-versioning.md), [publication restrictions](docs/publication-restrictions.md), [repository settings](docs/repository-settings.md).
