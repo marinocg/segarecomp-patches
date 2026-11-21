@@ -16,27 +16,32 @@ const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
     return (
       <section aria-labelledby={`g-${rows[0].game_path.replace(/\W+/g, '-')}`}>
         <h2 id={`g-${rows[0].game_path.replace(/\W+/g, '-')}`}>{game} <small>({platform})</small></h2>
-        <div class="catalog-scroll" role="region" aria-label={`${game} packages`} tabindex="0">
-          <table>
-            <caption>Published packages for {game}</caption>
-            <thead><tr><th scope="col">Package</th><th scope="col">Version</th><th scope="col">Release</th><th scope="col">Trust</th><th scope="col">Evidence</th><th scope="col">Size</th><th scope="col">SHA-256</th><th scope="col">Source revision</th></tr></thead>
-            <tbody>
-              {rows.map((e) => (
-                <tr>
-                  <th scope="row"><a href={`${base}/catalog/${e.id}/${e.version}/`}>{e.name}</a></th>
-                  <td>{e.version}</td>
-                  <td>{e.release}</td>
-                  <td>{e.trust}</td>
-                  <td>{e.evidence_tier}</td>
-                  <td>{kib(e.package_size)}</td>
-                  <td><code title={e.package_sha256}>{shortSha(e.package_sha256)}</code></td>
-                  <td><a href={`${e.source_revision.repository}/commit/${e.source_revision.commit}`}><code>{e.source_revision.commit.slice(0, 12)}</code></a></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul class="catalog-list">
+          {rows.map((e) => (
+            <li>
+              <h3><a href={`${base}/catalog/${e.id}/${e.version}/`}>{e.name}</a></h3>
+              <dl>
+                <div><dt>Version</dt><dd>{e.version}</dd></div>
+                <div><dt>Release</dt><dd>{e.release}</dd></div>
+                <div><dt>Trust</dt><dd>{e.trust}</dd></div>
+                <div><dt>Evidence</dt><dd>{e.evidence_tier}</dd></div>
+                <div><dt>Size</dt><dd>{kib(e.package_size)}</dd></div>
+                <div><dt>SHA-256</dt><dd><code title={e.package_sha256}>{shortSha(e.package_sha256)}</code></dd></div>
+                <div><dt>Source revision</dt><dd><a href={`${e.source_revision.repository}/commit/${e.source_revision.commit}`}><code>{e.source_revision.commit.slice(0, 12)}</code></a></dd></div>
+              </dl>
+            </li>
+          ))}
+        </ul>
       </section>
     );
   })}
 </StarlightPage>
+<style>
+  .catalog-list { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 1rem; }
+  .catalog-list li { margin: 0; border: 2px solid var(--sl-color-hairline); background: var(--sl-color-gray-6); padding: 0.75rem 1rem; }
+  .catalog-list h3 { margin: 0 0 0.5rem; font-size: 1rem; overflow-wrap: anywhere; }
+  .catalog-list dl { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 0; }
+  .catalog-list dl div { min-width: 7rem; margin: 0 !important; }
+  .catalog-list dt { font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); text-transform: uppercase; }
+  .catalog-list dd { margin: 0 !important; padding: 0 !important; overflow-wrap: anywhere; }
+</style>
