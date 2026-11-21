@@ -8,7 +8,7 @@
 """
 import argparse, hashlib, json, pathlib, re, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import build_catalog, lint_layout, validate_catalog
+import build_catalog, lint_layout, release_meta, validate_catalog
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN_EXT = {".bin", ".gen", ".smd", ".sms", ".gg", ".iso", ".cue", ".img", ".rom", ".sfc", ".nes", ".z64", ".ips",
@@ -84,14 +84,14 @@ def check(root, errs):
     for rj in sorted((root / "patches").glob("*/*/release.json")):
         d = rj.parent; rel = json.loads(rj.read_text())
         if not (d / "README.md").is_file(): errs.append(f"{d.name}: README.md missing")
-        for k in ("release_format", "platform", "source_identity_kind", "bios_requirement", "game", "release", "packages"):
+        for k in ("release_format", "platform", "source_identity_kind", "bios_requirement", "game", "release", "status", "packages"):
             if k not in rel: errs.append(f"{d.name}: release.json lacks {k}")
         for p in rel.get("packages", []):
             n = f"{d.name}/{p.get('id')}"
             for k in REQ_PKG:
                 if k not in p: errs.append(f"{n}: lacks {k}")
-            if p.get("id") in seen: errs.append(f"{n}: duplicate id")
-            seen.add(p.get("id"))
+            if (p.get("id"), p.get("version")) in seen: errs.append(f"{n}: duplicate (id, version)")   # several versions of one id are fine: each belongs to its own release
+            seen.add((p.get("id"), p.get("version")))
             for k in ("package_sha256", "package_identity", "source_image_sha256", "patched_image_sha256", "bps_sha256"):
                 if not HEX.match(str(p.get(k, ""))): errs.append(f"{n}: {k} is not a SHA-256")
             if p.get("trust") not in TRUST: errs.append(f"{n}: unknown trust class")
@@ -103,6 +103,7 @@ def check(root, errs):
             if native and (not lic_file or not (root / lic_file).is_file()): errs.append(f"{n}: native provider needs an established license (MIT or MPL-2.0) with its text in the repository")
             if native != (p.get("schema_version") == 2) or native != bool(p.get("executable_code")):
                 errs.append(f"{n}: schema/trust/executable_code inconsistent")
+            if "release" in p: continue   # archived: its sources live at its pinned commit and are verified there (scripts/verify_provenance.py)
             mp = d / "source" / f"{p.get('id')}.manifest.json"
             if not mp.is_file(): errs.append(f"{n}: source manifest missing")
             else:
@@ -162,7 +163,22 @@ def check_mod_projects(root, cli, errs, extra=()):
             if want.get("package_sha256") and want["package_sha256"] != hashlib.sha256(b1).hexdigest(): errs.append(f"{n}: package SHA-256 differs from tests/package.json")
 
 
-def check_assets(root, assets, cli, errs):
+def select_release(root, release, errs):
+    """The packages of ONE collection release. Without --release this is only unambiguous while a single release exists."""
+    rels = release_meta.releases(root)
+    if release is None:
+        if len(rels) != 1: errs.append(f"{len(rels)} releases are recorded ({', '.join(sorted(rels))}): pass --release TAG"); return None
+        release = next(iter(rels))
+    if release not in rels: errs.append(f"no packages are recorded for release {release}"); return None
+    return rels[release]["packages"]
+
+
+def check_assets(root, assets, cli, errs, release=None):
+    """Verify the assets of one release against its own metadata. Other releases' packages are neither required nor allowed in this directory:
+    their integrity is checked when THEY are verified (--release their tag), so a historical package can never be silently skipped or confused."""
+    root = pathlib.Path(root); assets = pathlib.Path(assets)
+    pkgs = select_release(root, release, errs)
+    if pkgs is None: return
     sums = {}
     sf = assets / "SHA256SUMS"
     if not sf.is_file(): errs.append("SHA256SUMS is missing from the release assets")
@@ -170,35 +186,35 @@ def check_assets(root, assets, cli, errs):
         for l in sf.read_text().splitlines():
             h, _, name = l.partition("  "); sums[name.strip()] = h
     expected = set()
-    for rj in sorted((root / "patches").glob("*/*/release.json")):
-        for p in json.loads(rj.read_text())["packages"]:
-            f = assets / p["package_file"]; n = p["id"]; expected.add(p["package_file"])
-            if not f.is_file(): errs.append(f"{n}: asset not found"); continue
-            if sha(f) != p["package_sha256"]: errs.append(f"{n}: asset SHA-256 differs from release.json")
-            if f.stat().st_size != p["package_size"]: errs.append(f"{n}: asset size differs")
-            if sums.get(p["package_file"]) != p["package_sha256"]: errs.append(f"{n}: SHA256SUMS missing or differs")
-            if cli:
-                r = subprocess.run([cli, "patch", "inspect", str(f)], capture_output=True, text=True)
-                try: i = json.loads(r.stdout)
-                except Exception: errs.append(f"{n}: inspect failed"); continue
-                want = {"ok": True, "id": p["id"], "version": p["version"], "schema_version": p["schema_version"],
-                        "package_identity": p["package_identity"], "source_sha256": p["source_image_sha256"],
-                        "target_sha256": p["patched_image_sha256"], "payload_sha256": p["bps_sha256"],
-                        "executable_code": p["executable_code"], "native_source_sha256": p.get("native_source_sha256") or ""}
-                for k, v in want.items():
-                    if i.get(k) != v: errs.append(f"{n}: inspect {k} differs")
+    for pk in pkgs:
+        p = pk.p
+        f = assets / p["package_file"]; n = p["id"]; expected.add(p["package_file"])
+        if not f.is_file(): errs.append(f"{n}: asset not found"); continue
+        if sha(f) != p["package_sha256"]: errs.append(f"{n}: asset SHA-256 differs from release.json")
+        if f.stat().st_size != p["package_size"]: errs.append(f"{n}: asset size differs")
+        if sums.get(p["package_file"]) != p["package_sha256"]: errs.append(f"{n}: SHA256SUMS missing or differs")
+        if cli:
+            r = subprocess.run([cli, "patch", "inspect", str(f)], capture_output=True, text=True)
+            try: i = json.loads(r.stdout)
+            except Exception: errs.append(f"{n}: inspect failed"); continue
+            want = {"ok": True, "id": p["id"], "version": p["version"], "schema_version": p["schema_version"],
+                    "package_identity": p["package_identity"], "source_sha256": p["source_image_sha256"],
+                    "target_sha256": p["patched_image_sha256"], "payload_sha256": p["bps_sha256"],
+                    "executable_code": p["executable_code"], "native_source_sha256": p.get("native_source_sha256") or ""}
+            for k, v in want.items():
+                if i.get(k) != v: errs.append(f"{n}: inspect {k} differs")
 
 
-    if sf.is_file() and set(sums) != expected: errs.append("SHA256SUMS does not list exactly the packages in release.json")
+    if sf.is_file() and set(sums) != expected: errs.append("SHA256SUMS does not list exactly the packages of this release")
     extra = {x.name for x in assets.iterdir()} - expected - {"SHA256SUMS"}
     if extra: errs.append(f"unexpected release assets: {sorted(extra)}")
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(); ap.add_argument("--assets"); ap.add_argument("--segarecomp"); ap.add_argument("--sdk-dir"); ap.add_argument("--cc"); ap.add_argument("--root", default=str(build_catalog.ROOT))
+    ap = argparse.ArgumentParser(); ap.add_argument("--assets"); ap.add_argument("--release", help="collection release tag the --assets directory belongs to"); ap.add_argument("--segarecomp"); ap.add_argument("--sdk-dir"); ap.add_argument("--cc"); ap.add_argument("--root", default=str(build_catalog.ROOT))
     a = ap.parse_args(argv); root = pathlib.Path(a.root); errs = []
     check(root, errs)
-    if a.assets: check_assets(root, pathlib.Path(a.assets), a.segarecomp, errs)
+    if a.assets: check_assets(root, pathlib.Path(a.assets), a.segarecomp, errs, a.release)
     if a.segarecomp and lint_layout.mod_projects(root):   # schema 3 projects need the shipped product tool (mod check / mod pack), compiled with its own host-owned flags
         check_mod_projects(root, a.segarecomp, errs, [x for k, v in (("--cc", a.cc), ("--sdk-dir", a.sdk_dir)) if v for x in (k, v)])
     for e in errs: print("FAIL:", e, file=sys.stderr)

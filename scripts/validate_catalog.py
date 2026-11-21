@@ -10,6 +10,8 @@ The JSON Schemas under catalog/schema/ are the format contract. This script impl
 files use (`SUPPORTED`); a schema using any other keyword is itself an error, so a schema can never silently weaken a check.
 """
 import argparse, json, pathlib, re, subprocess, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import release_meta
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA_DIR = ROOT / "catalog" / "schema"
@@ -145,6 +147,7 @@ def validate_repository(root, errs, baseline=None):
     rel_schema, cat_schema = load_schema("release", root), load_schema("catalog", root)
     for rj in sorted((root / "patches").glob("*/*/release.json")):
         for e in validate_release(json.loads(rj.read_text()), rel_schema): errs.append(f"{rj.relative_to(root).as_posix()}: {e}")
+    for e in release_meta.consistency_errors(root): errs.append(f"releases: {e}")
     cp = root / "catalog" / "index.json"
     if not cp.is_file(): errs.append("catalog/index.json missing"); return
     doc = json.loads(cp.read_text())

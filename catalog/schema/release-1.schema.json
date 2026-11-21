@@ -11,7 +11,7 @@
     "bios_requirement",
     "game",
     "release",
-    "source_revision",
+    "status",
     "build",
     "packages"
   ],
@@ -58,8 +58,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "repository",
-        "commit"
+        "repository"
       ],
       "properties": {
         "repository": {
@@ -333,9 +332,76 @@
                 "pattern": "^[0-9a-f]{64}$"
               }
             }
+          },
+          "release": {
+            "type": "string",
+            "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+            "description": "Present only on an ARCHIVED package of an older published release (then source_revision and build are pinned too)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "prepared",
+              "published"
+            ]
+          },
+          "source_revision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "repository"
+            ],
+            "properties": {
+              "repository": {
+                "type": "string",
+                "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+              },
+              "commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "tag": {
+                "type": "string",
+                "minLength": 1
+              },
+              "tag_commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              }
+            }
+          },
+          "build": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "writer",
+              "writer_ref",
+              "deterministic"
+            ],
+            "properties": {
+              "writer": {
+                "type": "string",
+                "minLength": 1
+              },
+              "writer_ref": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "deterministic": {
+                "type": "boolean"
+              }
+            }
           }
         }
       }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "prepared",
+        "published"
+      ],
+      "description": "prepared: metadata and sources exist but no public release; published: the collection release exists and its entries are immutable."
     }
   }
 }

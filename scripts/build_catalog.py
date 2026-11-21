@@ -5,6 +5,8 @@ The catalog is catalog_format 1 (catalog/schema/catalog-1.schema.json, docs/cata
 so every field that already existed keeps its name and meaning. Validation lives in scripts/validate_catalog.py.
 """
 import json, pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import release_meta
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REQUIRED = ("id", "version", "name", "revision", "region", "schema_version", "trust", "executable_code", "package_sha256", "package_size",
@@ -15,22 +17,23 @@ OPTIONAL = ("native_abi", "capabilities", "native_source_sha256", "license_decla
 
 
 def build(root=ROOT):
+    """Only PUBLISHED packages are listed: a prepared release has no download yet and must never be advertised."""
     entries = []
-    for rj in sorted((root / "patches").glob("*/*/release.json")):
-        rel = json.loads(rj.read_text())
-        for p in rel["packages"]:
-            e = {"platform": rel["platform"], "game": rel["game"], "game_path": rj.parent.relative_to(root).as_posix(),
-                 "source_identity_kind": rel["source_identity_kind"], "bios_requirement": rel["bios_requirement"], "release": rel["release"],
-                 "source_revision": rel["source_revision"], "build": rel["build"]}
-            e.update({k: p[k] for k in REQUIRED})
-            e.update({k: p[k] for k in OPTIONAL if k in p})
-            entries.append(e)
+    for pk in release_meta.published(root):
+        rel, p = pk.doc, pk.p
+        e = {"platform": rel["platform"], "game": rel["game"], "game_path": pk.dir.relative_to(root).as_posix(),
+             "source_identity_kind": rel["source_identity_kind"], "bios_requirement": rel["bios_requirement"], "release": pk.release,
+             "source_revision": pk.source_revision, "build": pk.build}
+        e.update({k: p[k] for k in REQUIRED})
+        e.update({k: p[k] for k in OPTIONAL if k in p})
+        entries.append(e)
     return json.dumps({"catalog_format": 1, "packages": entries}, indent=2, ensure_ascii=False) + "\n"
 
 
 if __name__ == "__main__":
-    out = ROOT / "catalog" / "index.json"
-    text = build()
-    if "--check" in sys.argv:
+    args = sys.argv[1:]
+    root = pathlib.Path(args[args.index("--root") + 1]) if "--root" in args else ROOT
+    out, text = root / "catalog" / "index.json", build(root)
+    if "--check" in args:
         sys.exit(0 if out.exists() and out.read_text() == text else "catalog/index.json is stale: run scripts/build_catalog.py")
     out.write_text(text)

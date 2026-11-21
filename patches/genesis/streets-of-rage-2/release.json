@@ -5,6 +5,7 @@
   "bios_requirement": "none",
   "game": "Streets of Rage 2",
   "release": "v0.1.0",
+  "status": "published",
   "source_revision": {
     "repository": "https://github.com/marinocg/segarecomp-patches",
     "commit": "6ec76f71f968c4898b0ebd11b439f7b7ce923cd4",

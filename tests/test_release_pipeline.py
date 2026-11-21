@@ -13,23 +13,12 @@ def tmp(t):
 
 
 class Guard(unittest.TestCase):
-    def test_published_release_is_immutable(self):
-        e = release_guard.guard("v0.1.0", {"tagName": "v0.1.0", "isDraft": False})
-        self.assertTrue(any("immutable" in x for x in e), e)
+    """The lifecycle cases are driven through the real scripts in tests/test_release_lifecycle.py; these pin the repository's own state."""
+    def test_published_v010_is_immutable(self):
+        e = release_guard.guard("v0.1.0", {"tagName": "v0.1.0", "isDraft": False}); self.assertTrue(any("immutable" in x for x in e), e)
 
-    def test_draft_is_never_overwritten(self):
-        e = release_guard.guard("v0.1.0", {"tagName": "v0.1.0", "isDraft": True}); self.assertTrue(any("never overwrites" in x for x in e), e)
-
-    def test_catalogued_tag_without_release_is_refused(self):
-        e = release_guard.guard("v0.1.0", None); self.assertTrue(any("already lists" in x for x in e), e)
-
-    def test_new_tag_needs_release_notes(self):
-        self.assertTrue(any("release-notes" in x for x in release_guard.guard("v9.9.9", None)))
-
-    def test_new_tag_with_notes_passes(self):
-        d = tmp(self); (d / "catalog").mkdir(); (d / "docs/release-notes").mkdir(parents=True)
-        (d / "catalog/index.json").write_text(json.dumps({"catalog_format": 1, "packages": []})); (d / "docs/release-notes/v1.2.3.md").write_text("n")
-        self.assertEqual(release_guard.guard("v1.2.3", None, d), [])
+    def test_published_v010_cannot_be_recreated(self):
+        e = release_guard.guard("v0.1.0", None); self.assertTrue(any("deleted or inconsistent" in x for x in e), e)
 
     def test_bad_tag(self): self.assertTrue(any("v1.2.3" in x for x in release_guard.guard("latest", None)))
 
@@ -90,29 +79,63 @@ class Provenance(unittest.TestCase):
         d = tmp(self); git(d, "init", "-q", "-b", "main"); g = d / "patches/genesis/synth"; (g / "source").mkdir(parents=True)
         bps = b"BPS1"; (g / "source/p.bps").write_bytes(bps); prov = b"int x;"; (g / "source/provider.c").write_bytes(prov)
         manifest = {"id": "p", "version": "1.0.0", "payloads": {"rom": {"sha256": hashlib.sha256(bps).hexdigest()}}}; (g / "source/p.manifest.json").write_text(json.dumps(manifest))
-        git(d, "add", "."); git(d, "commit", "-qm", "sources"); c = git(d, "rev-parse", "HEAD")
-        rel = {"source_revision": {"repository": "https://github.com/o/r", "commit": c}, "packages": [{"id": "p", "version": "1.0.0", "bps_sha256": hashlib.sha256(bps).hexdigest(),
+        git(d, "add", "."); git(d, "commit", "-qm", "sources"); c = git(d, "rev-parse", "HEAD"); git(d, "tag", "v1.0.0", c)
+        rel = {"release": "v1.0.0", "status": "published", "build": {"writer": "w", "writer_ref": "b" * 40, "deterministic": True},
+               "source_revision": {"repository": "https://github.com/o/r", "commit": c, "tag": "v1.0.0"}, "packages": [{"id": "p", "version": "1.0.0", "bps_sha256": hashlib.sha256(bps).hexdigest(),
                "bps": {"path": "source/p.bps", "sha256": hashlib.sha256(bps).hexdigest()}, "source": {"path": "source/provider.c", "sha256": hashlib.sha256(prov).hexdigest()}}]}
         (g / "release.json").write_text(json.dumps(rel)); git(d, "add", "."); git(d, "commit", "-qm", "release"); return d, g, rel, c
 
     def errs(self, d, head="HEAD"):
         e = []; verify_provenance.verify(d, e, head); return e
 
-    def test_reachable_commit_with_matching_digests(self):
+    def put(self, g, rel): (g / "release.json").write_text(json.dumps(rel))
+
+    def test_reachable_commit_with_matching_digests_and_tag(self):
         d, *_ = self.repo(); self.assertEqual(self.errs(d), [])
+
+    def test_missing_declared_tag_fails(self):
+        d, *_ = self.repo(); git(d, "tag", "-d", "v1.0.0"); self.assertTrue(any("does not exist" in x for x in self.errs(d)), self.errs(d))
+
+    def test_moved_tag_fails(self):
+        d, g, rel, c = self.repo(); (d / "x.txt").write_text("x"); git(d, "add", "."); git(d, "commit", "-qm", "later"); git(d, "tag", "-f", "v1.0.0", "HEAD")
+        self.assertTrue(any("not the source commit" in x for x in self.errs(d)), self.errs(d))
+
+    def test_tag_for_another_release_fails(self):
+        d, g, rel, c = self.repo(); git(d, "tag", "v2.0.0", c); rel["source_revision"]["tag"] = "v2.0.0"; self.put(g, rel)
+        self.assertTrue(any("is not the release" in x for x in self.errs(d)), self.errs(d))
+
+    def test_published_release_must_declare_its_tag(self):
+        d, g, rel, c = self.repo(); del rel["source_revision"]["tag"]; self.put(g, rel); self.assertTrue(any("must declare its tag" in x for x in self.errs(d)))
+
+    def test_tag_commit_without_tag_fails(self):
+        d, g, rel, c = self.repo(); del rel["source_revision"]["tag"]; rel["source_revision"]["tag_commit"] = c; self.put(g, rel); self.assertTrue(any("tag_commit without a tag" in x for x in self.errs(d)))
+
+    def test_historical_exception_pre_squash_tag_with_same_tree(self):
+        d, g, rel, c = self.repo()   # tag on a side commit with the same tree as the source commit, not an ancestor of main
+        git(d, "checkout", "-q", "--detach", c); git(d, "commit", "-q", "--allow-empty", "-m", "pre-squash head"); side = git(d, "rev-parse", "HEAD"); git(d, "tag", "-f", "v1.0.0", side); git(d, "checkout", "-q", "main")
+        rel["source_revision"]["tag_commit"] = side; self.put(g, rel); self.assertEqual(self.errs(d), [])
+        rel["source_revision"]["tag_commit"] = c; self.put(g, rel); self.assertTrue(any("not the recorded tag_commit" in x for x in self.errs(d)))
+
+    def test_exception_with_a_different_tree_fails(self):
+        d, g, rel, c = self.repo(); git(d, "checkout", "-q", "--detach", c); (d / "y.txt").write_text("y"); git(d, "add", "."); git(d, "commit", "-qm", "different tree"); side = git(d, "rev-parse", "HEAD")
+        git(d, "tag", "-f", "v1.0.0", side); git(d, "checkout", "-q", "main"); rel["source_revision"]["tag_commit"] = side; self.put(g, rel)
+        self.assertTrue(any("tree differs" in x for x in self.errs(d)), self.errs(d))
+
+    def test_prepared_release_cannot_declare_a_tag(self):
+        d, g, rel, c = self.repo(); rel["status"] = "prepared"; self.put(g, rel); self.assertTrue(any("cannot declare a tag" in x for x in self.errs(d)))
 
     def test_unreachable_commit_is_refused(self):
         d, g, rel, c = self.repo(); git(d, "checkout", "-q", "-b", "side", c); (d / "x.txt").write_text("x"); git(d, "add", "."); git(d, "commit", "-qm", "side")
         git(d, "checkout", "-q", "main"); git(d, "checkout", "-q", "--detach", "HEAD~1")
-        rel["source_revision"]["commit"] = git(d, "rev-parse", "side"); git(d, "checkout", "-q", "main"); (g / "release.json").write_text(json.dumps(rel))
+        rel["source_revision"]["commit"] = git(d, "rev-parse", "side"); git(d, "checkout", "-q", "main"); self.put(g, rel)
         e = self.errs(d); self.assertTrue(any("not an ancestor" in x for x in e), e)
 
     def test_digest_drift_at_commit_is_refused(self):
-        d, g, rel, c = self.repo(); rel["packages"][0]["source"]["sha256"] = "0" * 64; (g / "release.json").write_text(json.dumps(rel))
+        d, g, rel, c = self.repo(); rel["packages"][0]["source"]["sha256"] = "0" * 64; self.put(g, rel)
         self.assertTrue(any("differs from release.json" in x for x in self.errs(d)))
 
     def test_missing_commit(self):
-        d, g, rel, c = self.repo(); rel["source_revision"]["commit"] = "1" * 40; (g / "release.json").write_text(json.dumps(rel))
+        d, g, rel, c = self.repo(); rel["source_revision"]["commit"] = "1" * 40; self.put(g, rel)
         self.assertTrue(any("does not exist" in x for x in self.errs(d)))
 
     def test_this_repository(self):
@@ -179,6 +202,20 @@ class WorkflowSafety(unittest.TestCase):
     def test_pages_verifies_published_digests_before_deploying(self):
         t = WF["pages.yml"]; self.assertLess(t.index("check_repo.py --assets"), t.index("upload-pages-artifact"))
         for s in ("validate_catalog.py", "verify_provenance.py", "fetch-depth: 0"): self.assertIn(s, t)
+
+    def test_release_event_never_deploys_the_tags_old_tree(self):
+        for name in ("pages.yml", "verify-release.yml"):
+            t = WF[name]; self.assertIn("github.event.repository.default_branch", t, name)
+        self.assertIn("github.event_name == 'release' && github.event.repository.default_branch || github.ref", WF["pages.yml"])
+
+    def test_every_asset_verification_is_scoped_to_a_release(self):
+        for name, t in WF.items():
+            for line in t.splitlines():
+                if "check_repo.py --assets" in line: self.assertIn("--release", line, f"{name}: {line.strip()}")
+        for name in ("check.yml", "release.yml"): self.assertIn("rebuild_release.py", WF[name])
+
+    def test_release_workflow_has_no_default_tag_and_uses_recorded_writer(self):
+        t = WF["release.yml"]; self.assertNotIn("default: v0.1.0", t); self.assertNotIn("SEGAPATCH_REF", t)
 
     def test_check_workflow_has_full_history_and_catalog_gates(self):
         t = WF["check.yml"]; self.assertIn("fetch-depth: 0", t)

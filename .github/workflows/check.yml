@@ -36,11 +36,10 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -q
           python3 scripts/synthetic_fixture.py --segapatch "$SEGAPATCH" --provider examples/synthetic/provider.c
-      # The same rebuild the release workflow performs, so a PR cannot merge something the release would reject.
-      - name: Rebuild packages from source and verify against release.json
-        run: |
-          python3 scripts/build_packages.py --segapatch "$RUNNER_TEMP/segapatch.py" --out "$RUNNER_TEMP/assets"
-          python3 scripts/check_repo.py --assets "$RUNNER_TEMP/assets"
+      # The same rebuild the release workflow performs, for EVERY recorded release (published ones from Git at their pinned commit,
+      # prepared ones from the working tree), each with its own recorded writer revision: a PR cannot merge what a release would reject.
+      - name: Rebuild every release from source and verify each against its own metadata
+        run: python3 scripts/rebuild_release.py --all --work "$RUNNER_TEMP/rebuild"
   # Executes the injected guest code (tests/test_castle_activation_exec.py, both activation variants) and compiles + runs the shared provider (tests/test_castle_provider.py) against the product SDK headers on a synthetic image with a product CLI built from source at the pinned ref:
   # no shipped release contains the guest-asm assembler yet. SEGARECOMP_REQUIRE_EXEC=1 turns a skip into a failure, and the step asserts the test count.
   exec:

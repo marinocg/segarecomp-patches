@@ -1,12 +1,13 @@
 name: release
-# Rebuilds every .segapatch from the committed sources and creates a DRAFT release. Publication stays a manual maintainer action.
+# Rebuilds the packages of ONE prepared collection release from committed sources and creates a DRAFT GitHub release. Publication stays a manual maintainer
+# action. Lifecycle (docs/releases.md): prepare metadata in a PR -> run this workflow from main -> maintainer publishes the draft -> record it with
+# scripts/prepare_release.py publish in a follow-up PR. A published release is never recreated or altered (scripts/release_guard.py).
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag (needs docs/release-notes/<tag>.md)
+        description: Prepared release tag (metadata in patches/*/*/release.json, notes in docs/release-notes/<tag>.md)
         required: true
-        default: v0.1.0
       dry_run:
         description: Rebuild and verify only; do not create the draft
         type: boolean
@@ -20,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: A published release is immutable (refuse a re-run for a published, draft or catalogued tag)
+      - name: Lifecycle guard (new release / draft / published / deleted / superseding version)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -34,13 +35,11 @@ jobs:
           python3 scripts/validate_catalog.py
           python3 scripts/verify_provenance.py
           python3 scripts/check_source_review.py
-          python3 -m unittest -q tests.test_check_repo tests.test_validate_catalog tests.test_release_pipeline
-      - name: Fetch the product's package writer
-        run: curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$(cat scripts/SEGAPATCH_REF)/tools/segapatch.py" -o "$RUNNER_TEMP/segapatch.py"
-      - name: Rebuild packages from source (must match release.json)
-        run: python3 scripts/build_packages.py --segapatch "$RUNNER_TEMP/segapatch.py" --out "$RUNNER_TEMP/assets"
-      - name: Verify assets against release.json and SHA256SUMS
-        run: python3 scripts/check_repo.py --assets "$RUNNER_TEMP/assets"
+          python3 -m unittest -q tests.test_check_repo tests.test_validate_catalog tests.test_release_pipeline tests.test_release_lifecycle
+      - name: Rebuild this release from source with its recorded writer and verify it against its metadata
+        env:
+          TAG: ${{ inputs.tag }}
+        run: python3 scripts/rebuild_release.py --release "$TAG" --work "$RUNNER_TEMP/rebuild"
       - name: Create draft release
         if: ${{ !inputs.dry_run }}
         env:
@@ -49,4 +48,4 @@ jobs:
         run: |
           test -f "docs/release-notes/${TAG}.md"
           gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "segarecomp Patches ${TAG}" \
-            --notes-file "docs/release-notes/${TAG}.md" "$RUNNER_TEMP"/assets/*.segapatch "$RUNNER_TEMP/assets/SHA256SUMS"
+            --notes-file "docs/release-notes/${TAG}.md" "$RUNNER_TEMP/rebuild/$TAG"/*.segapatch "$RUNNER_TEMP/rebuild/$TAG/SHA256SUMS"
