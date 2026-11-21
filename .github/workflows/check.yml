@@ -10,11 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # provenance: a source commit must be an ancestor of this checkout, and the catalog is compared with the base branch
       - name: Repository checks (no commercial data)
         run: |
           python3 scripts/check_repo.py
           python3 scripts/build_catalog.py --check
           python3 scripts/lint_layout.py
+          python3 scripts/check_source_review.py
+          python3 scripts/artifact_budget.py
+      - name: Catalog schema, immutability against the base branch, and source provenance
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A published (id, version) never changes: compare with the catalog at the base commit (skipped only when there is none, e.g. a first push).
+          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then BASELINE="--baseline-ref $BASE_SHA"; else BASELINE=""; fi
+          python3 scripts/validate_catalog.py $BASELINE
+          python3 scripts/verify_provenance.py
       - name: Fetch the pinned product authoring tool
         run: |
           curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$(cat scripts/SEGAPATCH_REF)/tools/segapatch.py" -o "$RUNNER_TEMP/segapatch.py"

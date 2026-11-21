@@ -4,7 +4,7 @@ Installable `.segapatch` archives are **GitHub Release assets**, not files in Gi
 
 ## release.json
 
-Every game directory has a `release.json` (format 1) listing its packages with: id, version, revision, schema and native ABI, trust classification (`data-only` or `trusted-native-source`), package SHA-256 and size, package identity (SHA-256 of the manifest), exact source image digest, patched image digest, BPS and native source digests, license, source path, BPS path, evidence tier, supported scope, limitations and the release asset URL. `catalog/index.json` is generated from these files by `scripts/build_catalog.py` and is the static input for a future documentation site. Hashes are never placeholders: they are computed from the actual archives.
+Every game directory has a `release.json` (format 1) listing its packages with: id, version, revision, schema and native ABI, trust classification (`data-only` or `trusted-native-source`), package SHA-256 and size, package identity (SHA-256 of the manifest), exact source image digest, patched image digest, BPS and native source digests, license, source path, BPS path, evidence tier, supported scope, limitations and the release asset URL. `catalog/index.json` is generated from these files by `scripts/build_catalog.py` and is the static input of the documentation site's catalog pages. Its format, schemas, immutability and supersession rules are in [catalog-format.md](catalog-format.md); each release carries its `source_revision` (repository URL and exact commit) and `build` record. Hashes are never placeholders: they are computed from the actual archives.
 
 `license_declared_in_package` is `false` when the package manifest has no license field and the license (MPL-2.0, the repository license) is established by this repository instead.
 
@@ -22,6 +22,10 @@ Rebuilding a package from `source/` needs no game image. Regenerating the BPS fr
 ## Creating the draft release
 
 Run the **release** workflow (Actions, *Run workflow*, tag such as `v0.1.0`). It rebuilds the packages from source, checks them against `release.json` (hashes, sizes and a mandatory `SHA256SUMS`), and creates a **draft** GitHub Release with the rebuilt packages, `SHA256SUMS` and `docs/release-notes/<tag>.md`. Nothing is published automatically. The product's `segapatch.py` writer is fetched at the commit in `scripts/SEGAPATCH_REF`. Pull-request CI performs the same rebuild and verification, so what the release workflow does is already exercised before merge. `dry_run` runs everything except the release creation. Delete any manually created draft of the same tag before running it.
+
+## Immutability and provenance
+
+A published release is never altered: the release workflow refuses a tag that is published, drafted or already catalogued, and CI rejects any change to a published catalog entry. Each package is tied to a reachable source commit and rebuilds from it to the same digest. Where artifacts live, and why R2 is not used, is recorded with measured numbers in [artifact-hosting.md](artifact-hosting.md); per-file publication review in [source-review.md](source-review.md); site deployment in [cloudflare-pages.md](cloudflare-pages.md).
 
 ## Excluded from v0.1.0
 

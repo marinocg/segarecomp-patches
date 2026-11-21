@@ -4,7 +4,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'docs/product-docs.pin.json', '.github/workflows/pages.yml']
+    paths: ['site/**', 'catalog/**', 'docs/product-docs.pin.json', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,11 +21,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - run: python3 scripts/validate_catalog.py
       - working-directory: site
         run: npm ci && npm run build
       - name: Link check and search test on exactly what will be published
         run: |
           python3 scripts/check_site_links.py site/dist
+          python3 scripts/check_site_a11y.py site/dist
           (cd site && npm run test:search)
       - uses: actions/upload-pages-artifact@v3
         with:

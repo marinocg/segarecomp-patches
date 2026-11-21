@@ -15,6 +15,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - name: Catalog is valid before any page is generated from it
+        run: python3 scripts/validate_catalog.py
       - name: Install (lockfile only)
         working-directory: site
         run: npm ci
@@ -23,9 +25,14 @@ jobs:
         run: npm run build
       - name: Link check (every internal link and asset in the built site)
         run: python3 scripts/check_site_links.py site/dist
+      - name: Accessibility floor for every page, table rules for generated catalog pages
+        run: python3 scripts/check_site_a11y.py site/dist
       - name: Search test (Pagefind finds a known page in the built site)
         working-directory: site
         run: npm run test:search
+      - name: Catalog pages from fixtures (deterministic, show digest and revision, malformed entry fails the build)
+        working-directory: site
+        run: npm run test:catalog
   # Documentation drift and executable samples. Same job id family as the build so the required check "site / build" covers all of it.
   samples:
     runs-on: ubuntu-latest

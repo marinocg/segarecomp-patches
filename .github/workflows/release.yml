@@ -18,11 +18,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: A published release is immutable (refuse a re-run for a published, draft or catalogued tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if gh release view "$TAG" --json tagName,isDraft > "$RUNNER_TEMP/release-state.json" 2>/dev/null; then STATE="$RUNNER_TEMP/release-state.json"; else STATE=none; fi
+          python3 scripts/release_guard.py --tag "$TAG" --release-state "$STATE"
       - name: Repository checks
         run: |
           python3 scripts/check_repo.py
           python3 scripts/build_catalog.py --check
-          python3 -m unittest -q tests.test_check_repo
+          python3 scripts/validate_catalog.py
+          python3 scripts/verify_provenance.py
+          python3 scripts/check_source_review.py
+          python3 -m unittest -q tests.test_check_repo tests.test_validate_catalog tests.test_release_pipeline
       - name: Fetch the product's package writer
         run: curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$(cat scripts/SEGAPATCH_REF)/tools/segapatch.py" -o "$RUNNER_TEMP/segapatch.py"
       - name: Rebuild packages from source (must match release.json)
