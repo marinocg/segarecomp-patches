@@ -31,7 +31,7 @@ SECRET_PATTERNS = [
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
     ("credential assignment", re.compile(r"(?i)\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|cloudflare_api_token)\b\s*[:=]\s*[\"'][^\"'\s$<{]{16,}[\"']")),
 ]
-REQUIRED_CHECKS = ("check / repository", "site / build", "site / samples")
+REQUIRED_CHECKS = ("check / repository", "check / exec", "site / build", "site / samples")
 REQ_PKG = ["id", "version", "revision", "region", "package_file", "package_sha256", "package_size", "package_identity", "schema_version",
            "trust", "executable_code", "source_image_sha256", "patched_image_sha256", "bps_sha256", "license", "evidence_tier",
            "supported_scope", "limitations", "gameplay", "asset"]

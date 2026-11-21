@@ -18,7 +18,7 @@ class ExecStep(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = pathlib.Path(d)
             (d / "tests").mkdir()
-            for m in ("test_castle_activation_exec", "test_castle_provider", "test_castle_activation", "test_castle_debug_fly", "test_input_recorder"): (d / "tests" / (m + ".py")).write_text("import unittest\n" + textwrap.dedent(body))
+            for m in ("test_castle_activation_exec", "test_castle_provider", "test_castle_activation", "test_castle_debug_fly", "test_input_recorder", "test_mod_projects", "test_publication"): (d / "tests" / (m + ".py")).write_text("import unittest\n" + textwrap.dedent(body))
             (d / "step.sh").write_text(step)
             # GitHub runs a `run:` block as `bash -e {0}`: reproduce exactly that shell
             r = subprocess.run(["bash", "-e", str(d / "step.sh")], cwd=d, env={"PATH": "/usr/bin:/bin:/usr/local/bin", "RUNNER_TEMP": str(d), "HOME": str(d)}, capture_output=True, text=True)

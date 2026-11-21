@@ -234,7 +234,7 @@ class WorkflowSafety(unittest.TestCase):
         for name, t in WF.items():
             uses_all = [l for l in t.splitlines() if "rebuild_release.py" in l and "--all" in l]
             self.assertEqual(bool(uses_all), False, f"{name}: {uses_all}")
-        self.assertIn("--prepared", WF["check.yml"]); self.assertIn("--changed-from", WF["check.yml"])
+        self.assertIn("--affected-from", WF["check.yml"]); self.assertIn("--changed-from", WF["check.yml"])
         self.assertIn('rebuild_release.py --release "$TAG"', WF["release.yml"])
         self.assertIn("rebuild_release.py --release", WF["audit.yml"]); self.assertIn("--list", WF["audit.yml"])
 

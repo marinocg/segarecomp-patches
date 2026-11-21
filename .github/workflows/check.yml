@@ -42,21 +42,27 @@ jobs:
   # Executes the injected guest code (tests/test_castle_activation_exec.py, both activation variants) and compiles + runs the shared provider (tests/test_castle_provider.py) against the product SDK headers on a synthetic image with a product CLI built from source at the pinned ref:
   # no shipped release contains the guest-asm assembler yet. SEGARECOMP_REQUIRE_EXEC=1 turns a skip into a failure, and the step asserts the test count.
   exec:
+    # The job id AND name are `exec` (status check `check / exec`): a REQUIRED merge check (docs/repository-settings.md). Never rename it without updating branch protection.
+    name: exec
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # the changed patches are found against the base branch
       - name: Build the pinned product CLI (no viewer, no tests)
         run: scripts/build_product_cli.sh "$(cat scripts/PRODUCT_REF)" "$RUNNER_TEMP/pc"
+      - name: Fetch the pinned product authoring tool (the v0.1.0 reconstruction test needs it)
+        run: curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$(cat scripts/SEGAPATCH_REF)/tools/segapatch.py" -o "$RUNNER_TEMP/segapatch.py"
       - name: Execute the injected retry code and the provider tests (must run, not skip)
         env:
           SEGARECOMP_REQUIRE_EXEC: "1"
+          SEGAPATCH: ${{ runner.temp }}/segapatch.py
         run: |
           # pipefail: the unittest exit status must not be hidden by `| tee` (GitHub's default `bash -e` has no pipefail). The last command is the negated grep, so a skipped test fails the step.
           set -euo pipefail
           export SEGARECOMP_CLI="$RUNNER_TEMP/pc/build/apps/segarecomp/segarecomp" SEGARECOMP_SDK_DIR="$RUNNER_TEMP/pc/src/platforms"
-          python3 -m unittest -v tests.test_castle_activation_exec tests.test_castle_provider tests.test_castle_activation tests.test_castle_debug_fly tests.test_input_recorder 2>&1 | tee "$RUNNER_TEMP/exec.log"
+          python3 -m unittest -v tests.test_castle_activation_exec tests.test_castle_provider tests.test_castle_activation tests.test_castle_debug_fly tests.test_input_recorder tests.test_mod_projects tests.test_publication 2>&1 | tee "$RUNNER_TEMP/exec.log"
           grep -E "^Ran [0-9]+ tests" "$RUNNER_TEMP/exec.log"
           ! grep -q "skipped" "$RUNNER_TEMP/exec.log"
       - name: Check and pack the schema 3 projects this pull request changed (and those a pending release selects), nothing else
@@ -67,9 +73,14 @@ jobs:
           CLI="$RUNNER_TEMP/pc/build/apps/segarecomp/segarecomp"; SDK="$RUNNER_TEMP/pc/src/platforms"
           if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then SCOPE="--changed-from $BASE_SHA"; else SCOPE=""; fi   # no base (first push): check every project once
           python3 scripts/check_repo.py --segarecomp "$CLI" --cc cc --sdk-dir "$SDK" $SCOPE
-      - name: Rebuild the packages of releases that are prepared but not published, each with its recorded tool revision
+      - name: Rebuild the prepared releases this pull request affects (and nothing else), each with its recorded tool revision
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          # Published releases are never rebuilt here: their digests, pinned commits and immutability are metadata checks (job `repository`). Only an in-flight release is built, and only its selected packages.
-          python3 scripts/rebuild_release.py --prepared --work "$RUNNER_TEMP/rebuild" \
+          # Published releases are never rebuilt here: their digests, pinned commits and immutability are metadata checks (job `repository`).
+          # A release is rebuilt only when its record, one of its selected patches, that patch's publication state or a shared build/validation path changed (rebuild_release.py affected_tags).
+          # Without a usable base (first push of a branch) every prepared release is rebuilt: more work, never less.
+          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then SCOPE="--affected-from $BASE_SHA"; else SCOPE="--prepared"; fi
+          python3 scripts/rebuild_release.py $SCOPE --work "$RUNNER_TEMP/rebuild" \
             --segarecomp "$RUNNER_TEMP/pc/build/apps/segarecomp/segarecomp" --segarecomp-ref "$(cat scripts/PRODUCT_REF)" --cc cc --sdk-dir "$RUNNER_TEMP/pc/src/platforms"

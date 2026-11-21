@@ -98,7 +98,7 @@ class Synthetic:
                  "asset": {"name": f"{pid}.segapatch", "url": f"{REPO}/releases/download/{tag or 'vX'}/{pid}.segapatch"}}
         pj = d / "package.json"
         meta = json.loads(pj.read_text()) if pj.is_file() else {"package_format": 1, "platform": platform_of(d), "source_identity_kind": "cartridge-image-sha256", "bios_requirement": "none", "game": f"Synthetic {game}", "packages": []}
-        meta["packages"] = [p for p in meta["packages"] if p["version"] != version] + [entry]; pj.write_text(json.dumps(meta, indent=2) + "\n")
+        meta["packages"] = [p for p in meta["packages"] if (p["id"], p["version"]) != (pid, version)] + [entry]; pj.write_text(json.dumps(meta, indent=2) + "\n")
         self.state(f"genesis/{game}/{name}", state)
         return entry
 
