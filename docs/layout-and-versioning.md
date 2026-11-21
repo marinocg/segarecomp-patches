@@ -32,7 +32,7 @@ patches/<platform>/<game>/
 | `.segapatch` schema | `schema_version` 1 (BPS only) or 2 (BPS and/or native C11 source). A new schema is additive: existing packages stay valid and keep their schema. |
 | SDK ABI | A schema 2 package declares `native_abi` (today `1`) and the capabilities it needs. A provider built for ABI N is not assumed to work on ABI N+1; a package for a new ABI is a new package version declaring it. The lint accepts only supported ABIs. |
 | Relation | Package SemVer is independent of schema and ABI. Changing the schema or ABI of a package is at least a `MINOR` bump and is stated in the README. |
-| Catalog | `catalog_format` versions `catalog/index.json`; it is generated from `release.json` and evolves additively. |
+| Catalog | `catalog_format` versions `catalog/index.json` and `release_format` versions `release.json`; both have a JSON Schema under `catalog/schema/` and evolve additively. Policy, immutability and supersession: [catalog-format.md](catalog-format.md). |
 
 ## Synthetic tests are the mandatory public validation
 

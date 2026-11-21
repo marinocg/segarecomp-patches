@@ -8,7 +8,7 @@
 """
 import argparse, hashlib, json, pathlib, re, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import build_catalog, lint_layout
+import build_catalog, lint_layout, validate_catalog
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN_EXT = {".bin", ".gen", ".smd", ".sms", ".gg", ".iso", ".cue", ".img", ".rom", ".sfc", ".nes", ".z64", ".ips",
@@ -51,7 +51,9 @@ def check(root, errs):
     for f in ("README.md", "LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/CODEOWNERS",
               ".github/PULL_REQUEST_TEMPLATE.md", ".github/ISSUE_TEMPLATE/config.yml", ".github/workflows/check.yml",
               "docs/installation.md", "docs/compatibility.md", "docs/creating-patches.md", "docs/releases.md", "docs/policy.md",
-              "docs/repository-settings.md", "docs/publication-restrictions.md", "docs/layout-and-versioning.md", "catalog/index.json"):
+              "docs/repository-settings.md", "docs/publication-restrictions.md", "docs/layout-and-versioning.md", "catalog/index.json",
+              "catalog/schema/catalog-1.schema.json", "catalog/schema/release-1.schema.json", "docs/catalog-format.md", "docs/artifact-hosting.md",
+              "docs/cloudflare-pages.md", "docs/source-review.md", "docs/source-review.json", ".github/workflows/cloudflare-pages.yml"):
         if not (root / f).is_file(): errs.append(f"missing {f}")
     for p in tracked(root):
         if not p.is_file(): continue
@@ -121,6 +123,8 @@ def check(root, errs):
                 if not sp.is_file(): errs.append(f"{n}: missing {src['path']}")
                 elif sha(sp) != src["sha256"] or src["sha256"] != p.get("native_source_sha256"): errs.append(f"{n}: source digest mismatch")
             elif src or (d / "source" / "provider.c").exists(): errs.append(f"{n}: data-only package must not carry source")
+    try: validate_catalog.validate_repository(root, errs)
+    except Exception as e: errs.append(f"catalog schema: {e}")
     try:
         if (root / "catalog/index.json").read_text() != build_catalog.build(root): errs.append("catalog/index.json is stale")
     except Exception as e: errs.append(f"catalog: {e}")
