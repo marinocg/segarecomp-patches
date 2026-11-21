@@ -229,6 +229,28 @@ class WorkflowSafety(unittest.TestCase):
                 if "check_repo.py --assets" in line: self.assertIn("--release", line, f"{name}: {line.strip()}")
         for name in ("check.yml", "release.yml"): self.assertIn("rebuild_release.py", WF[name])
 
+    def test_routine_workflows_never_rebuild_every_historical_release(self):
+        """The cost of a pull request or a release is proportional to what it publishes: only the full-audit workflow may use --all."""
+        for name, t in WF.items():
+            uses_all = [l for l in t.splitlines() if "rebuild_release.py" in l and "--all" in l]
+            self.assertEqual(bool(uses_all), False, f"{name}: {uses_all}")
+        self.assertIn("--prepared", WF["check.yml"]); self.assertIn("--changed-from", WF["check.yml"])
+        self.assertIn('rebuild_release.py --release "$TAG"', WF["release.yml"])
+        self.assertIn("rebuild_release.py --release", WF["audit.yml"]); self.assertIn("--list", WF["audit.yml"])
+
+    def test_the_audit_runs_only_on_demand_or_on_a_schedule(self):
+        head = WF["audit.yml"].split("jobs:")[0]
+        self.assertIn("workflow_dispatch", head); self.assertIn("schedule", head)
+        for trigger in ("pull_request", "push:", "release:"): self.assertNotIn(trigger, head)
+
+    def test_the_repository_job_builds_no_package(self):
+        code = "\n".join(l for l in WF["check.yml"].split("  exec:")[0].splitlines() if not l.strip().startswith("#"))   # comments may name the scripts they deliberately do not run
+        for s in ("rebuild_release.py", "build_packages.py", "mod pack", "--segarecomp"): self.assertNotIn(s, code, s)
+
+    def test_the_product_is_built_only_at_a_full_pinned_revision(self):
+        t = (ROOT / "scripts/build_product_cli.sh").read_text(); self.assertIn("[0-9a-f]{40}", t)
+        for name in ("check.yml", "release.yml", "audit.yml"): self.assertNotIn("git clone", WF[name], name)
+
     def test_release_workflow_has_no_default_tag_and_uses_recorded_writer(self):
         t = WF["release.yml"]; self.assertNotIn("default: v0.1.0", t); self.assertNotIn("SEGAPATCH_REF", t)
 

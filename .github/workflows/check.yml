@@ -36,32 +36,40 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -q
           python3 scripts/synthetic_fixture.py --segapatch "$SEGAPATCH" --provider examples/synthetic/provider.c
-      # The same rebuild the release workflow performs, for EVERY recorded release (published ones from Git at their pinned commit,
-      # prepared ones from the working tree), each with its own recorded writer revision: a PR cannot merge what a release would reject.
-      - name: Rebuild every release from source and verify each against its own metadata
-        run: python3 scripts/rebuild_release.py --all --work "$RUNNER_TEMP/rebuild"
+      # Deliberately NO package rebuild here. Everything above reads metadata (schemas, uniqueness, eligibility, explicit release selection, source review, provenance
+      # at each release's pinned commit, catalog freshness and immutability against the base branch); the cost grows with the records, never with the packages built.
+      # The packages a pull request prepares are rebuilt by the `exec` job; a whole historical rebuild is the manual `audit` workflow.
   # Executes the injected guest code (tests/test_castle_activation_exec.py, both activation variants) and compiles + runs the shared provider (tests/test_castle_provider.py) against the product SDK headers on a synthetic image with a product CLI built from source at the pinned ref:
   # no shipped release contains the guest-asm assembler yet. SEGARECOMP_REQUIRE_EXEC=1 turns a skip into a failure, and the step asserts the test count.
   exec:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the changed patches are found against the base branch
       - name: Build the pinned product CLI (no viewer, no tests)
-        run: |
-          set -euo pipefail
-          REF=$(cat scripts/PRODUCT_REF)
-          git clone --filter=blob:none https://github.com/marinocg/segarecomp.git "$RUNNER_TEMP/product"
-          git -C "$RUNNER_TEMP/product" checkout --detach "$REF"
-          cmake -S "$RUNNER_TEMP/product" -B "$RUNNER_TEMP/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DSEGARECOMP_ENABLE_SDL3_VIEWER=OFF
-          cmake --build "$RUNNER_TEMP/build" --target segarecomp -j"$(nproc)"
+        run: scripts/build_product_cli.sh "$(cat scripts/PRODUCT_REF)" "$RUNNER_TEMP/pc"
       - name: Execute the injected retry code and the provider tests (must run, not skip)
         env:
           SEGARECOMP_REQUIRE_EXEC: "1"
         run: |
           # pipefail: the unittest exit status must not be hidden by `| tee` (GitHub's default `bash -e` has no pipefail). The last command is the negated grep, so a skipped test fails the step.
           set -euo pipefail
-          export SEGARECOMP_CLI="$RUNNER_TEMP/build/apps/segarecomp/segarecomp" SEGARECOMP_SDK_DIR="$RUNNER_TEMP/product/platforms"
+          export SEGARECOMP_CLI="$RUNNER_TEMP/pc/build/apps/segarecomp/segarecomp" SEGARECOMP_SDK_DIR="$RUNNER_TEMP/pc/src/platforms"
           python3 -m unittest -v tests.test_castle_activation_exec tests.test_castle_provider tests.test_castle_activation tests.test_castle_debug_fly tests.test_input_recorder 2>&1 | tee "$RUNNER_TEMP/exec.log"
           grep -E "^Ran [0-9]+ tests" "$RUNNER_TEMP/exec.log"
           ! grep -q "skipped" "$RUNNER_TEMP/exec.log"
-
+      - name: Check and pack the schema 3 projects this pull request changed (and those a pending release selects), nothing else
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          CLI="$RUNNER_TEMP/pc/build/apps/segarecomp/segarecomp"; SDK="$RUNNER_TEMP/pc/src/platforms"
+          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then SCOPE="--changed-from $BASE_SHA"; else SCOPE=""; fi   # no base (first push): check every project once
+          python3 scripts/check_repo.py --segarecomp "$CLI" --cc cc --sdk-dir "$SDK" $SCOPE
+      - name: Rebuild the packages of releases that are prepared but not published, each with its recorded tool revision
+        run: |
+          set -euo pipefail
+          # Published releases are never rebuilt here: their digests, pinned commits and immutability are metadata checks (job `repository`). Only an in-flight release is built, and only its selected packages.
+          python3 scripts/rebuild_release.py --prepared --work "$RUNNER_TEMP/rebuild" \
+            --segarecomp "$RUNNER_TEMP/pc/build/apps/segarecomp/segarecomp" --segarecomp-ref "$(cat scripts/PRODUCT_REF)" --cc cc --sdk-dir "$RUNNER_TEMP/pc/src/platforms"

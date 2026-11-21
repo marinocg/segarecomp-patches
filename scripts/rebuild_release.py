@@ -4,6 +4,7 @@
   rebuild_release.py --release v0.2.0 --work DIR     ONE release (what the release workflow does): its listed packages only
   rebuild_release.py --prepared --work DIR           every release that is not published yet (what a pull request does): packages being prepared
   rebuild_release.py --all --work DIR                FULL AUDIT: every recorded release, published ones from Git at their pinned commit (manual/scheduled)
+  rebuild_release.py --list                          the recorded release tags (the audit workflow loops over them, building each release's own product revision)
 
 Routine work (`--release`, `--prepared`) never touches a published release: a historical package is verified by its stored digest, its pinned source
 commit (verify_provenance.py) and the immutability check against the base branch, and is rebuilt only on demand (`--release <old tag>` or `--all`).
@@ -48,13 +49,14 @@ def rebuild(root, tag, work, url, cli=None, cli_ref=None, sdk_dir=None, cc=None)
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(); ap.add_argument("--root", default=str(ROOT)); ap.add_argument("--work", required=True); ap.add_argument("--release")
+    ap = argparse.ArgumentParser(); ap.add_argument("--root", default=str(ROOT)); ap.add_argument("--work"); ap.add_argument("--release"); ap.add_argument("--list", action="store_true")
     ap.add_argument("--prepared", action="store_true"); ap.add_argument("--all", action="store_true"); ap.add_argument("--writer-url", default=DEFAULT_URL)
     ap.add_argument("--segarecomp"); ap.add_argument("--segarecomp-ref"); ap.add_argument("--sdk-dir"); ap.add_argument("--cc")
     a = ap.parse_args(argv)
-    if sum([bool(a.release), a.prepared, a.all]) != 1: ap.error("pass exactly one of --release TAG, --prepared or --all")
-    root, work = pathlib.Path(a.root), pathlib.Path(a.work)
-    rels = release_meta.releases(root)
+    root = pathlib.Path(a.root); rels = release_meta.releases(root)
+    if a.list: print("\n".join(sorted(rels))); return 0
+    if sum([bool(a.release), a.prepared, a.all]) != 1 or not a.work: ap.error("pass --work DIR and exactly one of --release TAG, --prepared or --all")
+    work = pathlib.Path(a.work)
     if a.all: tags = sorted(rels)
     elif a.prepared: tags = sorted(t for t, r in rels.items() if r["status"] != "published")
     else: tags = [a.release]

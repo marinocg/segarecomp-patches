@@ -1,12 +1,13 @@
 name: release
-# Rebuilds the packages of ONE prepared collection release from committed sources and creates a DRAFT GitHub release. Publication stays a manual maintainer
-# action. Lifecycle (docs/releases.md): prepare metadata in a PR -> run this workflow from main -> maintainer publishes the draft -> record it with
-# scripts/prepare_release.py publish in a follow-up PR. A published release is never recreated or altered (scripts/release_guard.py).
+# Rebuilds ONLY the packages that releases/<tag>.json explicitly selects, from committed sources, and creates a DRAFT GitHub release. Publication stays a manual
+# maintainer action. Lifecycle (docs/releases.md): select packages with prepare_release.py begin in a PR -> run this workflow from main -> maintainer publishes the
+# draft -> record it with scripts/prepare_release.py publish in a follow-up PR. A published release is never recreated or altered (scripts/release_guard.py).
+# No other release and no unselected patch is built: the cost is proportional to the packages being released.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Prepared release tag (metadata in patches/*/*/release.json, notes in docs/release-notes/<tag>.md)
+        description: Prepared release tag (selection in releases/<tag>.json, notes in docs/release-notes/<tag>.md)
         required: true
       dry_run:
         description: Rebuild and verify only; do not create the draft
@@ -35,11 +36,23 @@ jobs:
           python3 scripts/validate_catalog.py
           python3 scripts/verify_provenance.py
           python3 scripts/check_source_review.py
-          python3 -m unittest -q tests.test_check_repo tests.test_validate_catalog tests.test_release_pipeline tests.test_release_lifecycle
-      - name: Rebuild this release from source with its recorded writer and verify it against its metadata
+          python3 -m unittest -q tests.test_check_repo tests.test_validate_catalog tests.test_release_pipeline tests.test_release_lifecycle tests.test_publication
+      - name: Build the product CLI at this release's pinned revision (only when it selects a schema 3 package)
+        id: product
         env:
           TAG: ${{ inputs.tag }}
-        run: python3 scripts/rebuild_release.py --release "$TAG" --work "$RUNNER_TEMP/rebuild"
+        run: |
+          set -euo pipefail
+          if REF=$(python3 scripts/build_packages.py --release "$TAG" --print-product-ref 2>/dev/null); then
+            CLI=$(scripts/build_product_cli.sh "$REF" "$RUNNER_TEMP/pc")
+            echo "args=--segarecomp $CLI --segarecomp-ref $REF --cc cc --sdk-dir $RUNNER_TEMP/pc/src/platforms" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"   # a schema 1/2 only release needs no product build: the writer is fetched at its recorded revision
+          fi
+      - name: Rebuild exactly the selected packages with their recorded tool revision and verify them against their metadata
+        env:
+          TAG: ${{ inputs.tag }}
+        run: python3 scripts/rebuild_release.py --release "$TAG" --work "$RUNNER_TEMP/rebuild" ${{ steps.product.outputs.args }}
       - name: Create draft release
         if: ${{ !inputs.dry_run }}
         env:

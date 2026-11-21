@@ -1,0 +1,35 @@
+name: audit
+# FULL historical audit, on demand: rebuilds published (and prepared) releases from Git at their pinned source commits with each release's own recorded tool
+# revision and compares every package with its stored digest. It is deliberately NOT part of pull requests or releases: those do bounded work proportional to
+# what they publish (docs/releases.md, "Verifying an old release"). Run it when a toolchain or a historical source is in question, or let the weekly schedule do it.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: One release tag to audit (empty = every recorded release)
+        required: false
+  schedule:
+    - cron: '17 4 * * 1'
+permissions:
+  contents: read
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rebuild each release independently from its pinned sources and verify it against its own metadata
+        env:
+          ONE: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAGS=${ONE:-$(python3 scripts/rebuild_release.py --list)}
+          for TAG in $TAGS; do
+            ARGS=""
+            if REF=$(python3 scripts/build_packages.py --release "$TAG" --print-product-ref 2>/dev/null); then
+              CLI=$(scripts/build_product_cli.sh "$REF" "$RUNNER_TEMP/pc-$REF")   # one product build per distinct revision; a repeated ref reuses its checkout
+              ARGS="--segarecomp $CLI --segarecomp-ref $REF --cc cc --sdk-dir $RUNNER_TEMP/pc-$REF/src/platforms"
+            fi
+            python3 scripts/rebuild_release.py --release "$TAG" --work "$RUNNER_TEMP/audit" $ARGS
+          done
