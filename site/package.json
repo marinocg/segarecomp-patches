@@ -12,7 +12,8 @@
     "preview": "astro preview",
     "test:search": "node scripts/search-test.mjs",
     "test:visual": "node scripts/visual-check.mjs",
-    "test:catalog": "node scripts/catalog-test.mjs"
+    "test:catalog": "node scripts/catalog-test.mjs",
+    "test:consent": "node scripts/consent-test.mjs"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "7.3.6",

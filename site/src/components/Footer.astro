@@ -1,0 +1,36 @@
+---
+// Starlight footer override: the default footer plus the site-wide consent banner and the "Cookie settings" control.
+// This is the single place Google Tag Manager is wired in (src/lib/consent.mjs); no page template repeats it.
+import Default from '@astrojs/starlight/components/Footer.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<Default {...Astro.props}><slot /></Default>
+<div class="consent-links">
+  <a href={`${base}/privacy/`}>Privacy and cookies</a>
+  <button type="button" id="consent-settings">Cookie settings</button>
+</div>
+<section id="consent-banner" aria-label="Analytics consent" hidden>
+  <p><strong>Analytics cookies?</strong> This site works fully without them. With your permission it loads Google Tag Manager to measure how the pages are used. Nothing is requested from Google before you choose. <a href={`${base}/privacy/`}>Privacy and cookies</a></p>
+  <p id="consent-status" class="consent-status" aria-live="polite"></p>
+  <div class="consent-actions">
+    <button type="button" data-consent="reject">Reject</button>
+    <button type="button" data-consent="accept">Accept analytics</button>
+  </div>
+</section>
+<script>
+  import { initConsent } from '../lib/consent.mjs';
+  initConsent(window);
+</script>
+<style>
+  .consent-links { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; padding: 0.5rem 1rem 1.5rem; font-size: var(--sl-text-sm); }
+  .consent-links button { background: none; border: 0; padding: 0.5rem 0; color: var(--sl-color-text-accent); text-decoration: underline; cursor: pointer; font: inherit; min-height: 2.5rem; }
+  .consent-links a { padding: 0.5rem 0; min-height: 2.5rem; display: inline-flex; align-items: center; }
+  #consent-banner { position: fixed; inset-inline: 0; bottom: 0; z-index: 99; margin: 0 auto; max-width: 48rem; padding: 1rem; background: var(--sl-color-bg-nav);
+    border: 2px solid var(--sl-color-text-accent); box-shadow: 4px 4px 0 0 var(--pixel-shadow, #000); color: var(--sl-color-text); }
+  #consent-banner[hidden] { display: none; }
+  #consent-banner p { margin: 0 0 0.5rem; }
+  #consent-banner a { color: var(--sl-color-text-accent); }
+  .consent-status { color: var(--sl-color-gray-2); font-size: var(--sl-text-sm); }
+  .consent-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .consent-actions button { flex: 1 1 8rem; min-height: 2.75rem; padding: 0.5rem 1rem; font: inherit; font-weight: 600; cursor: pointer; border: 2px solid var(--sl-color-text-accent); background: var(--sl-color-bg); color: var(--sl-color-text); }
+</style>
