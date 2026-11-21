@@ -38,16 +38,9 @@ The `site / visual` job (browser rendering, screenshots uploaded as an artifact)
 
 `pages.yml` builds `site/` on every push to `main` that touches the site, re-runs the link and search checks on the exact build output and deploys it with `actions/deploy-pages`. Only `main` may deploy (environment protection). The site base path is `/segarecomp-patches` (`SITE_BASE`, read by `site/astro.config.mjs` and the checks in `scripts/` and `site/scripts/`); a custom domain later means setting `SITE_URL`/`SITE_BASE=` and nothing else.
 
-## Cloudflare Pages
+## Release-triggered deployment
 
-`cloudflare-pages.yml` deploys the site to Cloudflare Pages: production on a published release (or manual dispatch), a preview per same-repository pull request, build and validation only for fork pull requests. It needs two GitHub **environments**, each holding the secret `CLOUDFLARE_API_TOKEN` (a token limited to *Cloudflare Pages: Edit*), and the repository variables `CLOUDFLARE_ACCOUNT_ID` and optionally `CF_PAGES_PROJECT` and `CF_SITE_URL`:
-
-| Environment | Used by | Restriction |
-|---|---|---|
-| `cloudflare-production` | production deployment | deployment branches and tags: `main` and `v*`; reviewer optional |
-| `cloudflare-preview` | same-repository pull request previews | none beyond the secret scope |
-
-The one-time steps and the (not yet recorded) production URL are in [cloudflare-pages.md](cloudflare-pages.md). The `build` job of that workflow is not a required check; it repeats checks that `check / repository` and `site / build` already require.
+`pages.yml` also runs when a release is **published** (or by manual dispatch with a tag): it downloads the published assets and compares them with the catalog digests (`check_repo.py --assets`) before building and deploying, so a wrong digest stops the deployment. The `github-pages` environment must allow deployment from `main` **and** from release tags (`v*`), otherwise the release-triggered run is rejected by environment protection. No secret and no third-party deployment service is used.
 
 ## Workflow permissions
 

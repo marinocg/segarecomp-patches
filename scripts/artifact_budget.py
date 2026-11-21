@@ -10,8 +10,8 @@ import argparse, json, pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MIB = 1024 * 1024
-# Vendor limits as documented when the decision was recorded (re-verify before relying on them): Cloudflare Pages 25 MiB per static file,
-# 20,000 files per deployment (free plan); GitHub Release assets 2 GiB each. Thresholds are deliberately well below those limits.
+# Vendor limits as documented when the decision was recorded (re-verify before relying on them): GitHub Pages sites are limited to 1 GB
+# (published) and soft 100 GB/month bandwidth; Cloudflare R2 would be the alternative store; GitHub Release assets 2 GiB each. Thresholds are deliberately well below those limits.
 LIMITS = {"largest_package_bytes": 20 * MIB, "all_packages_bytes": 500 * MIB, "site_static_files": 15000}
 
 

@@ -53,7 +53,7 @@ def check(root, errs):
               "docs/installation.md", "docs/compatibility.md", "docs/creating-patches.md", "docs/releases.md", "docs/policy.md",
               "docs/repository-settings.md", "docs/publication-restrictions.md", "docs/layout-and-versioning.md", "catalog/index.json",
               "catalog/schema/catalog-1.schema.json", "catalog/schema/release-1.schema.json", "docs/catalog-format.md", "docs/artifact-hosting.md",
-              "docs/cloudflare-pages.md", "docs/source-review.md", "docs/source-review.json", ".github/workflows/cloudflare-pages.yml"):
+              "docs/source-review.md", "docs/source-review.json"):
         if not (root / f).is_file(): errs.append(f"missing {f}")
     for p in tracked(root):
         if not p.is_file(): continue

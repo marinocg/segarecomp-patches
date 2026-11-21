@@ -164,29 +164,25 @@ class WorkflowSafety(unittest.TestCase):
     def test_no_pull_request_target_anywhere(self):
         for n, t in WF.items(): self.assertNotIn("pull_request_target", t, n)
 
-    def test_secrets_only_in_deploy_jobs(self):
-        t = WF["cloudflare-pages.yml"]; build = t[t.index("  build:"):t.index("  preview:")]
-        self.assertNotIn("secrets.", build); self.assertNotIn("CLOUDFLARE_API_TOKEN", build)
-
-    def test_fork_pull_requests_cannot_reach_deploy(self):
-        t = WF["cloudflare-pages.yml"]; self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", t)
-        self.assertIn("github.event_name != 'pull_request'", t)
+    def test_no_third_party_deploy_or_secrets(self):
+        for n, t in WF.items():
+            self.assertNotIn("cloudflare", t.lower(), n); self.assertNotIn("secrets.", t, n)
 
     def test_least_privilege(self):
         for n, t in WF.items(): self.assertRegex(t, r"(?m)^permissions:", n)
-        t = WF["cloudflare-pages.yml"]; self.assertNotIn("contents: write", t); self.assertNotIn("id-token", t)
-        self.assertEqual(len(re.findall(r"CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}", t)), 2)
+        self.assertNotIn("contents: write", WF["pages.yml"])
 
-    def test_deploy_jobs_use_environments(self):
-        t = WF["cloudflare-pages.yml"]; self.assertIn("environment: cloudflare-preview", t); self.assertIn("name: cloudflare-production", t)
+    def test_pages_deploys_only_from_main_or_release(self):
+        t = WF["pages.yml"]; self.assertNotIn("pull_request", t.split("jobs:")[0])
+        self.assertIn("types: [published]", t); self.assertIn("branches: [main]", t)
+
+    def test_pages_verifies_published_digests_before_deploying(self):
+        t = WF["pages.yml"]; self.assertLess(t.index("check_repo.py --assets"), t.index("upload-pages-artifact"))
+        for s in ("validate_catalog.py", "verify_provenance.py", "fetch-depth: 0"): self.assertIn(s, t)
 
     def test_check_workflow_has_full_history_and_catalog_gates(self):
         t = WF["check.yml"]; self.assertIn("fetch-depth: 0", t)
         for s in ("validate_catalog.py", "verify_provenance.py", "check_source_review.py"): self.assertIn(s, t)
-
-    def test_cloudflare_setup_is_documented(self):
-        t = (ROOT / "docs/cloudflare-pages.md").read_text()
-        for s in ("CLOUDFLARE_API_TOKEN", "cloudflare-production", "Cloudflare Pages: Edit", "fork"): self.assertIn(s, t)
 
 
 if __name__ == "__main__": unittest.main()

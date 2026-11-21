@@ -25,7 +25,7 @@ Run the **release** workflow (Actions, *Run workflow*, tag such as `v0.1.0`). It
 
 ## Immutability and provenance
 
-A published release is never altered: the release workflow refuses a tag that is published, drafted or already catalogued, and CI rejects any change to a published catalog entry. Each package is tied to a reachable source commit and rebuilds from it to the same digest. Where artifacts live, and why R2 is not used, is recorded with measured numbers in [artifact-hosting.md](artifact-hosting.md); per-file publication review in [source-review.md](source-review.md); site deployment in [cloudflare-pages.md](cloudflare-pages.md).
+A published release is never altered: the release workflow refuses a tag that is published, drafted or already catalogued, and CI rejects any change to a published catalog entry. Each package is tied to a reachable source commit and rebuilds from it to the same digest. Where artifacts live, and why R2 is not used, is recorded with measured numbers in [artifact-hosting.md](artifact-hosting.md); per-file publication review in [source-review.md](source-review.md); site deployment on GitHub Pages in [repository-settings.md](repository-settings.md).
 
 ## Excluded from v0.1.0
 
