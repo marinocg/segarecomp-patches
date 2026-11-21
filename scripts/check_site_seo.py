@@ -174,14 +174,14 @@ def check(dist):
     if not cj.is_file(): errs.append("catalog/index.json is not published")
     else:
         cat = json.loads(cj.read_text())
-        if cat.get("catalog_format") != 1: errs.append("published catalog has an unexpected format")
+        if cat.get("catalog_format") not in (1, 2): errs.append("published catalog has an unexpected format")
         idxp = parsed.get("catalog/index.html"); linked = set(idxp.hrefs) if idxp else set()
         for e in cat.get("packages", []):
             rel = f"catalog/{e['id']}/{e['version']}/index.html"
             if rel not in pages: errs.append(f"catalog entry {e['id']}@{e['version']} has no page")
             elif f"{BASE}/catalog/{e['id']}/{e['version']}/" not in linked: errs.append(f"catalog page {e['id']}@{e['version']} is not linked from the catalog index (orphan)")
         if len([r for r in pages if re.match(r"catalog/[^/]+/[^/]+/index.html", r)]) != len(cat.get("packages", [])): errs.append("catalog pages and catalog entries differ in number")
-    for n in ("catalog-1", "release-1"):
+    for n in ("catalog-1", "catalog-2", "release-1", "release-2", "package-1"):
         f = dist / "schema" / f"{n}.schema.json"
         if not f.is_file(): errs.append(f"schema/{n}.schema.json is not published")
         elif json.loads(f.read_text()).get("$id") != f"{ORIGIN}{BASE}/schema/{n}.schema.json": errs.append(f"schema {n} $id does not equal its public URL")

@@ -2,6 +2,8 @@
 *                       @marinocg
 # Executable-code and supply-chain surfaces are named explicitly so a later co-maintainer split cannot drop them.
 /patches/               @marinocg
+/publication.json       @marinocg
+/releases/              @marinocg
 /scripts/               @marinocg
 /.github/               @marinocg
 /LICENSE                @marinocg

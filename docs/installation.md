@@ -33,7 +33,7 @@ segarecomp patch verify  <package.segapatch> --rom <original image>
 segarecomp patch apply   <package.segapatch> --rom <original image> --out <patched image>
 ```
 
-Each prints one JSON object (`"ok":true` or `"ok":false` plus an error) and exits 0, 1 (refused) or 2 (usage). `inspect` reports `schema_version`, `executable_code`, `native_abi`, `native_capabilities`, `native_source_sha256` and `package_identity`. Compare these with the package's entry in `release.json`.
+Each prints one JSON object (`"ok":true` or `"ok":false` plus an error) and exits 0, 1 (refused) or 2 (usage). `inspect` reports `schema_version`, `executable_code`, `native_abi`, `native_capabilities`, `native_source_sha256` and `package_identity`. Compare these with the package's entry in its `package.json` (or the catalog).
 
 ### Schema 1 (BPS only), e.g. Streets of Rage 2
 
@@ -59,3 +59,9 @@ Open the pause menu (**Esc**) and choose **Widescreen Mode** (Enhanced Widescree
 * *"the original image is not the exact image this patch was made for"*: your dump differs. Compare the SHA-256 on the patch's page.
 * The Sonic 3 & Knuckles composite stops after a few frames: it was not built as a lock-on cartridge.
 * Frames the provider cannot explain are declined and drawn by the generic renderer; some backgrounds look wrapped by design.
+
+## Schema 3 (source-based mod) packages
+
+A schema 3 / native ABI 2 package, such as `castle-of-illusion-widescreen-practice`, is a **mod**: it carries no BPS delta and no patched image, and it declares the exact images and capabilities it needs. It is inspected with `segarecomp mod inspect --json <package.segapatch>` (the shipped `patch inspect` reports `the archive contains an unsafe entry name` for it, because it predates schema 3) and installed with `segarecomp mod install <package.segapatch> --rom <original image> --library <dir>`.
+
+**Current status, stated plainly:** the installer, the capabilities and the SDK features these packages use (product ADRs 0311 to 0315) are on the product's main branch **after v0.8.0**. No tagged segarecomp release can install a schema 3 package yet, and no end-user installation has been tested here against a released build. The catalog lists such a package for a future launcher; do not assume it installs with the current launcher. The repository builds and verifies the package with the product tools at the pinned revision in `scripts/PRODUCT_REF`, which is what makes its bytes reproducible.

@@ -4,7 +4,7 @@
 
 Trust is decided by what a package can *execute*, not by who published it. The classes follow the product's trust policy (`docs/architecture/luau-trust-policy.md` and ADR 0284 in the segarecomp repository, which is authoritative). Every class, including data-only, is **untrusted input** to the importer and the build: archives are parsed with bounds and digest checks, and a digest proves integrity, never authorship.
 
-| Class | `release.json` `trust` | Executes code? | Status in this repository | User consent in the launcher |
+| Class | `package.json` `trust` | Executes code? | Status in this repository | User consent in the launcher |
 |---|---|---|---|---|
 | BPS-only (data-only) | `data-only` | No. A verified BPS delta produces a patched image that is then recompiled. | Published today (schema 1). | Install; no native-code approval. |
 | Native (trusted native source) | `trusted-native-source` | **Yes.** `provider.c` is compiled into the Patched program and runs with its operating-system permissions. **Not sandboxed.** | Published today (schema 2). | Explicit approval of the exact package identity (author, licence, source digest, capabilities, "contains executable source, not sandboxed"). |
@@ -24,8 +24,8 @@ Rules that follow:
 |---|---|---|
 | Repository default (tooling in `scripts/`, `tests/`, `.github/`, catalog, `site/`) | MPL-2.0 (`LICENSE`) | |
 | `docs/` and `site/src/content/docs/` prose | MPL-2.0 (the repository default) | A separate documentation licence (for example CC-BY-4.0) is **not** adopted; adopting one is a maintainer decision recorded here first. |
-| `patches/<platform>/<game>/source/provider.c` | The licence the package declares in `release.json` (`MIT` or `MPL-2.0`); text in `LICENSES/MIT.txt` or `LICENSE` | Never relicense a provider because the repository is MPL-2.0 (CONTRIBUTING rule 5). |
-| `patches/<platform>/<game>/source/*.bps` | Covered by the package licence; contains no game content | See [publication restrictions](publication-restrictions.md). |
+| `patches/<platform>/<game>/<patch>/source/provider.c` (schema 2) and `.../src/*` (schema 3) | The licence the package declares (`package.json` / `mod.toml`) (`MIT` or `MPL-2.0`); text in `LICENSES/MIT.txt` or `LICENSE` | Never relicense a provider because the repository is MPL-2.0 (CONTRIBUTING rule 5). |
+| `patches/<platform>/<game>/<patch>/source/*.bps` | Covered by the package licence; contains no game content | See [publication restrictions](publication-restrictions.md). |
 | `site/public/fonts/Silkscreen-*.ttf` | SIL Open Font License 1.1 (`LICENSES/Silkscreen-OFL.txt`) | Used for headings and labels of the documentation site; copied unmodified from the product launcher assets. |
 | Imported product documentation under `site/src/content/docs/product/` | MPL-2.0 per the product repository | The product repository stays authoritative; see [docs/product-docs.md](product-docs.md). |
 
@@ -35,7 +35,7 @@ Commercial games, firmware and assets are never covered by any licence here beca
 
 `scripts/check_repo.py` (run by the `check` workflow on every pull request and push to `main`) fails on:
 
-- forbidden file types (ROM, disc, archive, dump and save extensions), any file over 512 KiB and any `.bps` outside `patches/<platform>/<game>/source/`;
+- forbidden file types (ROM, disc, archive, dump and save extensions), any file over 512 KiB and any `.bps` outside `patches/<platform>/<game>/<patch>/source/`;
 - private-harness markers in text files;
 - credential-shaped strings in any tracked text file (private key blocks, GitHub, npm, Slack, AWS, Google and Cloudflare-style tokens, and `password =`/`secret =`/`token =` assignments with a long literal value).
 

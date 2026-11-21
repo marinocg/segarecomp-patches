@@ -49,8 +49,8 @@ def site(test, **over):
     (d / "sitemap-0.xml").write_text('<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + "".join(f"<url><loc>{u}</loc></url>" for u in urls) + "</urlset>")
     (d / "sitemap-index.xml").write_text(f'<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>{O}{B}/sitemap-0.xml</loc></sitemap></sitemapindex>')
     (d / "robots.txt").write_text(over.get("robots", f"User-agent: *\nAllow: /\n\nSitemap: {O}{B}/sitemap-index.xml\n"))
-    (d / "catalog/index.json").write_text(json.dumps({"catalog_format": 1, "packages": [ENTRY]}))
-    for n in ("catalog-1", "release-1"):
+    (d / "catalog/index.json").write_text(json.dumps({"catalog_format": 2, "packages": [ENTRY]}))
+    for n in ("catalog-1", "catalog-2", "release-1", "release-2", "package-1"):
         (d / "schema").mkdir(exist_ok=True); (d / f"schema/{n}.schema.json").write_text(json.dumps({"$id": f"{O}{B}/schema/{n}.schema.json"}))
     return d
 

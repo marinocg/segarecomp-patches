@@ -1,6 +1,6 @@
 # Analytics, consent and privacy
 
-The site loads **Google Tag Manager** (container `GTM-WDL2MTLC`) on every page, but only after the visitor accepts. There is no consent-management dependency: the mechanism is `site/src/lib/consent.mjs` plus the Starlight `Footer` override `site/src/components/Footer.astro`, the only places GTM is mentioned in code. No page template repeats it.
+The site loads **Google Tag Manager** (container `GTM-WDL2MTLC`) on every page, but **only after the visitor accepts**. Analytics is strictly opt-in: **Reject means no analytics traffic to Google**, on the page where it is chosen and on every later page. There is no consent-management dependency: the mechanism is `site/src/lib/consent.mjs` plus the Starlight `Footer` override `site/src/components/Footer.astro`, the only places GTM is mentioned in code. No page template repeats it.
 
 ## Behaviour
 
@@ -8,8 +8,8 @@ The site loads **Google Tag Manager** (container `GTM-WDL2MTLC`) on every page, 
 |---|---|
 | First visit | A banner offers **Reject** and **Accept analytics** as equal buttons. Nothing is requested from Google, no analytics cookie is set, and the `<noscript>` iframe that Google's snippet includes is **deliberately not used** (it would request Google without consent when scripts are off). Consent Mode v2 defaults are declared denied (`ad_storage`, `ad_user_data`, `ad_personalization`, `analytics_storage`, ...). |
 | Accept | Stored in `localStorage` (`segarecomp-patches-consent-v1`, first-party, one year). The container is requested once per page. Only `analytics_storage` is granted; the advertising signals stay denied. |
-| Reject | Stored. Nothing is ever requested from Google. |
-| Later | **Cookie settings** in the footer reopens the banner showing the current choice. Rejecting after accepting sends `analytics_storage: denied`, removes the analytics cookies (`_ga*`, `_gid`, `_gat*`, `_gcl*`) visible to this origin and reloads, so no container keeps running. |
+| Reject | Stored. Nothing is ever requested from Google: no container, no Google Analytics request, no cookie; after a reload and on every later page too. There is deliberately **no cookieless measurement** for rejected visitors. |
+| Later | **Cookie settings** in the footer reopens the banner showing the current choice. Rejecting after accepting stops all further `patch_download` events, sends `analytics_storage: denied`, removes the analytics cookies (`_ga*`, `_gid`, `_gat*`, `_gcl*`) visible to this origin and reloads, so no container is initialised again. A request already sent to Google cannot be recalled. Accepting after rejecting loads the container once, as on a first visit. |
 | Storage blocked | The choice only lasts for the page; the banner returns on the next page. |
 
 The site is a multi-page static site, so "once" means once per page load: the script, the `gtm.js` start event and the request each occur exactly once; navigating to another page starts that page's single container. Search (Pagefind) and every page work with analytics rejected or blocked.
@@ -22,3 +22,14 @@ The integration controls **whether the container loads and what consent state it
 
 * `site/scripts/consent-test.mjs` (`npm run test:consent`, in the `site / visual` CI job because it needs a downloaded browser): drives the built site in Chromium with Google's hosts intercepted. It checks that nothing is requested before consent, that Accept and Reject are both offered, the denied defaults, the container ID, one container per page, analytics-only grant, persistence of both choices, changing and withdrawing, no duplicate on navigation, and that navigation, the catalog and search work without analytics.
 * `scripts/check_site_seo.py` (required `site / build` job) checks the built HTML statically: no GTM `<script src>`, no `<noscript>` iframe, the container ID appears only inside the one consent script.
+
+## The `patch_download` event
+
+Every download button (the large one on a package page and the compact one in the catalog list) is a link to the release asset with `data-patch-*` attributes taken from the validated catalog entry. A click pushes one event to the `dataLayer`:
+
+```js
+{ event: 'patch_download', patch_id, patch_version, patch_name, patch_release, patch_schema, patch_platform, patch_game, patch_file,
+  download_location /* 'package_page_top' | 'package_page_download' | 'catalog_list' */ }
+```
+
+It carries package facts only: no digest, no URL, nothing about the visitor. It is pushed **only while analytics consent is granted**: a click before a choice or after a rejection is not recorded, nothing is queued, and a click made before acceptance is never replayed. In Google Tag Manager create a *Custom Event* trigger named `patch_download` and a GA4 event tag that maps the `patch_*` and `download_location` variables (data layer variables). The link itself is a plain `<a href>`: the download works with scripts off, before a choice, with analytics rejected and when Google is blocked.

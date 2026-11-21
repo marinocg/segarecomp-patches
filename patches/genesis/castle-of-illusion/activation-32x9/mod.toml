@@ -1,0 +1,249 @@
+# Castle of Illusion activation 32x9 (gameplay-changing): the widescreen + Practice+ provider of patches/genesis/castle-of-illusion/widescreen-practice (src/provider.c is a byte-identical copy, checked by tests/test_castle_activation.py) plus a GAMEPLAY-CHANGING object activation with deferral.
+# Unpublished source project: not selected by any release, no catalog entry (publication.json). Native code is host code: the user approves the exact package identity.
+[mod]
+id = "castle-of-illusion-activation-32x9"
+author = "segarecomp-patches contributors"
+version = "0.1.0"
+name = "Castle of Illusion activation 32x9 (gameplay-changing)"
+license = "MIT"
+
+[target]
+platform = "genesis"
+
+[[target.revision]]
+label = "usa-europe"
+sha256 = "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
+
+[[source]]
+kind = "native-c11"
+path = "src/provider.c"
+
+[[source]]
+kind = "rom-edit-set"
+path = "edits/activation.edits"
+
+[[source]]
+kind = "guest-asm"
+path = "src/retry.asm"
+cpu = "m68k"
+
+[build]
+header_repair = "genesis-checksum"
+
+[abi]
+native = 2
+
+[capabilities]
+required = ["frame.work_ram", "hook.function", "host.log", "input.intercept", "input.read", "memory.read.m68k.work_ram", "memory.write.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+
+[state]
+schema = 1
+
+# The block-expansion tables of both planes (A at 0x0000, B at 0x0800; each holds up to 256 blocks of 8 bytes).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 0
+length = 4096
+access = "read"
+
+# Plane A's block map (from 0x2000, up to 0x4800).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 8192
+length = 10240
+access = "read"
+
+# Plane B's block map (at 0x4800 or 0x5000, up to 0x7000).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 18432
+length = 10240
+access = "read"
+
+# Practice+: the five HUD slot words (0xF244..0xF24D), the only guest memory besides power and the HUD flag byte the package writes.
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62020
+length = 10
+access = "read-write"
+
+# Practice+: Mickey's power word (0xF322).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62242
+length = 2
+access = "read-write"
+
+# Practice+: the HUD-upload flag byte (0xF409; bit 0 asks the game to upload the HUD row again).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 62473
+length = 1
+access = "read-write"
+
+# Actors: the object structures (one flag byte each) and the sprite buffer the object sprite builder fills (0xF500..0xF7FF).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 40960
+length = 22528
+access = "read"
+
+# The scroll records of both planes (0xFA80 and 0xFAC0).
+[[memory]]
+revision = "usa-europe"
+space = "m68k.work_ram"
+offset = 64128
+length = 96
+access = "read"
+
+[[symbol]]
+name = "object_sprite_pieces"
+revision = "usa-europe"
+address = "0x1ab6"
+provenance = "verified"
+
+[[symbol]]
+name = "sprite_piece_x_clip"
+revision = "usa-europe"
+address = "0x1c34"
+provenance = "verified"
+
+# A `before` hook only observes: it never changes the guest. The anchor names the object sprite builder (a verified symbol the program executes) so the build can prove the call sites of the clip routine.
+[[hook]]
+id = "sprite-piece-x-clip"
+symbol = "sprite_piece_x_clip"
+anchor = "object_sprite_pieces"
+mode = "before"
+reads = ["d0", "a0", "a2"]
+
+[geometry]
+aspect_max = "32:9"
+
+[[scene]]
+id = "a16x240-b16"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a48x160-b16"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a48x128-b48"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a16x32-b16"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a192x48-b192"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a32x112-b32"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a14x320-b14"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a17x32-b17"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a80x80-b80x80"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a32x128-b32x128"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a96x64-b96"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a48x160-b48"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a48x256-b48"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a16x160-b16"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a32x32-b32"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a80x128-b80x128"
+components = ["scenery", "actors"]
+
+[[scene]]
+id = "a16x64-b16"
+components = ["scenery", "actors"]
+
+[[symbol]]
+name = "section_load"
+revision = "usa-europe"
+address = "0x6d612"
+provenance = "verified"
+
+[[symbol]]
+name = "section_load_body"
+revision = "usa-europe"
+address = "0x6d618"
+provenance = "verified"
+
+[[symbol]]
+name = "slot_scan"
+revision = "usa-europe"
+address = "0x6d66e"
+provenance = "verified"
+
+[[symbol]]
+name = "next_entry"
+revision = "usa-europe"
+address = "0x6d6a6"
+provenance = "verified"
+
+[[symbol]]
+name = "streamer_tail"
+revision = "usa-europe"
+address = "0x6d53c"
+provenance = "verified"
+
+[[symbol]]
+name = "vertical_loader"
+revision = "usa-europe"
+address = "0x6d550"
+provenance = "verified"
+
+[[symbol]]
+name = "level_init"
+revision = "usa-europe"
+address = "0x6d6b4"
+provenance = "verified"
+
+[[symbol]]
+name = "cull_continue"
+revision = "usa-europe"
+address = "0x1b20"
+provenance = "verified"
+
+[[symbol]]
+name = "cull_delete"
+revision = "usa-europe"
+address = "0x1c94"
+provenance = "verified"

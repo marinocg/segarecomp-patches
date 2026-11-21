@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generates the guest-asm retry routine of the Castle of Illusion activation packages (16:9, 21:9 and 32:9) from ONE template, so the shared parts cannot drift.
 The only parameters are the two section lookaheads (the retry window and the left-deletion limits follow from them), the deferral threshold and the ring geometry. 
-  gen_castle_retry.py            write patches/genesis/castle-of-illusion-activation-{16x9,21x9,32x9}/src/retry.asm
+  gen_castle_retry.py            write patches/genesis/castle-of-illusion/activation-{16x9,21x9,32x9}/src/retry.asm
   gen_castle_retry.py --check    fail if a committed file differs from the generated text (also run by tests/test_castle_activation.py)
 """
 import pathlib, sys
@@ -424,7 +424,7 @@ def generate(name):
                            WL=0x4000 - v["L"], WR=0x4000 + v["R"], CL=v["L"] + 0x100, CR=v["R"] + 0x100)
 
 
-def path(name): return ROOT / f"patches/genesis/castle-of-illusion-activation-{name}/src/retry.asm"
+def path(name): return ROOT / f"patches/genesis/castle-of-illusion/activation-{name}/src/retry.asm"
 
 
 if __name__ == "__main__":

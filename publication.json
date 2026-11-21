@@ -1,0 +1,45 @@
+{
+  "publication_format": 1,
+  "patches": {
+    "genesis/castle-of-illusion/activation-16x9": {
+      "state": "candidate",
+      "note": "Gameplay-changing variant; becomes selectable only after its own publication review."
+    },
+    "genesis/castle-of-illusion/activation-21x9": {
+      "state": "candidate",
+      "note": "Gameplay-changing variant; becomes selectable only after its own publication review."
+    },
+    "genesis/castle-of-illusion/activation-32x9": {
+      "state": "candidate",
+      "note": "Gameplay-changing variant; becomes selectable only after its own publication review."
+    },
+    "genesis/castle-of-illusion/debug-fly": {
+      "state": "internal",
+      "note": "Developer tool. Public source, never a catalog entry or release asset."
+    },
+    "genesis/castle-of-illusion/input-recorder": {
+      "state": "internal",
+      "note": "Temporary developer tool. Public source, never a catalog entry or release asset."
+    },
+    "genesis/castle-of-illusion/widescreen-practice": {
+      "state": "candidate",
+      "note": "Developed and tested; awaits the final publication review (docs/source-review.md) before it can be selected."
+    },
+    "genesis/sonic-1/native-widescreen": {
+      "state": "eligible",
+      "review": "Published in v0.1.0 after the per-file source review (docs/source-review.md)."
+    },
+    "genesis/sonic-2/native-widescreen": {
+      "state": "eligible",
+      "review": "Published in v0.1.0 after the per-file source review (docs/source-review.md)."
+    },
+    "genesis/sonic-3-and-knuckles/native-widescreen": {
+      "state": "eligible",
+      "review": "Published in v0.1.0 after the per-file source review (docs/source-review.md)."
+    },
+    "genesis/streets-of-rage-2/widescreen": {
+      "state": "eligible",
+      "review": "Published in v0.1.0 after the per-file source review (docs/source-review.md)."
+    }
+  }
+}

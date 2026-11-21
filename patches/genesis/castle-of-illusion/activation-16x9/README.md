@@ -1,0 +1,17 @@
+# Castle of Illusion: object activation for 16:9 (GAMEPLAY-CHANGING)
+
+An opt-in variant, separate from the presentation-only package [`castle-of-illusion`](../widescreen-practice/README.md) (the unmodified-gameplay alternative, which this never modifies). It shares that package's provider byte for byte and the 21:9 / 32:9 variants' guest code, generated from one template (`scripts/gen_castle_retry.py`) with its own lookaheads: **right 0x200, left 0x100, initial-fill bound 0x400**. It changes which layout objects exist and when (objects farther away are alive earlier), so it is **gameplay-changing**; the static edits and hooks stay active whatever the presentation settings.
+
+## Why this replaced the two-edit package
+The earlier 16:9 package was two typed edits (right lookahead 0x200, initial-fill bound 0x300) and no guest code. On a deterministic route (hold right, the same guest-frame trajectory in every build; stable layout-object identities = the level-data pointer the loader stores in each pool slot) it **lost original objects**: 13 of 254 identities over 26 stages never existed at a frame boundary (2-3 per affected stage, all created in the level-start fill). Cause (measured): the original right deletion limit (0x280, a test on screen x + 128) stayed while columns were loaded farther out, and the original unsigned window test also deletes everything left of the camera; a typed edit of the limit alone (0x1b14 -> 0x300) still lost 1 (stage 2-0), with the fill-bound edit removed it lost 3. The common code (signed window test, limits that follow the lookaheads, retry, deferral) loses 0 in the same runs (36 identities that the original does not create at the same time are created early, which is the point). A minimal edit set is therefore **not** sufficient for 16:9 and was dropped.
+
+## What it supports / measured (private image, aggregates; method as in the 32:9 README)
+* Pool: never full on any of the 29 stages (max 28 of 32 slots on the hold-right route, 31 on the right/left route; original 25/26); retry ring: 0 allocation failures, 0 expirations, 0 ring-full drops, queue maximum 11 of 16, 163 deferral attempts (all later loaded, or dropped on leaving the window).
+* Identities: 0 original identities lost on the deterministic route (26 stages with objects). Score/damage events: identical to the original on 27 of 29 stages; stages 3-5/3-6 differ in the number of damage events (earlier activation changes enemy contact), which is an expected gameplay difference. The route collects no items, so item collection was not exercised.
+* Executable tests: `tests/test_castle_activation_exec.py` runs all 44 scenarios for this variant (including the saturated-queue lifecycle) (deferral, reservation, CCR, RAM ownership, window edges at right 0x200).
+* Package identity `82e27a15483e26eb2c58876e02e4773011f9efad5755ca945b5b39271540c74b`; effective image `10a2c1adc517bb9eca38fdb04f2eec91e15c7e72aba3a3564b1a2c03d6d7265b`. Product `marinocg/segarecomp` main `8d419ab`. Unpublished source project: not selected by any release, no catalog entry (see `publication.json`).
+
+## Not verified
+Items, damage by cause, collisions, non-visual triggers, RNG effects, boss completion and natural level progression were not verified for this variant (see the 32:9 README, Acceptance).
+
+The queue policy, its evidence, RAM ownership, stack depth and the visible consequences of deferral are in the [32:9 README](../activation-32x9/README.md); on the deterministic walk route this variant also loses 0 of 149 original object identities.

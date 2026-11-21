@@ -33,7 +33,6 @@ export default defineConfig({
       title: 'segarecomp patches',
       description: 'Reviewed widescreen and game patches for Sega Genesis / Mega Drive games recompiled by segarecomp, a static recompiler, plus the .segapatch package format, native patch SDK and security documentation.',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/marinocg/segarecomp-patches' }],
-      editLink: { baseUrl: 'https://github.com/marinocg/segarecomp-patches/edit/main/site/' },
       lastUpdated: false,
       routeMiddleware: './src/routeData.ts',
       // No sharing image exists, so the card is the plain summary card (Starlight's default would announce a large image that is not there).

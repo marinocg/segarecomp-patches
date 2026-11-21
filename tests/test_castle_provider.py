@@ -1,6 +1,6 @@
 """Castle of Illusion provider (SEG-149-T002 / SEG-149-T003): the algorithmic contract on FABRICATED work RAM. No ROM, no game data: the synthetic block tables, maps and scroll records below only have the SHAPE the provider documents.
 
-The provider (patches/genesis/castle-of-illusion/src/provider.c) is compiled against the product's ABI 2 header with a small mock host (declared ranges enforced, writes staged and applied at the end of the callback, the typed render
+The provider (patches/genesis/castle-of-illusion/widescreen-practice/src/provider.c) is compiled against the product's ABI 2 header with a small mock host (declared ranges enforced, writes staged and applied at the end of the callback, the typed render
 feature recorded) and driven through its public entry point. The test needs the product's SDK headers and a C compiler: set SEGARECOMP_SDK_DIR (the product's `platforms` directory) and optionally SEGARECOMP_CC; otherwise it is
 skipped with that reason, never silently passed. The commercial-game evidence (real frames, aspect matrix, save/replay) is described in the project's README and was produced locally; it cannot run in CI."""
 import os, pathlib, subprocess, sys, tempfile, unittest
@@ -8,7 +8,7 @@ try: import tomllib
 except ImportError: tomllib = None
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PROJECT = ROOT / "patches/genesis/castle-of-illusion"
+PROJECT = ROOT / "patches/genesis/castle-of-illusion/widescreen-practice"
 SDK, CC = os.environ.get("SEGARECOMP_SDK_DIR"), os.environ.get("SEGARECOMP_CC", "cc")
 if os.environ.get("SEGARECOMP_REQUIRE_EXEC") == "1" and (not SDK or tomllib is None):
     raise RuntimeError("SEGARECOMP_REQUIRE_EXEC=1 but SEGARECOMP_SDK_DIR is not set or Python lacks tomllib: the provider tests would be skipped")
@@ -597,8 +597,8 @@ class Provider(unittest.TestCase):
         # The mock host does not gate capabilities; the real host DISABLES a mod that calls host.log without `host.log`. Every Castle package ships the same provider, so every one must declare it.
         uses_log = "h->log(" in (PROJECT / "src/provider.c").read_text()
         self.assertTrue(uses_log, "the shared provider reports lost visible commands through host.log")
-        for name in ("castle-of-illusion", "castle-of-illusion-activation-16x9", "castle-of-illusion-activation-21x9"):
-            manifest = tomllib.loads((ROOT / "patches/genesis" / name / "mod.toml").read_text())
+        for name in ("widescreen-practice", "activation-16x9", "activation-21x9"):
+            manifest = tomllib.loads((ROOT / "patches/genesis/castle-of-illusion" / name / "mod.toml").read_text())
             self.assertIn("host.log", manifest["capabilities"]["required"], name)
 
     def test_pieces_live_one_frame_and_are_bounded(self):

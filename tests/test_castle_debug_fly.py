@@ -1,4 +1,4 @@
-"""Castle of Illusion debug free-fly (patches/genesis/castle-of-illusion-debug-fly): the provider's contract on FABRICATED work RAM (no ROM, no game data), through the same mock ABI 2 host as test_castle_provider.py
+"""Castle of Illusion debug free-fly (patches/genesis/castle-of-illusion/debug-fly): the provider's contract on FABRICATED work RAM (no ROM, no game data), through the same mock ABI 2 host as test_castle_provider.py
 (declared ranges enforced: an access outside them faults). Needs SEGARECOMP_SDK_DIR and a C compiler; skipped otherwise, and CI (SEGARECOMP_REQUIRE_EXEC=1) turns a skip into a failure."""
 import os, pathlib, subprocess, sys, tempfile, unittest
 try: import tomllib
@@ -8,7 +8,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import test_castle_provider as P
 
 ROOT = P.ROOT
-PROJECT = ROOT / "patches/genesis/castle-of-illusion-debug-fly"
+PROJECT = ROOT / "patches/genesis/castle-of-illusion/debug-fly"
 SDK, CC = P.SDK, P.CC
 if os.environ.get("SEGARECOMP_REQUIRE_EXEC") == "1" and (not SDK or tomllib is None):
     raise RuntimeError("SEGARECOMP_REQUIRE_EXEC=1 but SEGARECOMP_SDK_DIR is not set or Python lacks tomllib: the debug-fly tests would be skipped")

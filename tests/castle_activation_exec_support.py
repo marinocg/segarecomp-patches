@@ -1,12 +1,12 @@
-"""Executes the ACTUAL assembled retry code (patches/genesis/castle-of-illusion-activation-21x9/src/retry.asm) on a synthetic image through the product's generated-native path.
+"""Executes the ACTUAL assembled retry code (patches/genesis/castle-of-illusion/activation-21x9/src/retry.asm) on a synthetic image through the product's generated-native path.
 
 The asm text is the shipped file with only its addresses remapped into a 16 KiB synthetic image; the "original game" it hooks is a handful of hand-assembled stubs (a fake section loader that logs its
 arguments and can be told to fail, plus continuation markers). Nothing commercial is involved. Needs SEGARECOMP_CLI, SEGARECOMP_SDK_DIR (the product's platforms directory) and a C compiler."""
 import hashlib, os, pathlib, re, shutil, struct, subprocess, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-ASM = ROOT / "patches/genesis/castle-of-illusion-activation-21x9/src/retry.asm"
-ASM_DIR = lambda v: ROOT / f"patches/genesis/castle-of-illusion-activation-{v}/src/retry.asm"
+ASM = ROOT / "patches/genesis/castle-of-illusion/activation-21x9/src/retry.asm"
+ASM_DIR = lambda v: ROOT / f"patches/genesis/castle-of-illusion/activation-{v}/src/retry.asm"
 STATE = 0xFFFC00
 STUB_RTS = {"slot_scan": 0x3300, "next_entry": 0x3400, "streamer_tail": 0x3600, "vertical_loader": 0x3500, "level_init": 0x3700, "cull_continue": 0x3800, "cull_delete": 0x3900}
 SLOT = lambda i: STATE + 0x10 + 8 * i

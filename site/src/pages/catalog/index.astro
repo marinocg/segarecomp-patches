@@ -2,6 +2,7 @@
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { getCollection } from 'astro:content';
 import { kib, shortSha } from '../../lib/catalog.mjs';
+import DownloadButton from '../../components/DownloadButton.astro';
 import { absolute, breadcrumbLd, collectionLd, ldScript } from '../../lib/seo.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -12,7 +13,7 @@ const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
 ---
 <StarlightPage frontmatter={{ title: 'Patch catalog', description, tableOfContents: false, head: [{ tag: 'meta', attrs: { property: 'og:type', content: 'website' } }, ldScript(collectionLd(site, base, entries, description)), ldScript(breadcrumbLd([{ name: 'segarecomp patches', url: absolute(site, base, '/') }, { name: 'Patch catalog', url: absolute(site, base, '/catalog/') }])), { tag: 'link', attrs: { rel: 'alternate', type: 'application/json', href: `${base}/catalog/index.json`, title: 'Machine-readable catalog' } }] }}>
   <p>Generated from <code>catalog/index.json</code> at build time; there is no hand-maintained copy. Every entry names the exact package digest and the source commit it was built from. An image is identified by its SHA-256, never by its title.</p>
-  <p>Machine-readable: <a href={`${base}/catalog/index.json`}>catalog/index.json</a> and the <a href={`${base}/schema/catalog-1.schema.json`}>catalog</a> and <a href={`${base}/schema/release-1.schema.json`}>release</a> JSON Schemas.</p>
+  <p>Machine-readable: <a href={`${base}/catalog/index.json`}>catalog/index.json</a> and the <a href={`${base}/schema/catalog-2.schema.json`}>catalog</a>, <a href={`${base}/schema/release-2.schema.json`}>release</a> and <a href={`${base}/schema/package-1.schema.json`}>package</a> JSON Schemas.</p>
   <p>{entries.length} package{entries.length === 1 ? '' : 's'} in {games.length} project{games.length === 1 ? '' : 's'}.</p>
   {games.map((g) => {
     const [platform, game] = g.split('|');
@@ -23,11 +24,15 @@ const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
         <ul class="catalog-list">
           {rows.map((e) => (
             <li>
-              <h3><a href={`${base}/catalog/${e.id}/${e.version}/`}>{e.name}</a></h3>
+              <div class="catalog-head">
+                <h3><a href={`${base}/catalog/${e.id}/${e.version}/`}>{e.name}</a></h3>
+                <DownloadButton e={e} location="catalog_list" compact />
+              </div>
               <dl>
                 <div><dt>Version</dt><dd>{e.version}</dd></div>
                 <div><dt>Release</dt><dd>{e.release}</dd></div>
                 <div><dt>Trust</dt><dd>{e.trust}</dd></div>
+                <div><dt>Schema</dt><dd>{e.schema_version}{e.native_abi ? ` / ABI ${e.native_abi}` : ''}</dd></div>
                 <div><dt>Evidence</dt><dd>{e.evidence_tier}</dd></div>
                 <div><dt>Size</dt><dd>{kib(e.package_size)}</dd></div>
                 <div><dt>SHA-256</dt><dd><code title={e.package_sha256}>{shortSha(e.package_sha256)}</code></dd></div>
@@ -43,7 +48,8 @@ const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
 <style>
   .catalog-list { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 1rem; }
   .catalog-list li { margin: 0; border: 2px solid var(--sl-color-hairline); background: var(--sl-color-gray-6); padding: 0.75rem 1rem; }
-  .catalog-list h3 { margin: 0 0 0.5rem; font-size: 1rem; overflow-wrap: anywhere; }
+  .catalog-list h3 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+  .catalog-head { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
   .catalog-list dl { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 0; }
   .catalog-list dl div { min-width: 7rem; margin: 0 !important; }
   .catalog-list dt { font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); text-transform: uppercase; }

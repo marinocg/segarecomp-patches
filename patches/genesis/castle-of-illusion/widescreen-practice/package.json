@@ -1,0 +1,55 @@
+{
+  "package_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Castle of Illusion Starring Mickey Mouse",
+  "packages": [
+    {
+      "id": "castle-of-illusion-widescreen-practice",
+      "version": "0.1.0",
+      "name": "Castle of Illusion widescreen + Practice+",
+      "schema_version": 3,
+      "native_abi": 2,
+      "capabilities": [
+        "frame.work_ram",
+        "hook.function",
+        "host.log",
+        "input.intercept",
+        "input.read",
+        "memory.read.m68k.work_ram",
+        "memory.write.m68k.work_ram",
+        "overlay.rgba",
+        "scenery.words",
+        "state.mod"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "package_sha256": "312ffd0b62d6b574721b4115b8bda1b4e07a76086544f2277056385a0b31e49f",
+      "package_size": 36311,
+      "package_identity": "b26a21344b7f7850622e8d77e5babd56aa3325052b1e591e835f880bed66d27b",
+      "images": [
+        {
+          "label": "usa-europe",
+          "sha256": "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
+        }
+      ],
+      "license": "MIT",
+      "author": "segarecomp-patches contributors",
+      "evidence_tier": "synthetic-only",
+      "gameplay": "Unchanged, except Practice+, a power restore the player invokes",
+      "supported_scope": "Authored widescreen scenery in the 17 verified scrolling scenes, the game's own sprites drawn beside the picture, and the user-invoked Practice+ power restore.",
+      "limitations": [
+        "Applies only to the one image this entry lists (USA, Europe); any other image is refused by digest.",
+        "Authored scenery covers the 17 verified scrolling scenes only; menus, cutscenes, level loads and any other layout use the host's generic extension.",
+        "Practice+ writes three declared guest-memory ranges when the player invokes it; nothing else is written.",
+        "Needs a segarecomp build that can install schema 3 / native ABI 2 packages (product ADRs 0311 to 0315, mod install); no tagged segarecomp release (v0.8.0 and earlier) can. See docs/installation.md."
+      ],
+      "build": {
+        "writer": "segarecomp mod pack",
+        "writer_ref": "8d419ab029c2222ab6b699b516c6fee53bac650c",
+        "deterministic": true
+      }
+    }
+  ]
+}

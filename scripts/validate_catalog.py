@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate the static catalog and per-release metadata (standard library only; docs/catalog-format.md).
 
-  validate_catalog.py                                  schemas + semantic rules for every release.json and catalog/index.json
+  validate_catalog.py                                  schemas + semantic rules for every package.json, releases/*.json, publication.json and catalog/index.json
   validate_catalog.py --baseline-ref origin/main       also enforce immutability against the catalog at that Git ref
   validate_catalog.py --baseline FILE                  ... or against a catalog file
   validate_catalog.py --catalog FILE                   validate one catalog document (examples, a built site's input)
@@ -15,9 +15,10 @@ import release_meta
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA_DIR = ROOT / "catalog" / "schema"
-SUPPORTED = {"$schema", "$id", "title", "description", "type", "enum", "pattern", "minLength", "minimum", "minItems", "required",
-             "properties", "additionalProperties", "items"}
+SUPPORTED = {"$schema", "$id", "title", "description", "type", "enum", "const", "pattern", "minLength", "minimum", "minItems", "required",
+             "properties", "additionalProperties", "items", "oneOf"}
 TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "integer": int}
+CURRENT = {"catalog": 2, "release": 2, "package": 1}   # the schema version each document kind is validated against today (older schemas stay served for the formats they describe)
 NULLABLE = "null"   # `"type": ["integer", "null"]`: data-only packages carry explicit nulls for native-only fields (release.json format 1 has always done so)
 
 
@@ -32,13 +33,18 @@ def schema_errors(value, schema, where="$"):
     errs = []
     for k in schema:
         if k not in SUPPORTED: errs.append(f"{where}: schema keyword {k!r} is not implemented by validate_catalog.py")
+    if "oneOf" in schema:   # exactly one branch must accept the value; when none does, report the closest branch (fewest errors), not a wall of text
+        branches = [schema_errors(value, b, where) for b in schema["oneOf"]]
+        ok = [i for i, e in enumerate(branches) if not e]
+        if len(ok) != 1: errs += [f"{where}: matches {len(ok)} of {len(branches)} alternatives"] + (min(branches, key=len) if not ok else [])
     t = schema.get("type")
     if t:
         ts = t if isinstance(t, list) else [t]
         if value is None and NULLABLE in ts: return errs
         if not any(_type_ok(value, x) for x in ts if x != NULLABLE): return errs + [f"{where}: expected {t}, got {type(value).__name__}"]
         t = None
-    if "enum" in schema and value not in schema["enum"]: errs.append(f"{where}: {value!r} is not one of {schema['enum']}")
+    if "enum" in schema and not any(type(value) is type(x) and value == x for x in schema["enum"]): errs.append(f"{where}: {value!r} is not one of {schema['enum']}")
+    if "const" in schema and value != schema["const"]: errs.append(f"{where}: {value!r} is not {schema['const']!r}")
     if isinstance(value, str):
         if "pattern" in schema and not re.search(schema["pattern"], value): errs.append(f"{where}: {value!r} does not match {schema['pattern']}")
         if len(value) < schema.get("minLength", 0): errs.append(f"{where}: shorter than {schema['minLength']}")
@@ -57,8 +63,9 @@ def schema_errors(value, schema, where="$"):
     return errs
 
 
-def load_schema(name, root=ROOT):
-    return json.loads((pathlib.Path(root) / "catalog" / "schema" / f"{name}-1.schema.json").read_text())
+def load_schema(name, root=ROOT, version=None):
+    version = version or CURRENT[name]
+    return json.loads((pathlib.Path(root) / "catalog" / "schema" / f"{name}-{version}.schema.json").read_text())
 
 
 def _entries(doc): return doc.get("packages", []) if isinstance(doc, dict) else []
@@ -71,8 +78,27 @@ def _semver(v):
     m = re.match(r"^(\d+)\.(\d+)\.(\d+)", str(v)); return tuple(map(int, m.groups())) if m else (0, 0, 0)
 
 
-def semantic_errors(doc, kind):
-    """Rules a JSON Schema cannot express. `kind` is 'catalog' (flat entries) or 'release' (one game, release-level fields)."""
+def _kind_errors(p, n):
+    """Rules every entry of a package.json or the catalog obeys, whatever its release: trust/schema agreement and the fields only one kind may carry."""
+    errs, schema = [], p.get("schema_version")
+    native = p.get("trust") == "trusted-native-source"
+    if schema == 3:
+        if not native or not p.get("executable_code"): errs.append(f"{n}: a schema 3 package is trusted native source and executable")
+        if p.get("native_abi") != 2 or not p.get("capabilities"): errs.append(f"{n}: a schema 3 package needs native_abi 2 and its capabilities")
+        for k in ("source_image_sha256", "patched_image_sha256", "bps_sha256", "bps", "native_source_sha256", "revision", "region"):
+            if k in p: errs.append(f"{n}: a schema 3 mod package has no {k}: it is not a BPS/ROM transformation (its images are listed in `images`)")
+        if len({i.get("sha256") for i in p.get("images", [])}) != len(p.get("images", [])): errs.append(f"{n}: duplicate image digest")
+        return errs
+    if native != (schema == 2) or native != bool(p.get("executable_code")): errs.append(f"{n}: trust, schema_version and executable_code disagree")
+    if native and not (p.get("native_abi") and p.get("native_source_sha256")): errs.append(f"{n}: a native package needs native_abi and native_source_sha256")
+    if native and p.get("license") not in ("MIT", "MPL-2.0"): errs.append(f"{n}: a native package needs an established MIT or MPL-2.0 license")
+    if not native and (p.get("native_abi") or p.get("native_source_sha256")): errs.append(f"{n}: a data-only package cannot carry native_abi/native_source_sha256")
+    if p.get("source_image_sha256") == p.get("patched_image_sha256"): errs.append(f"{n}: patched image digest equals the source digest")
+    return errs
+
+
+def semantic_errors(doc, kind="catalog"):
+    """Rules a JSON Schema cannot express for catalog/index.json (flat entries, each carrying its own release and source revision)."""
     errs, seen, hashes = [], set(), set()
     ids = {_key(p) for p in _entries(doc)}
     for p in _entries(doc):
@@ -83,25 +109,19 @@ def semantic_errors(doc, kind):
         hashes.add(p.get("package_sha256"))
         a = p.get("asset", {}) if isinstance(p.get("asset"), dict) else {}
         if a.get("name") != f"{p.get('id')}.segapatch": errs.append(f"{n}: asset name must be '<id>.segapatch'")
-        rel = p.get("release", doc.get("release") if isinstance(doc, dict) else None)
-        rev = p.get("source_revision", doc.get("source_revision") if isinstance(doc, dict) else None) or {}
-        want = f"{rev.get('repository')}/releases/download/{rel}/{a.get('name')}"
+        rev = p.get("source_revision") or {}
+        want = f"{rev.get('repository')}/releases/download/{p.get('release')}/{a.get('name')}"
         if a.get("url") != want: errs.append(f"{n}: asset URL must be the version-pinned release URL {want} (never 'latest' or a branch)")
-        native = p.get("trust") == "trusted-native-source"
-        if native != (p.get("schema_version") == 2) or native != bool(p.get("executable_code")): errs.append(f"{n}: trust, schema_version and executable_code disagree")
-        if native and not (p.get("native_abi") and p.get("native_source_sha256")): errs.append(f"{n}: a native package needs native_abi and native_source_sha256")
-        if native and p.get("license") not in ("MIT", "MPL-2.0"): errs.append(f"{n}: a native package needs an established MIT or MPL-2.0 license")
-        if not native and (p.get("native_abi") or p.get("native_source_sha256")): errs.append(f"{n}: a data-only package cannot carry native_abi/native_source_sha256")
-        if p.get("source_image_sha256") == p.get("patched_image_sha256"): errs.append(f"{n}: patched image digest equals the source digest")
+        errs += _kind_errors(p, n)
         sup = p.get("superseded_by")
         if sup:
             sid, _, sver = sup.partition("@")
             if (sid, sver) == _key(p): errs.append(f"{n}: supersedes itself")
             elif (sid, sver) not in ids: errs.append(f"{n}: superseded_by {sup} is not in this catalog")
             elif sid == p.get("id") and _semver(sver) <= _semver(p.get("version")): errs.append(f"{n}: superseded_by must name a higher version")
+    by = {_key(x): x for x in _entries(doc)}
     for p in _entries(doc):   # supersession must not loop
         cur, hops = p, 0
-        by = {_key(x): x for x in _entries(doc)}
         while cur and cur.get("superseded_by") and hops <= len(by):
             sid, _, sver = cur["superseded_by"].partition("@"); cur = by.get((sid, sver)); hops += 1
         if hops > len(by): errs.append(f"{p.get('id')}@{p.get('version')}: supersession cycle")
@@ -109,15 +129,21 @@ def semantic_errors(doc, kind):
 
 
 def validate_catalog(doc, schema=None):
-    return schema_errors(doc, schema or load_schema("catalog")) + (semantic_errors(doc, "catalog") if isinstance(doc, dict) else [])
+    """A catalog is validated against the schema of its own `catalog_format` (1 or 2); anything else falls to the current one and fails its enum."""
+    fmt = doc.get("catalog_format") if isinstance(doc, dict) else None
+    return schema_errors(doc, schema or load_schema("catalog", version=fmt if fmt in (1, 2) else None)) + (semantic_errors(doc) if isinstance(doc, dict) else [])
 
 
-def validate_release(doc, schema=None):
-    errs = schema_errors(doc, schema or load_schema("release"))
+def validate_package(doc, schema=None):
+    """One patch's package.json: its schema plus the per-entry rules. Duplicate versions across patches are release_meta.consistency_errors."""
+    errs = schema_errors(doc, schema or load_schema("package"))
     if isinstance(doc, dict):
-        errs += semantic_errors(doc, "release")
         for p in _entries(doc):
-            if isinstance(p, dict) and p.get("package_file") != f"{p.get('id')}.segapatch": errs.append(f"{p.get('id')}: package_file must be '<id>.segapatch'")
+            if isinstance(p, dict):
+                errs += _kind_errors(p, f"{p.get('id')}@{p.get('version')}")
+                if p.get("package_file", f"{p.get('id')}.segapatch") != f"{p.get('id')}.segapatch": errs.append(f"{p.get('id')}: package_file must be '<id>.segapatch'")
+        keys = [_key(p) for p in _entries(doc)]
+        if len(set(keys)) != len(keys): errs.append("duplicate (id, version) in one package.json")
     return errs
 
 
@@ -144,9 +170,11 @@ def baseline_from_ref(root, ref):
 
 def validate_repository(root, errs, baseline=None):
     root = pathlib.Path(root)
-    rel_schema, cat_schema = load_schema("release", root), load_schema("catalog", root)
-    for rj in sorted((root / "patches").glob("*/*/release.json")):
-        for e in validate_release(json.loads(rj.read_text()), rel_schema): errs.append(f"{rj.relative_to(root).as_posix()}: {e}")
+    pkg_schema, rel_schema, cat_schema = load_schema("package", root), load_schema("release", root), load_schema("catalog", root)
+    for pj in sorted((root / "patches").glob("*/*/*/package.json")):
+        for e in validate_package(json.loads(pj.read_text()), pkg_schema): errs.append(f"{pj.relative_to(root).as_posix()}: {e}")
+    for rj in sorted((root / "releases").glob("*.json")):
+        for e in schema_errors(json.loads(rj.read_text()), rel_schema): errs.append(f"{rj.relative_to(root).as_posix()}: {e}")
     for e in release_meta.consistency_errors(root): errs.append(f"releases: {e}")
     cp = root / "catalog" / "index.json"
     if not cp.is_file(): errs.append("catalog/index.json missing"); return
@@ -165,7 +193,7 @@ def main(argv=None):
         base = baseline_from_ref(a.root, a.baseline_ref)
         if base is None: print(f"note: no catalog at {a.baseline_ref}; immutability not checked", file=sys.stderr)
     if a.catalog:
-        doc = json.loads(pathlib.Path(a.catalog).read_text()); errs += validate_catalog(doc, load_schema("catalog", a.root))
+        doc = json.loads(pathlib.Path(a.catalog).read_text()); errs += validate_catalog(doc)
         if base is not None: errs += immutability_errors(base, doc)
     else: validate_repository(a.root, errs, base)
     for e in errs: print("FAIL:", e, file=sys.stderr)

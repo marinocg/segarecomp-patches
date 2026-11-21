@@ -1,9 +1,9 @@
 {
   "record_format": 1,
-  "scope": "patches/*/*/source/ at the first public release (v0.1.0) and later additions",
+  "scope": "source files of every patch that publication.json marks eligible (v0.1.0: patches/genesis/<game>/source/, moved to patches/<platform>/<game>/<patch>/source/ with identical bytes)",
   "files": [
     {
-      "path": "patches/genesis/sonic-1/source/provider.c",
+      "path": "patches/genesis/sonic-1/native-widescreen/source/provider.c",
       "sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5",
       "size": 21043,
       "longest_byte_literal_run": 0,
@@ -12,7 +12,7 @@
       "rationale": "Original provider code written for the public SDK ABI (C11 text); it contains no embedded image, table dump or asset data."
     },
     {
-      "path": "patches/genesis/sonic-1/source/sonic1-native-widescreen.bps",
+      "path": "patches/genesis/sonic-1/native-widescreen/source/sonic1-native-widescreen.bps",
       "sha256": "d621b3f75fb7fdb5341243d142135162896428c35aba7514d125e2b3a758bd9d",
       "size": 73,
       "longest_byte_literal_run": 0,
@@ -21,7 +21,7 @@
       "rationale": "BPS delta of at most 4 KiB: opcodes and a few literal bytes, no copy of the original image; useless without the exact source image."
     },
     {
-      "path": "patches/genesis/sonic-1/source/sonic1-native-widescreen.manifest.json",
+      "path": "patches/genesis/sonic-1/native-widescreen/source/sonic1-native-widescreen.manifest.json",
       "sha256": "3f02775928030587a2fe11236f627afdd9276ac3dfd7e447aea9c363b2d22d37",
       "size": 1062,
       "longest_byte_literal_run": 0,
@@ -30,7 +30,7 @@
       "rationale": "The exact manifest shipped inside the package: identifiers, digests and declared presentation defaults; no image content."
     },
     {
-      "path": "patches/genesis/sonic-2/source/provider.c",
+      "path": "patches/genesis/sonic-2/native-widescreen/source/provider.c",
       "sha256": "b5551f6c9d923a746c45aa7095d1f999da55011638c9f1fd3434acc8e0900ed0",
       "size": 24197,
       "longest_byte_literal_run": 0,
@@ -39,7 +39,7 @@
       "rationale": "Original provider code written for the public SDK ABI (C11 text); it contains no embedded image, table dump or asset data."
     },
     {
-      "path": "patches/genesis/sonic-2/source/sonic2-native-widescreen-rev01.bps",
+      "path": "patches/genesis/sonic-2/native-widescreen/source/sonic2-native-widescreen-rev01.bps",
       "sha256": "b5021f9e1ced1b620fdf4407da0b8162177e402e84c96d2f1eeddbde492e6236",
       "size": 85,
       "longest_byte_literal_run": 0,
@@ -48,7 +48,7 @@
       "rationale": "BPS delta of at most 4 KiB: opcodes and a few literal bytes, no copy of the original image; useless without the exact source image."
     },
     {
-      "path": "patches/genesis/sonic-2/source/sonic2-native-widescreen-rev01.manifest.json",
+      "path": "patches/genesis/sonic-2/native-widescreen/source/sonic2-native-widescreen-rev01.manifest.json",
       "sha256": "d2e57164f4d9e1b157e811d0dfa24ab787d7624071aeed3e74b878f72ad1d0cb",
       "size": 1092,
       "longest_byte_literal_run": 0,
@@ -57,7 +57,7 @@
       "rationale": "The exact manifest shipped inside the package: identifiers, digests and declared presentation defaults; no image content."
     },
     {
-      "path": "patches/genesis/sonic-2/source/sonic2-native-widescreen.bps",
+      "path": "patches/genesis/sonic-2/native-widescreen/source/sonic2-native-widescreen.bps",
       "sha256": "a02f2bea54d5d067487253bb9ad6c336e001a4fa36535b15fd8313b0c1fb6461",
       "size": 85,
       "longest_byte_literal_run": 0,
@@ -66,7 +66,7 @@
       "rationale": "BPS delta of at most 4 KiB: opcodes and a few literal bytes, no copy of the original image; useless without the exact source image."
     },
     {
-      "path": "patches/genesis/sonic-2/source/sonic2-native-widescreen.manifest.json",
+      "path": "patches/genesis/sonic-2/native-widescreen/source/sonic2-native-widescreen.manifest.json",
       "sha256": "8692f66ce203e93a503270ce2eaef2b19735b699837d67e8302baa948ec21ee3",
       "size": 1088,
       "longest_byte_literal_run": 0,
@@ -75,7 +75,7 @@
       "rationale": "The exact manifest shipped inside the package: identifiers, digests and declared presentation defaults; no image content."
     },
     {
-      "path": "patches/genesis/sonic-3-and-knuckles/source/provider.c",
+      "path": "patches/genesis/sonic-3-and-knuckles/native-widescreen/source/provider.c",
       "sha256": "881f1e2d702a9ab7af2426b36f6aae285a56419d5b8de119a755901ee24bd5da",
       "size": 23043,
       "longest_byte_literal_run": 0,
@@ -84,7 +84,7 @@
       "rationale": "Original provider code written for the public SDK ABI (C11 text); it contains no embedded image, table dump or asset data."
     },
     {
-      "path": "patches/genesis/sonic-3-and-knuckles/source/sonic3k-native-widescreen.bps",
+      "path": "patches/genesis/sonic-3-and-knuckles/native-widescreen/source/sonic3k-native-widescreen.bps",
       "sha256": "0a6067e3824b1870f184c9559fa26258fa3c502036584da30e9bfc8724e00640",
       "size": 172,
       "longest_byte_literal_run": 0,
@@ -93,7 +93,7 @@
       "rationale": "BPS delta of at most 4 KiB: opcodes and a few literal bytes, no copy of the original image; useless without the exact source image."
     },
     {
-      "path": "patches/genesis/sonic-3-and-knuckles/source/sonic3k-native-widescreen.manifest.json",
+      "path": "patches/genesis/sonic-3-and-knuckles/native-widescreen/source/sonic3k-native-widescreen.manifest.json",
       "sha256": "6ef4f17a9ccd46eac666ca8034a3fe1730d08bfe74630037089fd87671c72ff0",
       "size": 1096,
       "longest_byte_literal_run": 0,
@@ -102,7 +102,7 @@
       "rationale": "The exact manifest shipped inside the package: identifiers, digests and declared presentation defaults; no image content."
     },
     {
-      "path": "patches/genesis/streets-of-rage-2/source/sor2-widescreen.bps",
+      "path": "patches/genesis/streets-of-rage-2/widescreen/source/sor2-widescreen.bps",
       "sha256": "79786e7c19d938e87b7378d349261f8976e10937b56f1fc2859a9fb67dcc95ca",
       "size": 50,
       "longest_byte_literal_run": 0,
@@ -111,7 +111,7 @@
       "rationale": "BPS delta of at most 4 KiB: opcodes and a few literal bytes, no copy of the original image; useless without the exact source image."
     },
     {
-      "path": "patches/genesis/streets-of-rage-2/source/sor2-widescreen.manifest.json",
+      "path": "patches/genesis/streets-of-rage-2/widescreen/source/sor2-widescreen.manifest.json",
       "sha256": "413caf861453d03490f44743d1cad70b3856492f17e0dae50a7b42f0ba68b110",
       "size": 685,
       "longest_byte_literal_run": 0,

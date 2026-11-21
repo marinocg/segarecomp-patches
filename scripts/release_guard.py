@@ -4,13 +4,14 @@
   release_guard.py --tag v0.2.0 --release-state FILE|none [--root DIR]
 
 `--release-state` is the output of `gh release view TAG --json tagName,isDraft` (or the literal `none` when no release exists). The guard
-reads the repository's release metadata (scripts/release_meta.py) and distinguishes:
+reads the repository's release metadata (releases/<tag>.json, scripts/release_meta.py) and distinguishes:
 
   * a genuinely new release     metadata `prepared` + no GitHub release            -> allowed
   * an existing draft           metadata `prepared` + draft                         -> refused: a maintainer deletes a draft deliberately
   * an already published one    metadata `published` + published release           -> refused: immutable
   * a deleted/inconsistent one  published without a release, a draft, or a published release whose metadata is still `prepared` -> refused
-  * a tag with no metadata      nothing prepared for it                             -> refused
+  * a tag with no metadata      no releases/<tag>.json selects packages for it       -> refused
+  * a bad selection             an unknown, internal, candidate or already released package, or a duplicate -> refused (release_meta.consistency_errors)
   * a superseding version       a prepared package id that already has published versions must be strictly higher; re-releasing a
                                  published (id, version) is refused. Supersession itself is recorded additively after publication.
 """
@@ -23,11 +24,11 @@ TAG = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
 def supersedes(tag, root=ROOT):
-    """[(new, old)] pairs: prepared packages of `tag` and the published version of the same id each one supersedes."""
+    """[(new, old)] pairs: packages of the prepared release `tag` and the published version of the same id each one supersedes."""
     pkgs = release_meta.packages(root); out = []
     for new in (p for p in pkgs if p.release == tag and p.status == "prepared"):
         old = [o for o in pkgs if o.id == new.id and o.status == "published" and o.release != tag]
-        if old: out.append((f"{new.id}@{new.version}", f"{max(old, key=lambda o: release_meta.semver(o.version)).id}@{max(old, key=lambda o: release_meta.semver(o.version)).version}"))
+        if old: top = max(old, key=lambda o: release_meta.semver(o.version)); out.append((new.ref, top.ref))
     return out
 
 
@@ -36,7 +37,8 @@ def guard(tag, state, root=ROOT):
     if not TAG.match(tag or ""): return [f"tag {tag!r} must look like v1.2.3"]
     meta = release_meta.releases(root).get(tag)
     if meta is None:
-        return [f"no packages are recorded for {tag}: prepare its metadata first (scripts/prepare_release.py begin)"]
+        return [f"no release record for {tag}: select its packages first (scripts/prepare_release.py begin)"]
+    errs += [e for e in release_meta.consistency_errors(root) if f"releases/{tag}.json" in e or any(r in e for r in meta["doc"].get("packages", []))]
     if not (root / "docs" / "release-notes" / f"{tag}.md").is_file(): errs.append(f"docs/release-notes/{tag}.md is missing")
     published = meta["status"] == "published"
     if state is None:
@@ -50,10 +52,10 @@ def guard(tag, state, root=ROOT):
         errs.append(f"release {tag} is already published on GitHub but its metadata is still `prepared`: record it with scripts/prepare_release.py publish; the workflow never recreates it")
     if not published:
         pkgs = release_meta.packages(root)
-        for new in (p for p in meta["packages"] if p.status == "prepared"):
+        for new in meta["packages"]:
             for o in (p for p in pkgs if p.id == new.id and p.status == "published" and p.release != tag):
                 if release_meta.semver(new.version) <= release_meta.semver(o.version):
-                    errs.append(f"{new.id}@{new.version} does not supersede published {o.id}@{o.version}: a published version is never replaced, publish a higher version")
+                    errs.append(f"{new.ref} does not supersede published {o.ref}: a published version is never replaced, publish a higher version")
     return errs
 
 

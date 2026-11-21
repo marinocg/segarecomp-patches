@@ -20,11 +20,11 @@ class Checks(unittest.TestCase):
     def test_clean(self): self.assertEqual(self.errs(self.copy()), [])
 
     def test_forbidden_rom_extension(self):
-        d = self.copy(); (d / "patches/genesis/sonic-1/game.bin").write_bytes(b"x")
+        d = self.copy(); (d / "patches/genesis/sonic-1/native-widescreen/game.bin").write_bytes(b"x")
         self.assertTrue(any("forbidden" in e for e in self.errs(d)))
 
     def test_bps_digest_mismatch(self):
-        d = self.copy(); (d / "patches/genesis/streets-of-rage-2/source/sor2-widescreen.bps").write_bytes(b"x")
+        d = self.copy(); (d / "patches/genesis/streets-of-rage-2/widescreen/source/sor2-widescreen.bps").write_bytes(b"x")
         self.assertTrue(any("BPS digest" in e for e in self.errs(d)))
 
     def test_stray_bps(self):
@@ -32,11 +32,11 @@ class Checks(unittest.TestCase):
         self.assertTrue(any("forbidden" in e for e in self.errs(d)))
 
     def test_source_digest_mismatch(self):
-        d = self.copy(); (d / "patches/genesis/sonic-1/source/provider.c").write_text("tampered")
+        d = self.copy(); (d / "patches/genesis/sonic-1/native-widescreen/source/provider.c").write_text("tampered")
         self.assertTrue(any("digest" in e for e in self.errs(d)))
 
     def test_placeholder_hash_and_http(self):
-        d = self.copy(); f = d / "patches/genesis/sonic-1/release.json"; j = json.loads(f.read_text())
+        d = self.copy(); f = d / "patches/genesis/sonic-1/native-widescreen/package.json"; j = json.loads(f.read_text())
         j["packages"][0]["package_sha256"] = "0" * 10; j["packages"][0]["asset"]["url"] = "http://x"
         f.write_text(json.dumps(j))
         e = self.errs(d); self.assertTrue(any("SHA-256" in x for x in e) and any("HTTPS" in x for x in e))
@@ -72,8 +72,8 @@ class Checks(unittest.TestCase):
         self.assertTrue(any("required check" in e for e in self.errs(d)))
 
     def test_layout_violation_fails_repo_check(self):
-        d = self.copy(); (d / "patches/genesis/sonic-1/mod.toml").write_text("x = 1\n")
-        self.assertTrue(any("mod.toml" in e for e in self.errs(d)))
+        d = self.copy(); (d / "patches/genesis/sonic-1/mod.toml").write_text("x = 1\n")   # a project file directly in a game directory: the old two-level layout
+        self.assertTrue(any("platform/game/patch" in e for e in self.errs(d)))
 
     def test_sums_required(self):
         d = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d); e = []

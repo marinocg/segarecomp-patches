@@ -1,0 +1,98 @@
+{
+  "catalog_format": 1,
+  "packages": [
+    {
+      "platform": "genesis",
+      "game": "Synthetic Example",
+      "game_path": "patches/genesis/synthetic-example",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v1.0.0",
+      "source_revision": {
+        "repository": "https://github.com/marinocg/segarecomp-patches",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tag": "v1.0.0",
+        "tag_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "build": {
+        "writer": "segapatch.py write_zip",
+        "writer_ref": "cccccccccccccccccccccccccccccccccccccccc",
+        "deterministic": true
+      },
+      "id": "synthetic-demo",
+      "version": "1.0.0",
+      "name": "Synthetic demo synthetic-demo",
+      "revision": "synthetic",
+      "region": "none",
+      "schema_version": 1,
+      "native_abi": null,
+      "trust": "data-only",
+      "executable_code": false,
+      "package_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "package_size": 1024,
+      "package_identity": "1111111111111111111111111111111111111111111111111111111111111111",
+      "source_image_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "patched_image_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "bps_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "native_source_sha256": null,
+      "evidence_tier": "synthetic-only",
+      "gameplay": "unchanged",
+      "license": "not applicable (data-only BPS)",
+      "supported_scope": "A fabricated example entry; it describes no commercial image.",
+      "limitations": [
+        "Synthetic data only."
+      ],
+      "asset": {
+        "name": "synthetic-demo.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v1.0.0/synthetic-demo.segapatch"
+      },
+      "superseded_by": "synthetic-demo-2@1.0.1"
+    },
+    {
+      "platform": "genesis",
+      "game": "Synthetic Example",
+      "game_path": "patches/genesis/synthetic-example",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v1.0.0",
+      "source_revision": {
+        "repository": "https://github.com/marinocg/segarecomp-patches",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tag": "v1.0.0",
+        "tag_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "build": {
+        "writer": "segapatch.py write_zip",
+        "writer_ref": "cccccccccccccccccccccccccccccccccccccccc",
+        "deterministic": true
+      },
+      "id": "synthetic-demo-2",
+      "version": "1.0.1",
+      "name": "Synthetic demo synthetic-demo-2",
+      "revision": "synthetic",
+      "region": "none",
+      "schema_version": 1,
+      "native_abi": null,
+      "trust": "data-only",
+      "executable_code": false,
+      "package_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "package_size": 1024,
+      "package_identity": "1111111111111111111111111111111111111111111111111111111111111111",
+      "source_image_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "patched_image_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "bps_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "native_source_sha256": null,
+      "evidence_tier": "synthetic-only",
+      "gameplay": "unchanged",
+      "license": "not applicable (data-only BPS)",
+      "supported_scope": "A fabricated example entry; it describes no commercial image.",
+      "limitations": [
+        "Synthetic data only."
+      ],
+      "asset": {
+        "name": "synthetic-demo-2.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v1.0.0/synthetic-demo-2.segapatch"
+      }
+    }
+  ]
+}

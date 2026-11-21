@@ -9,9 +9,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import lint_layout, gen_castle_retry
 
-GAME = ROOT / "patches" / "genesis"
-MAIN = GAME / "castle-of-illusion"
-P16, P21, P32 = GAME / "castle-of-illusion-activation-16x9", GAME / "castle-of-illusion-activation-21x9", GAME / "castle-of-illusion-activation-32x9"
+GAME = ROOT / "patches" / "genesis" / "castle-of-illusion"
+MAIN = GAME / "widescreen-practice"
+P16, P21, P32 = GAME / "activation-16x9", GAME / "activation-21x9", GAME / "activation-32x9"
 CLI = os.environ.get("SEGARECOMP_CLI")
 
 
