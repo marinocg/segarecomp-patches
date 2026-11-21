@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marinocg.github.io/segarecomp-patches/schema/release-2.schema.json",
+  "title": "segarecomp-patches releases/<tag>.json (release_format 2)",
+  "description": "One collection release: its lifecycle and its explicit allowlist of exact package versions. It is the only definition of release membership.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "release_format",
+    "release",
+    "status",
+    "source_layout",
+    "source_revision",
+    "packages"
+  ],
+  "properties": {
+    "release_format": {
+      "type": "integer",
+      "enum": [
+        2
+      ]
+    },
+    "release": {
+      "type": "string",
+      "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "prepared",
+        "published"
+      ],
+      "description": "prepared: metadata and sources exist but no public release; published: the collection release exists and its entries are immutable."
+    },
+    "source_layout": {
+      "type": "string",
+      "enum": [
+        "game-dir",
+        "patch-dir"
+      ],
+      "description": "Where the package sources were at source_revision.commit: `game-dir` = patches/<platform>/<game>/source/ (v0.1.0), `patch-dir` = patches/<platform>/<game>/<patch>/."
+    },
+    "source_revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "writer",
+        "writer_ref",
+        "deterministic"
+      ],
+      "properties": {
+        "writer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "writer_ref": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "deterministic": {
+          "type": "boolean"
+        }
+      },
+      "description": "Package writer shared by the schema 1/2 packages of this release (a schema 3 package states its own build)."
+    },
+    "packages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+      },
+      "description": "Sorted exact id@version selections."
+    }
+  }
+}

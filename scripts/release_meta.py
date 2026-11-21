@@ -1,92 +1,211 @@
 #!/usr/bin/env python3
-"""The one model of release metadata shared by build_catalog, check_repo, build_packages, release_guard and prepare_release.
+"""The one model of patch, publication and release metadata shared by every script (docs/releases.md).
 
-A game's `release.json` holds every package version ever released for it (docs/releases.md, "Release lifecycle"):
+Three small sources, each the single authority for one thing:
 
-* top level `release` + `status` describe the CURRENT collection release: `prepared` (metadata and sources exist, no public release yet) or `published`;
-* a package entry with its own `release` is ARCHIVED: it belongs to an older, published collection release and pins its own `source_revision` and `build`.
-  Its sources are not in the working tree any more (a newer version of the same id replaced them); they are verified at the pinned commit by Git;
-* every other package takes `release`, `status`, `source_revision` and `build` from the top level.
+* `patches/<platform>/<game>/<patch>/`   the patch project: its sources and, once it has package versions, its `package.json` (the facts of each
+                                         package version: digests, scope, evidence). A schema 3 project's `mod.toml` is authoritative for what it declares.
+* `publication.json`                     which patches may ever be selected for a public release (`internal` < `candidate` < `eligible`; absent = internal).
+* `releases/<tag>.json`                  one collection release: its lifecycle (`prepared` -> `published`) and its EXPLICIT allowlist of `id@version`.
 
-Only `published` packages reach catalog/index.json, so the site never advertises a download that does not exist.
+A package version belongs to a release only if that release lists it. Nothing is inferred from a directory, a README or a built archive, and a release
+never contains a package it does not list. Published releases are never rebuilt routinely: their stored digests and pinned source revisions are the record,
+and `rebuild_release.py` reconstructs one on demand. Only `published` packages reach catalog/index.json.
 """
-import json, pathlib, re
+import json, pathlib, re, subprocess
+try: import tomllib
+except ImportError: tomllib = None   # Python < 3.11: schema 3 projects cannot be read (reported as a problem by lint_layout, never skipped)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
+TAG = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+PKGREF = re.compile(r"^([a-z0-9]+(?:-[a-z0-9]+)*)@((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$")
+STATES = ("internal", "candidate", "eligible")   # publication states; the default for any patch not listed is `internal`
+LAYOUTS = ("game-dir", "patch-dir")              # where a release's sources lived at its source commit (docs/layout-and-versioning.md, "Historical layout")
+MOD_SCHEMA = 3
 
 
 def semver(v):
     m = SEMVER.match(str(v)); return tuple(map(int, m.groups())) if m else (0, 0, 0)
 
 
-def games(root=ROOT):
+def read_json(path, default=None):
+    path = pathlib.Path(path)
+    if not path.is_file(): return default
+    return json.loads(path.read_text())
+
+
+class Patch:
+    """One `patches/<platform>/<game>/<patch>/` directory."""
+    def __init__(self, root, path):
+        self.root, self.dir = pathlib.Path(root), pathlib.Path(path)
+        self.platform, self.game, self.name = self.dir.parent.parent.name, self.dir.parent.name, self.dir.name
+        self.rel = f"{self.platform}/{self.game}/{self.name}"          # the key used by publication.json
+        self.path = self.dir.relative_to(self.root).as_posix()          # patches/<platform>/<game>/<patch>
+        self.game_path = self.dir.parent.relative_to(self.root).as_posix()
+        self.is_mod = (self.dir / "mod.toml").is_file()
+
+    @property
+    def meta(self): return read_json(self.dir / "package.json")
+
+    @property
+    def mod(self):
+        if tomllib is None or not self.is_mod: return None
+        return tomllib.loads((self.dir / "mod.toml").read_text(encoding="utf-8"))
+
+
+def patches(root=ROOT):
+    """Every directory at exactly patches/<platform>/<game>/<patch>/ (lint_layout reports anything else)."""
     root = pathlib.Path(root)
-    for rj in sorted((root / "patches").glob("*/*/release.json")):
-        yield rj, json.loads(rj.read_text())
+    return [Patch(root, d) for d in sorted((root / "patches").glob("*/*/*")) if d.is_dir()]
+
+
+def publication(root=ROOT):
+    return (read_json(pathlib.Path(root) / "publication.json", {}) or {}).get("patches", {})
+
+
+def state_of(root, rel):
+    """Effective publication state of a patch (platform/game/patch). Default and only fallback: internal (never selectable)."""
+    return (publication(root).get(rel) or {}).get("state", "internal")
+
+
+def release_docs(root=ROOT):
+    return {p.stem: (p, json.loads(p.read_text())) for p in sorted((pathlib.Path(root) / "releases").glob("*.json"))}
 
 
 class Pkg:
-    """One package version with its effective release facts."""
-    def __init__(self, root, rj, doc, p):
-        self.root, self.path, self.doc, self.p = pathlib.Path(root), rj, doc, p
-        self.dir = rj.parent
-        self.archived = "release" in p
-        self.release = p.get("release", doc.get("release"))
-        self.status = p.get("status", doc.get("status", "published"))
-        self.source_revision = p.get("source_revision", doc.get("source_revision")) or {}
-        self.build = p.get("build", doc.get("build")) or {}
+    """One package version with its effective release facts (release, status, source revision, build). `release` is None while no release lists it."""
+    def __init__(self, root, patch, p, tag=None, rdoc=None):
+        self.root, self.patch, self.p, self.rdoc = pathlib.Path(root), patch, p, rdoc or {}
         self.id, self.version = p.get("id"), p.get("version")
+        self.release, self.dir = tag, patch.dir
+        self.status = self.rdoc.get("status", "unreleased")
+        self.source_revision = self.rdoc.get("source_revision") or {}
+        self.build = p.get("build") or self.rdoc.get("build") or {}
+        self.is_mod = p.get("schema_version") == MOD_SCHEMA
 
     @property
     def key(self): return (self.id, self.version)
 
+    @property
+    def ref(self): return f"{self.id}@{self.version}"
+
+    @property
+    def package_file(self): return self.p.get("package_file") or f"{self.id}.segapatch"
+
+    @property
+    def asset(self):
+        """Stored for packages published before the layout migration; derived from the release for every newer one (never a second copy to keep in sync)."""
+        if self.p.get("asset"): return self.p["asset"]
+        repo = self.source_revision.get("repository") or "https://github.com/marinocg/segarecomp-patches"
+        return {"name": self.package_file, "url": f"{repo}/releases/download/{self.release}/{self.package_file}"}
+
+    @property
+    def layout(self): return self.rdoc.get("source_layout", "patch-dir")
+
+    @property
+    def source_base(self):
+        """Directory (repo-relative) that holds this package's sources at its source commit. Old releases kept `source/` directly in the game directory."""
+        return self.patch.game_path if self.layout == "game-dir" else self.patch.path
+
     def read(self, rel_path):
-        """Bytes of a source file: the working tree for the current release, Git at the pinned commit for an archived one."""
-        if not self.archived: return (self.dir / rel_path).read_bytes()
-        import subprocess
-        d = self.dir.relative_to(self.root).as_posix()
-        r = subprocess.run(["git", "show", f"{self.source_revision.get('commit')}:{d}/{rel_path}"], cwd=self.root, capture_output=True)
-        if r.returncode != 0: raise FileNotFoundError(f"{d}/{rel_path} at {self.source_revision.get('commit')}")
+        """Bytes of a package source file: the working tree while the release is not published, Git at the pinned source commit once it is."""
+        if self.status != "published": return (self.dir / rel_path).read_bytes()
+        commit = self.source_revision.get("commit")
+        r = subprocess.run(["git", "show", f"{commit}:{self.source_base}/{rel_path}"], cwd=self.root, capture_output=True)
+        if r.returncode != 0: raise FileNotFoundError(f"{self.source_base}/{rel_path} at {commit}")
         return r.stdout
 
 
+def all_packages(root=ROOT):
+    """(patch, entry) for every package version recorded in any patch's package.json."""
+    out = []
+    for pt in patches(root):
+        meta = pt.meta
+        if isinstance(meta, dict):
+            out += [(pt, p) for p in meta.get("packages", []) if isinstance(p, dict)]
+    return out
+
+
+def membership(root=ROOT):
+    """{ "id@version": tag } from every release record; a package listed twice maps to its first release (consistency_errors reports it)."""
+    out = {}
+    for tag, (_, doc) in release_docs(root).items():
+        for ref in doc.get("packages", []) if isinstance(doc, dict) else []:
+            out.setdefault(ref, tag)
+    return out
+
+
 def packages(root=ROOT):
-    root = pathlib.Path(root)
-    return [Pkg(root, rj, doc, p) for rj, doc in games(root) for p in doc.get("packages", [])]
+    """Every package version, each bound to the release that lists it (or unreleased)."""
+    root, docs, member = pathlib.Path(root), release_docs(root), membership(root)
+    out = []
+    for pt, p in all_packages(root):
+        tag = member.get(f"{p.get('id')}@{p.get('version')}")
+        out.append(Pkg(root, pt, p, tag, docs[tag][1] if tag else None))
+    return out
 
 
 def releases(root=ROOT):
-    """{tag: {"status": ..., "packages": [Pkg]}} (a tag with conflicting statuses reports the conflict in consistency_errors)."""
+    """{tag: {"status", "doc", "packages": [Pkg]}} in the release record's own (sorted) order; unresolvable references are consistency_errors."""
+    root = pathlib.Path(root); by_ref = {pk.ref: pk for pk in packages(root)}
     out = {}
-    for pk in packages(root):
-        r = out.setdefault(pk.release, {"status": pk.status, "packages": []}); r["packages"].append(pk)
+    for tag, (_, doc) in release_docs(root).items():
+        refs = doc.get("packages", []) if isinstance(doc, dict) else []
+        out[tag] = {"status": doc.get("status"), "doc": doc, "packages": [by_ref[r] for r in refs if r in by_ref and by_ref[r].release == tag]}
     return out
 
 
 def published(root=ROOT): return [pk for pk in packages(root) if pk.status == "published"]
 
 
+def sort_key(pk): return (pk.patch.game_path, pk.patch.path, pk.id, semver(pk.version))
+
+
 def consistency_errors(root=ROOT):
-    """Cross-file rules a per-file schema cannot express."""
-    errs, pkgs = [], packages(root)
-    seen = {}
-    for pk in pkgs:
-        n = f"{pk.id}@{pk.version}"
-        if pk.key in seen: errs.append(f"{n}: duplicate (id, version): a version is released exactly once")
-        seen[pk.key] = pk
-        if pk.archived:
-            if pk.status != "published": errs.append(f"{n}: an archived package must be published")
-            if pk.release == pk.doc.get("release"): errs.append(f"{n}: has its own release equal to the current one; archive only older releases")
-            if not (pk.source_revision.get("commit") and pk.build): errs.append(f"{n}: an archived package pins its own source_revision.commit and build")
-        if pk.status == "published" and not pk.source_revision.get("commit"): errs.append(f"{n}: a published package needs source_revision.commit")
-        if not pk.build.get("writer_ref"): errs.append(f"{n}: build.writer_ref missing")
-    tags = {}
-    for pk in pkgs: tags.setdefault(pk.release, set()).add(pk.status)
-    for tag, st in sorted(tags.items()):
-        if len(st) > 1: errs.append(f"release {tag}: packages disagree on status {sorted(st)}")
+    """Cross-file rules a per-file schema cannot express: explicit selection, eligibility, uniqueness, immutability of membership and version order."""
+    root = pathlib.Path(root); errs = []
+    pub, docs = publication(root), release_docs(root)
+    names = {pt.rel for pt in patches(root)}
+    for rel, v in sorted(pub.items()):
+        if rel not in names: errs.append(f"publication.json: {rel} is not a patch directory (patches/<platform>/<game>/<patch>)")
+        if not isinstance(v, dict) or v.get("state") not in STATES: errs.append(f"publication.json: {rel}: state must be one of {', '.join(STATES)}"); continue
+        if v["state"] == "eligible" and not str(v.get("review", "")).strip(): errs.append(f"publication.json: {rel}: an eligible patch records its publication review (`review`)")
+    defined, owner = {}, {}
+    for pt, p in all_packages(root):
+        ref = f"{p.get('id')}@{p.get('version')}"
+        if ref in defined: errs.append(f"{ref}: defined twice ({defined[ref]} and {pt.rel}): a version is released exactly once")
+        defined.setdefault(ref, pt.rel)
+        if owner.setdefault(p.get("id"), pt.rel) != pt.rel: errs.append(f"{p.get('id')}: package id used by two patches ({owner[p.get('id')]} and {pt.rel})")
+    first = {}
+    for tag, (path, doc) in docs.items():
+        w = f"releases/{path.name}"
+        if not isinstance(doc, dict): errs.append(f"{w}: not an object"); continue
+        if not TAG.match(tag): errs.append(f"{w}: file name must be a collection release tag such as v1.2.3.json")
+        if doc.get("release") != tag: errs.append(f"{w}: `release` {doc.get('release')!r} differs from the file name")
+        if doc.get("status") not in ("prepared", "published"): errs.append(f"{w}: status must be prepared or published")
+        if doc.get("source_layout") not in LAYOUTS: errs.append(f"{w}: source_layout must be one of {', '.join(LAYOUTS)}")
+        refs = doc.get("packages")
+        if not isinstance(refs, list) or not refs: errs.append(f"{w}: packages must be a non-empty explicit list of id@version"); continue
+        if refs != sorted(refs): errs.append(f"{w}: packages must be sorted (deterministic membership)")
+        if len(set(refs)) != len(refs): errs.append(f"{w}: duplicate package selection {sorted({r for r in refs if refs.count(r) > 1})}")
+        sr = doc.get("source_revision") or {}
+        if doc.get("status") == "published":
+            if not sr.get("commit"): errs.append(f"{w}: a published release pins source_revision.commit")
+            if not sr.get("tag"): errs.append(f"{w}: a published release records its tag")
+        elif sr.get("commit") or sr.get("tag") or sr.get("tag_commit"): errs.append(f"{w}: a prepared release cannot pin a commit or tag yet")
+        for r in dict.fromkeys(refs):
+            if not isinstance(r, str) or not PKGREF.match(r): errs.append(f"{w}: {r!r} is not an exact id@version selection"); continue
+            if r in first: errs.append(f"{r}: selected by {first[r]} and {tag}: a version is released exactly once"); continue
+            first[r] = tag
+            if r not in defined: errs.append(f"{w}: unknown package {r}: no package.json records it"); continue
+            st = state_of(root, defined[r])
+            if st != "eligible": errs.append(f"{w}: {r}: patch {defined[r]} is {st}, not eligible for a public release")
     by_id = {}
-    for pk in pkgs: by_id.setdefault(pk.id, []).append(pk)
+    for pk in packages(root):
+        if pk.release is None: continue
+        if not pk.build.get("writer_ref"): errs.append(f"{pk.ref}: build.writer_ref missing (the entry's or its release's)")
+        by_id.setdefault(pk.id, []).append(pk)
     for pid, vs in sorted(by_id.items()):
         order = sorted(vs, key=lambda x: (semver(x.release.lstrip("v")), semver(x.version)))
         for a, b in zip(order, order[1:]):

@@ -1,5 +1,5 @@
 {
-  "catalog_format": 1,
+  "catalog_format": 2,
   "packages": [
     {
       "platform": "genesis",

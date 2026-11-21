@@ -3,8 +3,9 @@
 
   lint_layout.py [--root DIR]
 
-Checks the structure of every `patches/<platform>/<game>/` directory and the versioning fields of its `release.json`.
-Digest, license, catalog and forbidden-content checks stay in check_repo.py, which calls `lint()` so a pull request cannot skip it.
+Checks the structure of every `patches/<platform>/<game>/<patch>/` directory and the versioning fields of its `package.json`.
+The layout is always three levels: platform / game / patch. Digest, license, catalog and forbidden-content checks stay in check_repo.py,
+which calls `lint()` so a pull request cannot skip it.
 """
 import argparse, json, pathlib, re, sys
 try: import tomllib
@@ -14,10 +15,11 @@ PLATFORMS = {"genesis", "master-system", "game-gear", "sega-cd"}
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
 COLLECTION = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-SCHEMAS = {1, 2}          # .segapatch schemas this repository PUBLISHES (release.json). A schema 3 `mod.toml` project is accepted as an UNPUBLISHED, locally buildable source project only (see _mod_project).
+SCHEMAS = {1, 2}          # legacy .segapatch schemas (BPS delta, optional native C11 source) described by a patch's package.json
 NATIVE_ABIS = {1}
-PROJECT_ENTRIES = {"README.md", "release.json", "source", "tests"}
-MOD_ENTRIES = {"README.md", "mod.toml", "src", "scripts", "edits", "tests"}   # an unpublished schema 3 project: no release.json, so it can never reach the catalog or a release
+PROJECT_ENTRIES = {"README.md", "package.json", "source", "tests"}                      # a schema 1/2 patch
+MOD_ENTRIES = {"README.md", "mod.toml", "package.json", "src", "scripts", "edits", "tests"}   # a schema 3 patch; package.json exists only once a package version was pinned (prepare_release.py pin)
+PROJECT_FILES = PROJECT_ENTRIES | MOD_ENTRIES | {"release.json"}
 MOD_SOURCE_EXT = {"native-c11": {".c", ".h"}, "luau-source": {".luau"}, "rom-edit-set": {".edits"}, "guest-asm": {".asm"}}   # what a schema 3 project may commit as source: text only, never a binary payload
 MOD_NATIVE_ABI = 2
 
@@ -27,34 +29,47 @@ def lint(root, errs):
     pr = root / "patches"
     if not pr.is_dir():
         errs.append("layout: patches/ is missing"); return
+    ids = {}
     for platform in sorted(pr.iterdir()):
         if not platform.is_dir():
-            errs.append(f"layout: unexpected file patches/{platform.name} (projects live in patches/<platform>/<game>/)"); continue
+            errs.append(f"layout: unexpected file patches/{platform.name} (projects live in patches/<platform>/<game>/<patch>/)"); continue
         if platform.name not in PLATFORMS:
             errs.append(f"layout: unknown platform directory patches/{platform.name} (allowed: {', '.join(sorted(PLATFORMS))})")
         for game in sorted(platform.iterdir()):
             where = f"patches/{platform.name}/{game.name}"
             if not game.is_dir():
-                errs.append(f"layout: unexpected file {where}"); continue
-            _project(game, platform.name, where, errs)
+                errs.append(f"layout: unexpected file {where} (a game directory holds patch directories only)"); continue
+            if not SLUG.match(game.name): errs.append(f"layout: {where}: directory name must be a lowercase slug")
+            for e in sorted(game.iterdir()):
+                if e.name in PROJECT_FILES or not e.is_dir():
+                    errs.append(f"layout: {where}/{e.name}: patch files belong in {where}/<patch>/ (the layout is platform/game/patch)")
+                    continue
+                _project(e, platform.name, f"{where}/{e.name}", errs, ids)
 
 
 def mod_projects(root):
-    """Every `patches/<platform>/<game>/` directory that holds a `mod.toml` (schema 3, unpublished)."""
-    return sorted(p.parent for p in pathlib.Path(root).glob("patches/*/*/mod.toml"))
+    """Every `patches/<platform>/<game>/<patch>/` directory that holds a `mod.toml` (schema 3)."""
+    return sorted(p.parent for p in pathlib.Path(root).glob("patches/*/*/*/mod.toml"))
 
 
 def _safe_relpath(value):
     return isinstance(value, str) and value != "" and "\\" not in value and not value.startswith("/") and ".." not in value.split("/") and not re.match(r"^[A-Za-z]:", value)
 
 
-def _mod_project(d, platform, where, errs):
+def _claim(ids, pid, where, errs):
+    """A package identity (id) is unique across the whole repository: two projects can never publish the same id."""
+    if pid in ids and ids[pid] != where: errs.append(f"layout: package id {pid!r} is declared by both {ids[pid]} and {where}")
+    ids.setdefault(pid, where)
+
+
+def _mod_project(d, platform, where, errs, ids):
     """Schema 3 source project (docs/layout-and-versioning.md): `mod.toml` plus the files it declares. The product's `segarecomp mod check/pack` is the authority for the manifest and package;
-    this lint only checks what the repository itself promises: layout, declared files, safe paths, text-only sources and the schema/ABI combination. No release.json: nothing here is published."""
+    this lint only checks what the repository itself promises: layout, declared files, safe paths, text-only sources and the schema/ABI combination.
+    A project is publishable only when publication.json makes it eligible and a release lists one of its package versions (scripts/release_meta.py)."""
     if not SLUG.match(d.name): errs.append(f"layout: {where}: directory name must be a lowercase slug")
     for e in sorted(d.iterdir()):
-        if e.name == "release.json": errs.append(f"layout: {where}: release.json cannot accompany mod.toml (a schema 3 project is unpublished source; published schema 3 releases are not supported yet)")
-        elif e.name not in MOD_ENTRIES: errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, mod.toml, src/, scripts/, edits/, tests/)")
+        if e.name == "release.json": errs.append(f"layout: {where}: release.json no longer exists: package facts live in package.json and release membership in releases/<tag>.json")
+        elif e.name not in MOD_ENTRIES: errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, mod.toml, package.json, src/, scripts/, edits/, tests/)")
     if not (d / "README.md").is_file(): errs.append(f"layout: {where}: missing README.md")
     tests = d / "tests"
     if tests.is_dir():
@@ -66,6 +81,16 @@ def _mod_project(d, platform, where, errs):
     except (ValueError, UnicodeDecodeError) as e:
         errs.append(f"layout: {where}/mod.toml is malformed: {e}"); return
     if (m.get("target") or {}).get("platform") != platform: errs.append(f"layout: {where}: mod.toml target platform differs from directory {platform!r}")
+    mid = (m.get("mod") or {}).get("id")
+    if not (isinstance(mid, str) and SLUG.match(mid)): errs.append(f"layout: {where}: mod.toml [mod] id must be a lowercase slug")
+    else: _claim(ids, mid, where, errs)
+    pj = d / "package.json"
+    if pj.is_file():
+        try: pkgs = json.loads(pj.read_text()).get("packages", [])
+        except (ValueError, AttributeError) as e: errs.append(f"layout: {where}/package.json is not valid JSON: {e}"); pkgs = []
+        for p in pkgs:
+            if p.get("id") != mid: errs.append(f"layout: {where}/package.json: package id {p.get('id')!r} differs from mod.toml id {mid!r}")
+            if p.get("schema_version") != 3: errs.append(f"layout: {where}/package.json: a schema 3 project can only pin schema 3 packages")
     sources = m.get("source") or []
     if not isinstance(sources, list) or not sources:
         errs.append(f"layout: {where}: mod.toml declares no [[source]]"); return
@@ -93,15 +118,17 @@ def _mod_project(d, platform, where, errs):
             elif rel not in declared: errs.append(f"layout: {where}/{rel}: not a declared source file (declare it as a [[source]] in mod.toml or remove it)")
 
 
-def _project(d, platform, where, errs):
+def _project(d, platform, where, errs, ids):
     if (d / "mod.toml").exists():
-        _mod_project(d, platform, where, errs); return
+        _mod_project(d, platform, where, errs, ids); return
     if not SLUG.match(d.name): errs.append(f"layout: {where}: directory name must be a lowercase slug")
     for e in sorted(d.iterdir()):
-        if e.name not in PROJECT_ENTRIES:
-            errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, release.json, source/, tests/)")
-    for need, kind in (("README.md", "is_file"), ("release.json", "is_file"), ("source", "is_dir")):
-        if not getattr(d / need, kind)(): errs.append(f"layout: {where}: missing {need}")
+        if e.name == "release.json": errs.append(f"layout: {where}: release.json no longer exists: package facts live in package.json and release membership in releases/<tag>.json")
+        elif e.name not in PROJECT_ENTRIES:
+            errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, package.json, source/, tests/; a schema 3 project has mod.toml)")
+        elif e.is_dir() and any(((e / n).exists() for n in ("mod.toml", "package.json"))): errs.append(f"layout: {where}/{e.name}: nested project (a patch is exactly platform/game/patch)")
+    for need, kind in (("README.md", "is_file"), ("package.json", "is_file"), ("source", "is_dir")):
+        if not getattr(d / need, kind)(): errs.append(f"layout: {where}: missing {need} (a patch needs mod.toml, or package.json with source/)")
     tests = d / "tests"
     if tests.exists():
         if not tests.is_dir(): errs.append(f"layout: {where}/tests must be a directory")
@@ -109,14 +136,13 @@ def _project(d, platform, where, errs):
             for f in tests.rglob("*"):
                 if f.is_file() and f.suffix not in {".json", ".md"}:
                     errs.append(f"layout: {where}/tests/{f.name}: only synthetic .json/.md expectations are allowed")
-    rj = d / "release.json"
-    if not rj.is_file(): return
-    try: rel = json.loads(rj.read_text())
+    pj = d / "package.json"
+    if not pj.is_file(): return
+    try: rel = json.loads(pj.read_text())
     except ValueError as e:
-        errs.append(f"layout: {where}/release.json is not valid JSON: {e}"); return
-    if rel.get("platform") != platform: errs.append(f"layout: {where}: release.json platform {rel.get('platform')!r} differs from directory {platform!r}")
-    if rel.get("release_format") != 1: errs.append(f"layout: {where}: unsupported release_format {rel.get('release_format')!r}")
-    if not COLLECTION.match(str(rel.get("release", ""))): errs.append(f"layout: {where}: release must look like v1.2.3")
+        errs.append(f"layout: {where}/package.json is not valid JSON: {e}"); return
+    if rel.get("platform") != platform: errs.append(f"layout: {where}: package.json platform {rel.get('platform')!r} differs from directory {platform!r}")
+    if rel.get("package_format") != 1: errs.append(f"layout: {where}: unsupported package_format {rel.get('package_format')!r}")
     pkgs = rel.get("packages")
     if not isinstance(pkgs, list) or not pkgs:
         errs.append(f"layout: {where}: packages must be a non-empty list"); return
@@ -125,8 +151,9 @@ def _project(d, platform, where, errs):
         pid = str(p.get("id", ""))
         n = f"{where}:{pid or '?'}"
         if not SLUG.match(pid): errs.append(f"layout: {n}: package id must be a lowercase slug")
+        else: _claim(ids, pid, where, errs)
         if not SEMVER.match(str(p.get("version", ""))): errs.append(f"layout: {n}: version {p.get('version')!r} is not SemVer (MAJOR.MINOR.PATCH)")
-        if p.get("schema_version") not in SCHEMAS: errs.append(f"layout: {n}: unsupported schema_version {p.get('schema_version')!r}")
+        if p.get("schema_version") not in SCHEMAS: errs.append(f"layout: {n}: unsupported schema_version {p.get('schema_version')!r} (a BPS project is schema 1 or 2; schema 3 needs mod.toml)")
         if p.get("package_file") != f"{pid}.segapatch": errs.append(f"layout: {n}: package_file must be '{pid}.segapatch'")
         allowed |= {f"{pid}.bps", f"{pid}.manifest.json"}
         if p.get("schema_version") == 2:

@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Rebuild and verify the packages of one (or every) collection release, each with the package writer revision recorded for it.
+"""Rebuild and verify the packages of selected collection releases, each with the tool revision recorded for it.
 
-  rebuild_release.py --release v0.1.0 --work DIR      rebuild one release into DIR/<tag>/ (+ SHA256SUMS) and verify it against its metadata
-  rebuild_release.py --all --work DIR                 every recorded release, published or prepared, each independently
+  rebuild_release.py --release v0.2.0 --work DIR     ONE release (what the release workflow does): its listed packages only
+  rebuild_release.py --prepared --work DIR           every release that is not published yet (what a pull request does): packages being prepared
+  rebuild_release.py --all --work DIR                FULL AUDIT: every recorded release, published ones from Git at their pinned commit (manual/scheduled)
 
-The writer (the product's `tools/segapatch.py`) is fetched at `build.writer_ref` of the release, so an old release is verified with the writer
-that built it. `--writer-url` may be any URL template with `{ref}` (tests use file://). Needs no game image and no secrets.
+Routine work (`--release`, `--prepared`) never touches a published release: a historical package is verified by its stored digest, its pinned source
+commit (verify_provenance.py) and the immutability check against the base branch, and is rebuilt only on demand (`--release <old tag>` or `--all`).
+
+The schema 1/2 writer (the product's `tools/segapatch.py`) is fetched at the release's `build.writer_ref`; `--writer-url` may be any URL template with
+`{ref}` (tests use file://). Schema 3 packages are built by the product CLI you pass with `--segarecomp`, which must have been built at the release's
+pinned product revision (`--segarecomp-ref`, from `build_packages.py --release TAG --print-product-ref`); a mismatch fails closed. Needs no game image and no secrets.
 """
-import argparse, pathlib, sys, urllib.request
+import argparse, io, contextlib, pathlib, sys, urllib.request
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import build_packages, check_repo, release_meta
 
@@ -15,30 +20,47 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_URL = "https://raw.githubusercontent.com/marinocg/segarecomp/{ref}/tools/segapatch.py"
 
 
-def rebuild(root, tag, work, url):
-    ref = None
-    import io, contextlib
+def _print(root, tag, flag):
     buf = io.StringIO()
-    with contextlib.redirect_stdout(buf): build_packages.main(["--root", str(root), "--release", tag, "--print-writer-ref"])
-    ref = buf.getvalue().strip()
-    writer = work / f"segapatch-{ref}.py"
-    if not writer.is_file(): work.mkdir(parents=True, exist_ok=True); urllib.request.urlretrieve(url.format(ref=ref), writer)
-    out = work / tag
-    rc = build_packages.main(["--root", str(root), "--release", tag, "--segapatch", str(writer), "--out", str(out)])
-    errs = []; check_repo.check_assets(root, out, None, errs, tag)
+    try:
+        with contextlib.redirect_stdout(buf): build_packages.main(["--root", str(root), "--release", tag, flag])
+    except SystemExit as e:
+        if "has no" in str(e): return None
+        raise
+    return buf.getvalue().strip()
+
+
+def rebuild(root, tag, work, url, cli=None, cli_ref=None, sdk_dir=None, cc=None):
+    work = pathlib.Path(work); out = work / tag; args = ["--root", str(root), "--release", tag, "--out", str(out)]
+    ref, pref = _print(root, tag, "--print-writer-ref"), _print(root, tag, "--print-product-ref")
+    if ref:
+        writer = work / f"segapatch-{ref}.py"
+        if not writer.is_file(): work.mkdir(parents=True, exist_ok=True); urllib.request.urlretrieve(url.format(ref=ref), writer)
+        args += ["--segapatch", str(writer)]
+    if pref:
+        if not cli: print(f"FAIL: release {tag} has schema 3 packages: pass --segarecomp built at product revision {pref}", file=sys.stderr); return 1
+        args += ["--segarecomp", str(cli), "--segarecomp-ref", cli_ref or ""] + [x for k, v in (("--cc", cc), ("--sdk-dir", sdk_dir)) if v for x in (k, v)]
+    try: rc = build_packages.main(args)
+    except SystemExit as e: print(f"FAIL: {e}", file=sys.stderr); return 1
+    errs = []; check_repo.check_assets(root, out, cli if pref else None, errs, tag)
     for e in errs: print("FAIL:", e, file=sys.stderr)
     return 1 if rc or errs else 0
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(); ap.add_argument("--root", default=str(ROOT)); ap.add_argument("--work", required=True); ap.add_argument("--release"); ap.add_argument("--all", action="store_true")
-    ap.add_argument("--writer-url", default=DEFAULT_URL); a = ap.parse_args(argv)
-    if bool(a.release) == a.all: ap.error("pass exactly one of --release TAG or --all")
+    ap = argparse.ArgumentParser(); ap.add_argument("--root", default=str(ROOT)); ap.add_argument("--work", required=True); ap.add_argument("--release")
+    ap.add_argument("--prepared", action="store_true"); ap.add_argument("--all", action="store_true"); ap.add_argument("--writer-url", default=DEFAULT_URL)
+    ap.add_argument("--segarecomp"); ap.add_argument("--segarecomp-ref"); ap.add_argument("--sdk-dir"); ap.add_argument("--cc")
+    a = ap.parse_args(argv)
+    if sum([bool(a.release), a.prepared, a.all]) != 1: ap.error("pass exactly one of --release TAG, --prepared or --all")
     root, work = pathlib.Path(a.root), pathlib.Path(a.work)
-    tags = sorted(release_meta.releases(root)) if a.all else [a.release]
+    rels = release_meta.releases(root)
+    if a.all: tags = sorted(rels)
+    elif a.prepared: tags = sorted(t for t, r in rels.items() if r["status"] != "published")
+    else: tags = [a.release]
     rc = 0
-    for t in tags: rc |= rebuild(root, t, work, a.writer_url)
-    print("ok" if not rc else "FAILED"); return rc
+    for t in tags: rc |= rebuild(root, t, work, a.writer_url, a.segarecomp, a.segarecomp_ref, a.sdk_dir, a.cc)
+    print(f"{len(tags)} release(s): " + ("ok" if not rc else "FAILED") + (" (nothing to rebuild)" if not tags else "")); return rc
 
 
 if __name__ == "__main__":

@@ -1,22 +1,9 @@
 {
-  "release_format": 1,
+  "package_format": 1,
   "platform": "genesis",
   "source_identity_kind": "cartridge-image-sha256",
   "bios_requirement": "none",
   "game": "Sonic the Hedgehog 2",
-  "release": "v0.1.0",
-  "status": "published",
-  "source_revision": {
-    "repository": "https://github.com/marinocg/segarecomp-patches",
-    "commit": "6ec76f71f968c4898b0ebd11b439f7b7ce923cd4",
-    "tag": "v0.1.0",
-    "tag_commit": "7cd83e7a5495dc8ddc3993e5ff6bfa8343a03e5f"
-  },
-  "build": {
-    "writer": "segapatch.py write_zip",
-    "writer_ref": "55c494b914b93af91c68f09ed8217571d03aa062",
-    "deterministic": true
-  },
   "packages": [
     {
       "id": "sonic2-native-widescreen",

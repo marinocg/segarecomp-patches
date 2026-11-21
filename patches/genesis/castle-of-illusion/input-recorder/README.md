@@ -19,7 +19,7 @@ Tests: `tests/test_input_recorder.py` (provider on the mock host: START/changes/
 PRODUCT=/path/to/segarecomp   SDL3=/path/to/sdl3-prefix   # PRODUCT: built checkout of marinocg/segarecomp main (cmake --build build)
 CLI=$PRODUCT/build/apps/segarecomp/segarecomp
 ROM="/path/to/Castle of Illusion Starring Mickey Mouse (USA, Europe).md"      # your own image; sha256 2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f; it never leaves your machine
-$CLI mod build patches/genesis/castle-of-illusion-input-recorder --out recorder.segapatch --cc cc --sdk-dir $PRODUCT/platforms
+$CLI mod build patches/genesis/castle-of-illusion/input-recorder --out recorder.segapatch --cc cc --sdk-dir $PRODUCT/platforms
 ID=$($CLI mod inspect --json recorder.segapatch | python3 -c 'import sys,json;print(json.load(sys.stdin)["package_identity"])')   # must print the identity at the end of this file
 $CLI build --rom "$ROM" --output build-recorder --cc cc --runtime-dir $PRODUCT/platforms/genesis \
   --sdl3-include $SDL3/include --sdl3-lib $SDL3/lib --native-package recorder.segapatch --native-identity $ID
@@ -40,7 +40,7 @@ Build one headless program per image once. A **headless program is built from an
 ```
 $CLI build --rom "$ROM" --output build-orig --cc cc --runtime-dir $PRODUCT/platforms/genesis
 for v in 16x9 21x9 32x9; do
-  $CLI mod apply patches/genesis/castle-of-illusion-activation-$v --rom "$ROM" --out eff-$v.md      # effective images: 16x9 10a2c1ad..., 21x9 32a03d32..., 32x9 9d8a6098...
+  $CLI mod apply patches/genesis/castle-of-illusion/activation-$v --rom "$ROM" --out eff-$v.md      # effective images: 16x9 10a2c1ad..., 21x9 32a03d32..., 32x9 9d8a6098...
   $CLI build --rom eff-$v.md --output build-$v --cc cc --runtime-dir $PRODUCT/platforms/genesis
 done
 read FIRST COUNT STRIDE < <(python3 -c 'import json;d=json.load(open("routes/first-level-01.summary.json"));print(d["capture_first"],d["capture_count"],d["capture_stride"])')   # the last sample is exactly the END frame

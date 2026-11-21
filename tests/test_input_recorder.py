@@ -1,4 +1,4 @@
-"""The input-recorder package (patches/genesis/castle-of-illusion-input-recorder) and its tools (tools/record_to_pad_script.py, tools/summarize_capture.py). The provider runs on the same mock ABI 2 host as the Castle provider tests (declared ranges, pad, log
+"""The input-recorder package (patches/genesis/castle-of-illusion/input-recorder) and its tools (tools/record_to_pad_script.py, tools/summarize_capture.py). The provider runs on the same mock ABI 2 host as the Castle provider tests (declared ranges, pad, log
 recorded); the tools are pure Python on fabricated logs. No ROM and no game data. Provider tests need SEGARECOMP_SDK_DIR (CI requires them)."""
 import json, os, pathlib, subprocess, sys, tempfile, unittest
 try: import tomllib
@@ -9,7 +9,7 @@ import test_castle_provider as P
 ROOT = P.ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 import record_to_pad_script as R, summarize_capture as S
-PROJECT = ROOT / "patches/genesis/castle-of-illusion-input-recorder"
+PROJECT = ROOT / "patches/genesis/castle-of-illusion/input-recorder"
 SDK, CC = P.SDK, P.CC
 if os.environ.get("SEGARECOMP_REQUIRE_EXEC") == "1" and (not SDK or tomllib is None):
     raise RuntimeError("SEGARECOMP_REQUIRE_EXEC=1 but SEGARECOMP_SDK_DIR is not set or Python lacks tomllib: the recorder tests would be skipped")

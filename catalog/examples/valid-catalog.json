@@ -1,5 +1,5 @@
 {
-  "catalog_format": 1,
+  "catalog_format": 2,
   "packages": [
     {
       "platform": "genesis",
@@ -92,6 +92,57 @@
       "asset": {
         "name": "synthetic-demo-2.segapatch",
         "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v1.0.0/synthetic-demo-2.segapatch"
+      }
+    },
+    {
+      "platform": "genesis",
+      "game": "Synthetic Example",
+      "game_path": "patches/genesis/synthetic-example",
+      "source_path": "patches/genesis/synthetic-example/mod-example",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v1.1.0",
+      "source_revision": {
+        "repository": "https://github.com/marinocg/segarecomp-patches",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tag": "v1.1.0",
+        "tag_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "build": {
+        "writer": "segarecomp mod pack",
+        "writer_ref": "cccccccccccccccccccccccccccccccccccccccc",
+        "deterministic": true
+      },
+      "id": "synthetic-mod",
+      "version": "0.1.0",
+      "name": "Synthetic Mod",
+      "schema_version": 3,
+      "native_abi": 2,
+      "capabilities": [
+        "frame.vdp",
+        "overlay.rgba"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "package_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "package_size": 4096,
+      "package_identity": "2222222222222222222222222222222222222222222222222222222222222222",
+      "images": [
+        {
+          "label": "synthetic-image",
+          "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      ],
+      "evidence_tier": "synthetic-only",
+      "gameplay": "unchanged",
+      "license": "MIT",
+      "supported_scope": "A fabricated source-based mod used only to exercise the catalog pages.",
+      "limitations": [
+        "Synthetic: not a real package."
+      ],
+      "asset": {
+        "name": "synthetic-mod.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v1.1.0/synthetic-mod.segapatch"
       }
     }
   ]

@@ -47,7 +47,7 @@ Changes slightly: because actors are submitted in the widened margins they are f
 
 ## Installation
 
-See [docs/installation.md](../../../docs/installation.md) for the full steps. In short:
+See [docs/installation.md](../../../../docs/installation.md) for the full steps. In short:
 
 1. Download the package (and `SHA256SUMS`) from the release and check the digest.
 2. In the segarecomp launcher open your game's **Details** page, then **Patches / Variants**, **Install patch...**, and choose the `.segapatch` file.

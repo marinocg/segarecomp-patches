@@ -32,9 +32,9 @@ CLI, SDK, CC = os.environ.get("SEGARECOMP_CLI"), os.environ.get("SEGARECOMP_SDK_
 
 
 class Lint(unittest.TestCase):
-    def project(self, toml=TOML, platform="genesis", game="synthetic-castle"):
+    def project(self, toml=TOML, platform="genesis", game="synthetic-castle", patch="widescreen"):
         root = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, root)
-        d = root / "patches" / platform / game; (d / "src").mkdir(parents=True)
+        d = root / "patches" / platform / game / patch; (d / "src").mkdir(parents=True)
         (d / "README.md").write_text("# Synthetic\n"); (d / "mod.toml").write_text(toml); (d / "src/provider.c").write_text("/* synthetic */\n")
         return root, d
 
@@ -46,13 +46,13 @@ class Lint(unittest.TestCase):
 
     def test_positive(self): self.assertEqual(self.errs(self.project()[0]), [])
     def test_positive_repository(self): self.assertEqual(self.errs(ROOT), [])
-    def test_unpublished_project_is_not_in_the_catalog(self):
+    def test_a_project_nobody_selected_is_not_in_the_catalog(self):
         r, _ = self.project(); (r / "catalog").mkdir(); (r / "catalog/index.json").write_text(build_catalog.build(r))
         self.assertNotIn("synthetic-castle", (r / "catalog/index.json").read_text())
     def test_release_json_beside_mod_toml(self):
-        r, d = self.project(); (d / "release.json").write_text("{}"); self.expect(r, "release.json cannot accompany mod.toml")
+        r, d = self.project(); (d / "release.json").write_text("{}"); self.expect(r, "release.json no longer exists")
     def test_missing_mod_toml_is_a_legacy_project(self):
-        r, d = self.project(); (d / "mod.toml").unlink(); self.expect(r, "missing release.json")
+        r, d = self.project(); (d / "mod.toml").unlink(); self.expect(r, "missing package.json")
     def test_malformed_mod_toml(self):
         self.expect(self.project(toml="[mod\nid=")[0], "malformed")
     def test_undeclared_source_file(self):
@@ -84,7 +84,7 @@ class Lint(unittest.TestCase):
 class ProductAgreement(unittest.TestCase):
     def project(self):
         root = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, root)
-        d = root / "patches" / "genesis" / "synthetic-castle"; d.parent.mkdir(parents=True)
+        d = root / "patches" / "genesis" / "synthetic-castle" / "widescreen"; d.parent.mkdir(parents=True)
         r = subprocess.run([CLI, "mod", "init", str(d), "--platform", "genesis", "--id", "synthetic-castle", "--template", "c11-provider", "--rom-sha256", "cd" * 32], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout)
         (d / "README.md").write_text("# Synthetic\n")

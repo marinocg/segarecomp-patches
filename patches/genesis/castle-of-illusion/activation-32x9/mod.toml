@@ -1,10 +1,10 @@
-# Castle of Illusion activation 21x9 (gameplay-changing): the widescreen + Practice+ provider of patches/genesis/castle-of-illusion (src/provider.c is a byte-identical copy, checked by tests/test_castle_activation.py) plus a GAMEPLAY-CHANGING early object activation.
+# Castle of Illusion activation 32x9 (gameplay-changing): the widescreen + Practice+ provider of patches/genesis/castle-of-illusion/widescreen-practice (src/provider.c is a byte-identical copy, checked by tests/test_castle_activation.py) plus a GAMEPLAY-CHANGING object activation with deferral.
 # Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
 [mod]
-id = "castle-of-illusion-activation-21x9"
+id = "castle-of-illusion-activation-32x9"
 author = "segarecomp-patches contributors"
 version = "0.1.0"
-name = "Castle of Illusion activation 21x9 (gameplay-changing)"
+name = "Castle of Illusion activation 32x9 (gameplay-changing)"
 license = "MIT"
 
 [target]
@@ -124,7 +124,7 @@ mode = "before"
 reads = ["d0", "a0", "a2"]
 
 [geometry]
-aspect_max = "21:9"
+aspect_max = "32:9"
 
 [[scene]]
 id = "a16x240-b16"
