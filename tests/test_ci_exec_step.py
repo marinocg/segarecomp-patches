@@ -30,7 +30,7 @@ class ExecStep(unittest.TestCase):
     def test_a_passing_suite_passes_the_step(self):
         code, out = self.run_step("class T(unittest.TestCase):\n    def test_a(self): pass\n    def test_b(self): pass\n")
         self.assertEqual(code, 0, out)
-        self.assertIn("Ran 10 tests", out)
+        self.assertIn("Ran 14 tests", out)
 
     def test_an_intentionally_failing_test_fails_the_step(self):
         code, out = self.run_step("class T(unittest.TestCase):\n    def test_a(self): pass\n    def test_fails(self): self.fail('intentional')\n")
