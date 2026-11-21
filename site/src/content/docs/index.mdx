@@ -1,13 +1,23 @@
 ---
 title: segarecomp patches
-description: Reviewed, working patches for games recompiled by segarecomp, and the documentation to write your own.
+description: Reviewed widescreen and game patches for Sega Genesis / Mega Drive games recompiled by segarecomp, a static recompiler, plus the .segapatch package format, native patch SDK and security documentation.
+head:
+  - tag: title
+    content: Sega Genesis widescreen patches and modding docs for segarecomp | segarecomp patches
+  - tag: meta
+    attrs:
+      property: og:type
+      content: website
 template: splash
 hero:
   tagline: Reviewed patches for segarecomp, with the package format, SDK and trust documentation behind them.
   actions:
+    - text: Browse the patch catalog
+      link: /catalog/
+      variant: primary
     - text: Getting started
       link: /getting-started/
-      variant: primary
+      variant: secondary
     - text: Security model
       link: /security/
       variant: secondary
@@ -21,6 +31,9 @@ import Panel from '../../components/Panel.astro';
   </Panel>
   <Panel title="NATIVE CODE IS NOT SANDBOXED">
     A schema 2 patch is C source compiled into the Patched program. Read the [security page](/security/) before installing one.
+  </Panel>
+  <Panel title="PATCH CATALOG">
+    Every published package with its SHA-256, source revision and the exact images it applies to: [browse the patch catalog](/catalog/).
   </Panel>
   <Panel title="WRITE ONE">
     The [getting-started guide](/getting-started/) builds, packs and verifies a synthetic provider; CI runs every command in it.

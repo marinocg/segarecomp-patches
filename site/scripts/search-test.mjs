@@ -22,6 +22,7 @@ const checks = [
   ['sandboxed', '/security/'],
   ['provider', '/getting-started/'],
   ['BPS', '/product/patch-packages/'],
+  ['sonic1-native-widescreen', '/catalog/sonic1-native-widescreen/'],
 ];
 
 const pagefind = await import(pathToFileURL(path.join(dist, 'pagefind', 'pagefind.js')).href);

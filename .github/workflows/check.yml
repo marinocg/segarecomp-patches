@@ -10,11 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # provenance: a source commit must be an ancestor of this checkout, and the catalog is compared with the base branch
       - name: Repository checks (no commercial data)
         run: |
           python3 scripts/check_repo.py
           python3 scripts/build_catalog.py --check
           python3 scripts/lint_layout.py
+          python3 scripts/check_source_review.py
+          python3 scripts/artifact_budget.py
+      - name: Catalog schema, immutability against the base branch, and source provenance
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A published (id, version) never changes: compare with the catalog at the base commit (skipped only when there is none, e.g. a first push).
+          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then BASELINE="--baseline-ref $BASE_SHA"; else BASELINE=""; fi
+          python3 scripts/validate_catalog.py $BASELINE
+          python3 scripts/verify_provenance.py
       - name: Fetch the pinned product authoring tool
         run: |
           curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$(cat scripts/SEGAPATCH_REF)/tools/segapatch.py" -o "$RUNNER_TEMP/segapatch.py"
@@ -24,11 +36,10 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -q
           python3 scripts/synthetic_fixture.py --segapatch "$SEGAPATCH" --provider examples/synthetic/provider.c
-      # The same rebuild the release workflow performs, so a PR cannot merge something the release would reject.
-      - name: Rebuild packages from source and verify against release.json
-        run: |
-          python3 scripts/build_packages.py --segapatch "$RUNNER_TEMP/segapatch.py" --out "$RUNNER_TEMP/assets"
-          python3 scripts/check_repo.py --assets "$RUNNER_TEMP/assets"
+      # The same rebuild the release workflow performs, for EVERY recorded release (published ones from Git at their pinned commit,
+      # prepared ones from the working tree), each with its own recorded writer revision: a PR cannot merge what a release would reject.
+      - name: Rebuild every release from source and verify each against its own metadata
+        run: python3 scripts/rebuild_release.py --all --work "$RUNNER_TEMP/rebuild"
   # Executes the injected guest code (tests/test_castle_activation_exec.py, both activation variants) and compiles + runs the shared provider (tests/test_castle_provider.py) against the product SDK headers on a synthetic image with a product CLI built from source at the pinned ref:
   # no shipped release contains the guest-asm assembler yet. SEGARECOMP_REQUIRE_EXEC=1 turns a skip into a failure, and the step asserts the test count.
   exec:

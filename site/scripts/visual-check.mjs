@@ -23,7 +23,7 @@ const server = http.createServer(async (req, res) => {
 const base = `http://127.0.0.1:${server.address().port}${SITE_BASE}`;
 
 const viewports = [['phone', 360, 740], ['phone-large', 414, 896], ['tablet', 768, 1024], ['desktop', 1280, 800], ['wide', 1920, 1080]];
-const pages = ['/', '/getting-started/', '/security/', '/product/patch-packages/', '/product/native-patch-sdk/', '/support/', '/repository/', '/nope-404/'];
+const pages = ['/', '/getting-started/', '/security/', '/product/patch-packages/', '/product/native-patch-sdk/', '/support/', '/repository/', '/privacy/', '/catalog/', '/catalog/sonic1-native-widescreen/2.0.1/', '/catalog/sonic3k-native-widescreen/1.0.1/', '/catalog/sor2-widescreen/1.0.0/', '/nope-404/'];
 const themes = ['dark', 'light'];
 
 const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };

@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marinocg.github.io/segarecomp-patches/schema/release-1.schema.json",
+  "title": "segarecomp-patches release.json (release_format 1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "release_format",
+    "platform",
+    "source_identity_kind",
+    "bios_requirement",
+    "game",
+    "release",
+    "status",
+    "build",
+    "packages"
+  ],
+  "properties": {
+    "release_format": {
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "platform": {
+      "type": "string",
+      "enum": [
+        "genesis",
+        "master-system",
+        "game-gear",
+        "sega-cd"
+      ]
+    },
+    "source_identity_kind": {
+      "type": "string",
+      "enum": [
+        "cartridge-image-sha256",
+        "disc-image-identity"
+      ]
+    },
+    "bios_requirement": {
+      "type": "string",
+      "enum": [
+        "none",
+        "required",
+        "optional"
+      ]
+    },
+    "game": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release": {
+      "type": "string",
+      "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "source_revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "writer",
+        "writer_ref",
+        "deterministic"
+      ],
+      "properties": {
+        "writer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "writer_ref": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "deterministic": {
+          "type": "boolean"
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "name",
+          "revision",
+          "region",
+          "schema_version",
+          "trust",
+          "executable_code",
+          "package_sha256",
+          "package_size",
+          "package_identity",
+          "source_image_sha256",
+          "patched_image_sha256",
+          "bps_sha256",
+          "license",
+          "evidence_tier",
+          "gameplay",
+          "supported_scope",
+          "limitations",
+          "asset",
+          "package_file",
+          "bps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "region": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schema_version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "native_abi": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              1
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "trust": {
+            "type": "string",
+            "enum": [
+              "data-only",
+              "trusted-native-source"
+            ]
+          },
+          "executable_code": {
+            "type": "boolean"
+          },
+          "package_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "package_size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "package_identity": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source_image_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "patched_image_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bps_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "native_source_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "license": {
+            "type": "string",
+            "enum": [
+              "MIT",
+              "MPL-2.0",
+              "not applicable (data-only BPS)"
+            ]
+          },
+          "evidence_tier": {
+            "type": "string",
+            "enum": [
+              "synthetic-only",
+              "maintainer-attested",
+              "automated"
+            ]
+          },
+          "gameplay": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supported_scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "superseded_by": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$",
+            "description": "Additive supersession pointer '<id>@<version>': the only field of a published entry that may be added later."
+          },
+          "package_file": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+\\.segapatch$"
+          },
+          "asset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "url"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]+\\.segapatch$"
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https://[^\\s]+$"
+              }
+            }
+          },
+          "license_declared_in_package": {
+            "type": "boolean"
+          },
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authoring_revision": {
+            "type": "string"
+          },
+          "default_widescreen": {
+            "type": "string"
+          },
+          "default_side_style": {
+            "type": "string"
+          },
+          "widescreen_width_max": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "bps": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "release": {
+            "type": "string",
+            "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+            "description": "Present only on an ARCHIVED package of an older published release (then source_revision and build are pinned too)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "prepared",
+              "published"
+            ]
+          },
+          "source_revision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "repository"
+            ],
+            "properties": {
+              "repository": {
+                "type": "string",
+                "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+              },
+              "commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "tag": {
+                "type": "string",
+                "minLength": 1
+              },
+              "tag_commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              }
+            }
+          },
+          "build": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "writer",
+              "writer_ref",
+              "deterministic"
+            ],
+            "properties": {
+              "writer": {
+                "type": "string",
+                "minLength": 1
+              },
+              "writer_ref": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "deterministic": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "prepared",
+        "published"
+      ],
+      "description": "prepared: metadata and sources exist but no public release; published: the collection release exists and its entries are immutable."
+    }
+  }
+}

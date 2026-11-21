@@ -31,14 +31,18 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'segarecomp patches',
-      description: 'Documentation for the segarecomp public patch collection: package formats, the native patch SDK, trust and security.',
+      description: 'Reviewed widescreen and game patches for Sega Genesis / Mega Drive games recompiled by segarecomp, a static recompiler, plus the .segapatch package format, native patch SDK and security documentation.',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/marinocg/segarecomp-patches' }],
       editLink: { baseUrl: 'https://github.com/marinocg/segarecomp-patches/edit/main/site/' },
       lastUpdated: false,
+      routeMiddleware: './src/routeData.ts',
+      // No sharing image exists, so the card is the plain summary card (Starlight's default would announce a large image that is not there).
+      head: [{ tag: 'meta', attrs: { name: 'twitter:card', content: 'summary' } }],
       customCss: ['./src/styles/global.css'],
-      components: { Hero: './src/components/Hero.astro' },
+      components: { Hero: './src/components/Hero.astro', Footer: './src/components/Footer.astro' },
       sidebar: [
-        { label: 'Start here', items: [{ slug: 'getting-started' }, { slug: 'security' }, { slug: 'support' }] },
+        { label: 'Start here', items: [{ slug: 'getting-started' }, { slug: 'security' }, { slug: 'support' }, { slug: 'privacy' }] },
+        { label: 'Catalog', items: [{ label: 'All packages', link: '/catalog/' }] },
         {
           label: 'Reference (imported)',
           items: [

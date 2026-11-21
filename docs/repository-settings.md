@@ -38,6 +38,19 @@ The `site / visual` job (browser rendering, screenshots uploaded as an artifact)
 
 `pages.yml` builds `site/` on every push to `main` that touches the site, re-runs the link and search checks on the exact build output and deploys it with `actions/deploy-pages`. Only `main` may deploy (environment protection). The site base path is `/segarecomp-patches` (`SITE_BASE`, read by `site/astro.config.mjs` and the checks in `scripts/` and `site/scripts/`); a custom domain later means setting `SITE_URL`/`SITE_BASE=` and nothing else.
 
+## GitHub Pages deployment
+
+`pages.yml` deploys the documentation and catalog site (the only deployment target; no secret and no third-party deployment service is involved):
+
+| Trigger | Checked out | What is verified before deploying |
+|---|---|---|
+| push to `main` touching `site/**`, `catalog/**`, the product-docs pin or the workflow; manual dispatch | the pushed / dispatched ref | catalog schema, provenance (full history, tags), source review, links, accessibility, SEO/JSON-LD/sitemap/robots/public-JSON checks, search |
+| release **published** (or dispatch with a tag) | the repository's **default branch**, never the tag | the same, plus: the published assets of that tag are downloaded and compared with that release's metadata (`check_repo.py --assets DIR --release TAG`), so a wrong digest stops the deployment |
+
+A release event's own ref is the tag, and the `v0.1.0` tag predates the site, so checking out the tag would deploy an old tree. The tag only selects which published assets are verified. `verify-release.yml` follows the same rule. The workflows have `contents: read` (deploy jobs add `pages: write` and `id-token: write`); pull requests only build and check the site (`site.yml`), GitHub Pages has no per-PR previews, and no secret exists for a fork.
+
+Environment `github-pages`: the deployment's ref is the tag for a release event, so the environment must allow deployment from `main` **and** from release tags (`v*`); otherwise environment protection rejects the release-triggered run. The recorded production URL (https://marinocg.github.io/segarecomp-patches/) is an acceptance fact to be confirmed from the first real deployment after the merge, not before.
+
 ## Workflow permissions
 
 Default `GITHUB_TOKEN` permission is read-only (`contents: read`); every workflow declares its permissions explicitly. Pull requests from forks never receive secrets. Workflows that publish (release) run only on manual dispatch.
