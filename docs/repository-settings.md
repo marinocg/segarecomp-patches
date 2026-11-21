@@ -32,7 +32,19 @@ GitHub settings are not versioned by git. This document is the checked-in record
 
 `check / repository` is the job `repository` in `.github/workflows/check.yml` (metadata-only repository checks, catalog freshness and immutability, provenance, unit tests, synthetic fixture; it builds no package). `check / exec` is the job `exec` in the same file: it builds the pinned product CLI (`scripts/PRODUCT_REF`), runs the executable Castle, schema 3 project and publication tests with `SEGARECOMP_REQUIRE_EXEC=1` (a skipped test, a failed test, a failed CLI build or a missing SDK fails the job), checks and packs the schema 3 projects the pull request changed and rebuilds only the prepared releases it affects. Schema 3 packages carry native executable code, so this is a merge gate. `site / build` and `site / samples` are the jobs `build` and `samples` in `.github/workflows/site.yml`. **Never rename these jobs** without changing the protection rule: GitHub matches required checks by job name (`repository`, `exec`, `build`, `samples`).
 
-To require them (Settings, Branches, rule for `main`, *Require status checks to pass*), or with the CLI: `gh api -X PUT repos/marinocg/segarecomp-patches/branches/main/protection/required_status_checks -f strict=true -f 'contexts[]=repository' -f 'contexts[]=exec' -f 'contexts[]=build' -f 'contexts[]=samples'` (the branch must already be protected; otherwise create the rule with the table above). The `audit` workflow is manual and weekly; it is not a check.
+To require them (Settings, Branches, rule for `main`, *Require status checks to pass*), or with the CLI, **merging into** the existing list so no other required check is dropped (`PATCH` on an already protected branch; `strict` is a JSON Boolean; the contexts are the job names):
+
+```text
+gh api repos/marinocg/segarecomp-patches/branches/main/protection/required_status_checks \
+  | jq '{strict: true, contexts: (.contexts + ["repository", "exec", "build", "samples"] | unique)}' \
+  | gh api -X PATCH repos/marinocg/segarecomp-patches/branches/main/protection/required_status_checks --input -
+```
+
+An unprotected branch has no such endpoint yet: create the rule first (`PUT .../branches/main/protection` with `required_status_checks`, `enforce_admins`, `required_pull_request_reviews` and `restrictions`, each set explicitly) or use the Settings page.
+
+**Intended versus verified.** The table above is the *intended* configuration. As verified through the API on 2026-11-21 the live rule on `main` has only required status checks: `repository`, `exec`, `build`, `samples`, `strict: true`, admins not enforced. Required reviews, code-owner review, no direct pushes, conversation resolution and the force-push/deletion block are **not** configured; they remain a maintainer action (Settings, Branches).
+
+The `audit` workflow is manual and weekly; it is not a check.
 
 The `site / visual` job (browser rendering, screenshots uploaded as an artifact) is informational and deliberately **not** required: it depends on a downloaded browser, so a CDN outage must not block merges. Review its screenshots on design changes.
 

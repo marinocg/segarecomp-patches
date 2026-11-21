@@ -2,7 +2,7 @@
 """Rebuild and verify the packages of selected collection releases, each with the tool revision recorded for it.
 
   rebuild_release.py --release v0.2.0 --work DIR     ONE release (what the release workflow does): its listed packages only
-  rebuild_release.py --affected-from BASE --work DIR the prepared releases a pull request affects (what CI does): see affected_tags()
+  rebuild_release.py --affected-from BASE --work DIR the prepared releases a pull request affects (what CI does): see release_meta.affected_tags()
   rebuild_release.py --prepared --work DIR           every release that is not published yet
   rebuild_release.py --all --work DIR                FULL AUDIT: every recorded release, published ones from Git at their pinned commit (manual/scheduled)
   rebuild_release.py --list                          the recorded release tags (the audit workflow loops over them, building each release's own product revision)
@@ -14,50 +14,12 @@ The schema 1/2 writer (the product's `tools/segapatch.py`) is fetched at the rel
 `{ref}` (tests use file://). Schema 3 packages are built by the product CLI you pass with `--segarecomp`, which must have been built at the release's
 pinned product revision (`--segarecomp-ref`, from `build_packages.py --release TAG --print-product-ref`); a mismatch fails closed. Needs no game image and no secrets.
 """
-import argparse, io, contextlib, json, pathlib, subprocess, sys, urllib.request
+import argparse, io, contextlib, pathlib, sys, urllib.request
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import build_packages, check_repo, release_meta
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_URL = "https://raw.githubusercontent.com/marinocg/segarecomp/{ref}/tools/segapatch.py"
-
-
-# Paths whose change can alter how ANY package is built or validated: every prepared release is then rebuilt (conservative, never silently skipped).
-SHARED_PREFIXES = ("scripts/", "catalog/schema/")
-SHARED_IGNORED = ("scripts/check_site_", "scripts/import_product_docs", "scripts/run_guide_samples", "scripts/artifact_budget", "scripts/synthetic_fixture", "scripts/gen_castle_retry")
-
-
-def _git(root, *args):
-    r = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
-    if r.returncode != 0: raise SystemExit(f"affected-release detection cannot be trusted: git {' '.join(args)}: {r.stderr.strip() or 'failed'}")
-    return r.stdout
-
-
-def _publication_at(root, base):
-    r = subprocess.run(["git", "show", f"{base}:publication.json"], cwd=root, capture_output=True, text=True)
-    return (json.loads(r.stdout).get("patches", {}) if r.returncode == 0 else {})
-
-
-def affected_tags(root, base):
-    """The prepared (not published) releases a change since `base` can affect. Published releases are never selected. Fails closed (SystemExit) when `base` is not a commit.
-
-    A release is affected when: its own releases/<tag>.json changed or is new; a file of a patch directory that one of its packages comes from changed, was added, deleted or
-    renamed; the publication state of such a patch changed; or a shared build/validation path changed (then every prepared release is affected). Documentation and site changes
-    affect nothing. This is a path-to-release lookup over the existing records, not a dependency graph."""
-    root = pathlib.Path(root)
-    _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
-    changed = [l for l in _git(root, "diff", "--name-only", "--no-renames", f"{base}...HEAD").splitlines() if l]   # --no-renames: both the old and the new path of a rename
-    changed += [l for l in _git(root, "diff", "--name-only", "--no-renames", "HEAD").splitlines() if l]              # uncommitted work counts too
-    prepared = {t: r for t, r in release_meta.releases(root).items() if r["status"] != "published"}
-    if any(c.startswith(SHARED_PREFIXES) and not c.startswith(SHARED_IGNORED) for c in changed): return sorted(prepared)
-    old, new = _publication_at(root, base), release_meta.publication(root)
-    flipped = {rel for rel in set(old) | set(new) if old.get(rel) != new.get(rel)}
-    hit = set()
-    for tag, r in prepared.items():
-        if f"releases/{tag}.json" in changed: hit.add(tag); continue
-        for pk in r["packages"]:
-            if pk.patch.rel in flipped or any(c.startswith(pk.patch.path + "/") for c in changed): hit.add(tag); break
-    return sorted(hit)
 
 
 def _print(root, tag, flag):
@@ -97,7 +59,7 @@ def main(argv=None):
     if sum([bool(a.release), a.prepared, a.all, bool(a.affected_from)]) != 1 or not a.work: ap.error("pass --work DIR and exactly one of --release TAG, --affected-from BASE, --prepared or --all")
     work = pathlib.Path(a.work)
     if a.all: tags = sorted(rels)
-    elif a.affected_from: tags = affected_tags(root, a.affected_from)
+    elif a.affected_from: tags = release_meta.affected_tags(root, a.affected_from)
     elif a.prepared: tags = sorted(t for t, r in rels.items() if r["status"] != "published")
     else: tags = [a.release]
     rc = 0

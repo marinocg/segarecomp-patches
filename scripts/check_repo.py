@@ -200,10 +200,15 @@ def pack_mod_project(cli, d, out, extra=()):
 
 def changed_patches(root, ref):
     """Patch directories (patches/<platform>/<game>/<patch>) touched between `ref` and the working tree: the only projects a routine pull request must rebuild."""
-    r = subprocess.run(["git", "diff", "--name-only", f"{ref}...HEAD", "--", "patches"], cwd=root, capture_output=True, text=True)
-    r2 = subprocess.run(["git", "diff", "--name-only", "HEAD", "--", "patches"], cwd=root, capture_output=True, text=True)
-    if r.returncode != 0: raise SystemExit(f"cannot diff against {ref}: {r.stderr.strip()}")
-    return sorted({"/".join(l.split("/")[:4]) for l in (r.stdout + r2.stdout).splitlines() if l.count("/") >= 3})
+    return sorted({"/".join(l.split("/")[:4]) for l in release_meta.changed_paths(root, ref) if l.startswith("patches/") and l.count("/") >= 3})
+
+
+def projects_to_validate(root, ref):
+    """Schema 3 project directories a pull request must check and pack: those it changed, plus those of the prepared releases it AFFECTS (the same selection
+    rebuild_release.py --affected-from uses: release_meta.affected_tags, which expands to every prepared release when shared build/validation code changed).
+    Unaffected prepared releases and published ones contribute nothing."""
+    tags = release_meta.affected_tags(root, ref); rels = release_meta.releases(root)
+    return set(changed_patches(root, ref)) | {pk.patch.path for t in tags for pk in rels[t]["packages"] if pk.is_mod}
 
 
 def check_mod_projects(root, cli, errs, extra=(), only=None):
@@ -293,9 +298,7 @@ def main(argv=None):
     check(root, errs)
     if a.assets: check_assets(root, pathlib.Path(a.assets), a.segarecomp, errs, a.release)
     if a.segarecomp and lint_layout.mod_projects(root):   # schema 3 projects need the shipped product tool (mod check / mod pack), compiled with its own host-owned flags
-        only = None
-        if a.changed_from:   # the patches the pull request touched, plus every schema 3 package a not-yet-published release selects
-            only = set(changed_patches(root, a.changed_from)) | {pk.patch.path for r in release_meta.releases(root).values() if r["status"] != "published" for pk in r["packages"] if pk.is_mod}
+        only = projects_to_validate(root, a.changed_from) if a.changed_from else None   # None = every project (explicit audit, or a first push without a base)
         check_mod_projects(root, a.segarecomp, errs, [x for k, v in (("--cc", a.cc), ("--sdk-dir", a.sdk_dir)) if v for x in (k, v)], only)
     for e in errs: print("FAIL:", e, file=sys.stderr)
     print("ok" if not errs else f"{len(errs)} problem(s)")

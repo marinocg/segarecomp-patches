@@ -212,3 +212,49 @@ def consistency_errors(root=ROOT):
             if a.release != b.release and semver(a.version) >= semver(b.version):
                 errs.append(f"{pid}: version {b.version} in {b.release} must be higher than {a.version} in {a.release}")
     return errs
+
+
+# Paths whose change can alter how ANY package is built or validated: every prepared release is then rebuilt (conservative, never silently skipped).
+SHARED_PREFIXES = ("scripts/", "catalog/schema/")
+SHARED_IGNORED = ("scripts/check_site_", "scripts/import_product_docs", "scripts/run_guide_samples", "scripts/artifact_budget", "scripts/synthetic_fixture", "scripts/gen_castle_retry")
+
+
+def _git(root, *args):
+    r = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
+    if r.returncode != 0: raise SystemExit(f"affected-release detection cannot be trusted: git {' '.join(args)}: {r.stderr.strip() or 'failed'}")
+    return r.stdout
+
+
+def _publication_at(root, base):
+    r = subprocess.run(["git", "show", f"{base}:publication.json"], cwd=root, capture_output=True, text=True)
+    return (json.loads(r.stdout).get("patches", {}) if r.returncode == 0 else {})
+
+
+def changed_paths(root, base):
+    """Repo-relative paths changed between `base` and the working tree (both sides of a rename, deletions, uncommitted work). Fails closed (SystemExit) when `base` is not a commit."""
+    root = pathlib.Path(root)
+    _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
+    return sorted({l for cmd in (("diff", "--name-only", "--no-renames", f"{base}...HEAD"), ("diff", "--name-only", "--no-renames", "HEAD")) for l in _git(root, *cmd).splitlines() if l})
+
+
+def is_shared_change(changed):
+    return any(c.startswith(SHARED_PREFIXES) and not c.startswith(SHARED_IGNORED) for c in changed)
+
+
+def affected_tags(root, base):
+    """The prepared (not published) releases a change since `base` can affect. Published releases are never selected. Fails closed (SystemExit) when `base` is not a commit.
+
+    A release is affected when: its own releases/<tag>.json changed or is new; a file of a patch directory that one of its packages comes from changed, was added, deleted or
+    renamed; the publication state of such a patch changed; or a shared build/validation path changed (then every prepared release is affected). Documentation and site changes
+    affect nothing. This is a path-to-release lookup over the existing records, not a dependency graph."""
+    root = pathlib.Path(root); changed = changed_paths(root, base)
+    prepared = {t: r for t, r in releases(root).items() if r["status"] != "published"}
+    if is_shared_change(changed): return sorted(prepared)
+    old, new = _publication_at(root, base), publication(root)
+    flipped = {rel for rel in set(old) | set(new) if old.get(rel) != new.get(rel)}
+    hit = set()
+    for tag, r in prepared.items():
+        if f"releases/{tag}.json" in changed: hit.add(tag); continue
+        for pk in r["packages"]:
+            if pk.patch.rel in flipped or any(c.startswith(pk.patch.path + "/") for c in changed): hit.add(tag); break
+    return sorted(hit)

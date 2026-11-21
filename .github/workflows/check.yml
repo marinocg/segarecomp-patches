@@ -65,7 +65,7 @@ jobs:
           python3 -m unittest -v tests.test_castle_activation_exec tests.test_castle_provider tests.test_castle_activation tests.test_castle_debug_fly tests.test_input_recorder tests.test_mod_projects tests.test_publication 2>&1 | tee "$RUNNER_TEMP/exec.log"
           grep -E "^Ran [0-9]+ tests" "$RUNNER_TEMP/exec.log"
           ! grep -q "skipped" "$RUNNER_TEMP/exec.log"
-      - name: Check and pack the schema 3 projects this pull request changed (and those a pending release selects), nothing else
+      - name: Check and pack the schema 3 projects this pull request changed and the prepared releases it affects (same selection as the release rebuild), nothing else
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |

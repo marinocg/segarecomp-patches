@@ -210,8 +210,8 @@ class Scalability(unittest.TestCase):
         for f in (s.mod_log,): f.unlink(missing_ok=True)
         r = run(S / "check_repo.py", "--root", s.d, "--segarecomp", s.cli, "--changed-from", base, env=s.env); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         touched = {l.split()[2] for l in s.mod_calls() if l.startswith("mod check")}
-        self.assertEqual({pathlib.Path(t).relative_to(s.d).as_posix() for t in touched}, {"patches/genesis/new/tool", "patches/genesis/new/mod"},
-                         "the changed project plus the schema 3 package the prepared release selects; nothing historical, nothing unrelated")
+        self.assertEqual({pathlib.Path(t).relative_to(s.d).as_posix() for t in touched}, {"patches/genesis/new/tool"},
+                         "only the changed project: the pending release v1.1.0 is not affected by a README change in an unrelated internal patch; nothing historical")
 
     def test_full_audit_still_rebuilds_everything(self):
         s = self.fixture(); r = self.rebuild(s, "--all"); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -315,6 +315,75 @@ class AffectedReleases(unittest.TestCase):
         for f in (s.mod_log, s.writer_log): f.unlink(missing_ok=True)
         r = run(S / "rebuild_release.py", "--root", s.d, "--prepared", "--work", s.tmp / "w2", "--writer-url", s.writer.as_uri(), "--segarecomp", s.cli, "--segarecomp-ref", PRODUCT_REF, env=s.env)
         self.assertEqual(r.returncode, 0); self.assertFalse(any(l.startswith("old") for l in s.writer_calls())); self.assertEqual(len(s.writer_calls()), 1)
+
+
+class Schema3Scope(unittest.TestCase):
+    """`check_repo.py --segarecomp ... --changed-from BASE` validates the changed schema 3 projects plus those of the prepared releases the change AFFECTS (same selection as
+    rebuild_release.py --affected-from), counted in real product-tool invocations. Unrelated pending releases and published ones are never touched."""
+    run_affected = AffectedReleases.run_affected   # the same selection, driven through rebuild_release.py
+
+    def fixture(self):
+        s, base = AffectedReleases.fixture(self)
+        s.mod_patch("hist", "main", "phist", state="eligible"); s.begin("v0.9.0", "phist@0.1.0"); s.notes("v0.9.0"); s.catalog(); s.commit("hist release"); s.publish("v0.9.0")
+        return s, git(s.d, "rev-parse", "HEAD")
+
+    def validated(self, s, base):
+        for f in (s.mod_log, s.writer_log): f.unlink(missing_ok=True)
+        r = run(S / "check_repo.py", "--root", s.d, "--segarecomp", s.cli, "--changed-from", base, env=s.env)
+        dirs = {pathlib.Path(l.split()[2]).relative_to(s.d).as_posix().replace("patches/genesis/", "") for l in s.mod_calls() if l.startswith("mod check")}
+        packs = len([l for l in s.mod_calls() if l.startswith(("mod pack", "mod build"))])
+        return r, dirs, packs
+
+    def edit(self, s, rel, msg="change"): (s.d / rel).write_text(f"# {msg}\n" if rel.endswith(".md") else (s.d / rel).read_text() + "\n"); s.commit(msg)
+
+    def test_documentation_and_site_changes_invoke_no_schema_3_build(self):
+        s, base = self.fixture(); (s.d / "site").mkdir(); (s.d / "site/x.css").write_text("a{}"); (s.d / "docs/x.md").write_text("x"); s.commit("docs")
+        r, dirs, packs = self.validated(s, base); self.assertEqual((r.returncode, dirs, packs, s.mod_calls()), (0, set(), 0, []), r.stderr)
+
+    def test_a_changed_internal_tool_is_validated_but_is_never_a_release_asset(self):
+        s, base = self.fixture(); self.edit(s, "patches/genesis/tool/main/README.md")
+        r, dirs, packs = self.validated(s, base); self.assertEqual((r.returncode, dirs, packs), (0, {"tool/main"}, 2), r.stderr)   # one project: check + pack twice for determinism
+        self.assertFalse((s.tmp / "w").exists())
+
+    def test_a_changed_patch_validates_itself_and_its_release_only(self):
+        s, base = self.fixture(); self.edit(s, "patches/genesis/b/main/README.md")   # pb is in v2.0.0 (with legacy pa); v3.0.0 (pc) is unrelated
+        r, dirs, packs = self.validated(s, base); self.assertEqual((r.returncode, dirs, packs), (0, {"b/main"}, 2), r.stderr)
+        self.assertNotIn("c/main", dirs); self.assertNotIn("hist/main", dirs)
+
+    def test_a_new_release_manifest_validates_exactly_its_packages(self):
+        s, base = self.fixture(); s.mod_patch("e", "main", "pe", state="eligible"); s.commit("patch e"); base = git(s.d, "rev-parse", "HEAD")
+        s.begin("v4.0.0", "pe@0.1.0"); s.commit("begin v4")
+        r, dirs, packs = self.validated(s, base); self.assertEqual((r.returncode, dirs, packs), (0, {"e/main"}, 2), r.stderr)
+
+    def test_only_the_affected_release_projects_are_validated(self):
+        s, base = self.fixture(); f = s.d / "releases/v3.0.0.json"; d = json.loads(f.read_text()); f.write_text(json.dumps(d, indent=4)); s.commit("touch v3 record")
+        r, dirs, packs = self.validated(s, base); self.assertEqual((r.returncode, dirs), (0, {"c/main"}), r.stderr)   # v3.0.0 = pc; v2.0.0 (pb) untouched
+        self.assertEqual(packs, 2)
+
+    def test_a_shared_tool_change_validates_every_prepared_release_project(self):
+        s, base = self.fixture(); self.edit(s, "scripts/PRODUCT_REF")
+        r, dirs, packs = self.validated(s, base)
+        self.assertEqual((r.returncode, dirs, packs), (0, {"b/main", "c/main"}, 4), r.stderr)   # both prepared releases' schema 3 packages, still not the internal tool or the published hist
+        self.assertNotIn("hist/main", dirs); self.assertNotIn("tool/main", dirs)
+
+    def test_an_unresolvable_base_fails_closed_without_skipping(self):
+        s, _ = self.fixture()
+        for f in (s.mod_log, s.writer_log): f.unlink(missing_ok=True)
+        for bad in ("no-such-ref", "0" * 40):
+            r = run(S / "check_repo.py", "--root", s.d, "--segarecomp", s.cli, "--changed-from", bad, env=s.env)
+            self.assertNotEqual(r.returncode, 0, bad); self.assertIn("cannot be trusted", r.stderr + r.stdout)
+        self.assertEqual(s.mod_calls(), [])
+
+    def test_without_a_base_every_project_is_validated_and_nothing_is_published(self):
+        s, base = self.fixture()
+        for f in (s.mod_log, s.writer_log): f.unlink(missing_ok=True)
+        r = run(S / "check_repo.py", "--root", s.d, "--segarecomp", s.cli, env=s.env); self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual({pathlib.Path(l.split()[2]).name for l in s.mod_calls() if l.startswith("mod check")} , {"main"}); self.assertEqual(len([l for l in s.mod_calls() if l.startswith("mod check")]), 4)   # pb, pc, ptool, phist: the explicit full check
+
+    def test_no_published_historical_package_is_rebuilt_by_routine_validation(self):
+        s, base = self.fixture(); self.edit(s, "scripts/PRODUCT_REF"); self.validated(s, base)
+        self.assertFalse(any("hist" in l for l in s.mod_calls()))
+        r, n, tags = self.run_affected(s, base); self.assertEqual(tags, ["v2.0.0", "v3.0.0"]); self.assertFalse(any("hist" in l or l.startswith("old") for l in s.mod_calls() + s.writer_calls()))
 
 
 @unittest.skipUnless(SEGAPATCH, "set SEGAPATCH to the pinned product tools/segapatch.py to reconstruct the v0.1.0 packages")
