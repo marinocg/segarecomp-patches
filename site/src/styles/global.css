@@ -211,3 +211,24 @@ footer .meta a, footer .meta { font-size: 0.85rem; }
 
 /* tap targets: the phone menu toggle must be at least 44px */
 .sl-menu-button { min-width: 2.75rem; min-height: 2.75rem; }
+
+/* the download link of a catalog package: the one call to action on a package page, and a compact variant in the catalog list */
+.download-button {
+  display: inline-flex; align-items: center; gap: 0.9rem; min-height: 3.5rem; padding: 0.7rem 1.5rem;
+  background: var(--sl-color-accent); color: var(--color-night-950); text-decoration: none; line-height: 1.15;
+  font-family: var(--font-pixel); font-weight: 700; font-size: 1.15rem;
+  border: 2px solid var(--pixel-shadow); box-shadow: 4px 4px 0 0 var(--pixel-shadow);
+  transition: transform 80ms steps(2), box-shadow 80ms steps(2);
+}
+:root[data-theme='light'] .download-button { color: var(--color-paper); }
+.download-button svg { width: 1.6rem; height: 1.6rem; flex: none; }
+.download-button__label { display: block; letter-spacing: 0.04em; text-transform: uppercase; }
+.download-button__meta { display: block; margin-top: 0.15rem; font-family: var(--sl-font); font-size: 0.8rem; font-weight: 600; overflow-wrap: anywhere; }
+.download-button:hover { background: var(--sl-color-accent-high); color: var(--color-night-950); }
+.download-button:focus-visible { outline: 3px solid var(--sl-color-white); outline-offset: 3px; }
+.download-button:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 0 var(--pixel-shadow); }
+.download-button--compact { min-height: 2.75rem; padding: 0.45rem 1rem; font-size: 0.95rem; gap: 0.6rem; }
+.download-button--compact svg { width: 1.2rem; height: 1.2rem; }
+.download-button--compact .download-button__meta { font-size: 0.72rem; }
+@media (max-width: 30rem) { .download-button { display: flex; width: 100%; justify-content: center; } }
+@media (prefers-reduced-motion: reduce) { .download-button { transition: none; } }

@@ -9,7 +9,7 @@ The earlier 16:9 package was two typed edits (right lookahead 0x200, initial-fil
 * Pool: never full on any of the 29 stages (max 28 of 32 slots on the hold-right route, 31 on the right/left route; original 25/26); retry ring: 0 allocation failures, 0 expirations, 0 ring-full drops, queue maximum 11 of 16, 163 deferral attempts (all later loaded, or dropped on leaving the window).
 * Identities: 0 original identities lost on the deterministic route (26 stages with objects). Score/damage events: identical to the original on 27 of 29 stages; stages 3-5/3-6 differ in the number of damage events (earlier activation changes enemy contact), which is an expected gameplay difference. The route collects no items, so item collection was not exercised.
 * Executable tests: `tests/test_castle_activation_exec.py` runs all 44 scenarios for this variant (including the saturated-queue lifecycle) (deferral, reservation, CCR, RAM ownership, window edges at right 0x200).
-* Package identity `82e27a15483e26eb2c58876e02e4773011f9efad5755ca945b5b39271540c74b`; effective image `10a2c1adc517bb9eca38fdb04f2eec91e15c7e72aba3a3564b1a2c03d6d7265b`. Product `marinocg/segarecomp` main `8d419ab`. Unpublished source project: no `release.json`, no catalog entry.
+* Package identity `82e27a15483e26eb2c58876e02e4773011f9efad5755ca945b5b39271540c74b`; effective image `10a2c1adc517bb9eca38fdb04f2eec91e15c7e72aba3a3564b1a2c03d6d7265b`. Product `marinocg/segarecomp` main `8d419ab`. Unpublished source project: not selected by any release, no catalog entry (see `publication.json`).
 
 ## Not verified
 Items, damage by cause, collisions, non-visual triggers, RNG effects, boss completion and natural level progression were not verified for this variant (see the 32:9 README, Acceptance).

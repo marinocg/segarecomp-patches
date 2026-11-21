@@ -19,7 +19,7 @@ const firstSentence = (s) => (s.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? s);
 
 /** Meta description of a package page, from its own catalog fields. */
 export function packageDescription(e) {
-  const kind = e.trust === 'trusted-native-source' ? 'native-source patch package' : 'data-only BPS patch package';
+  const kind = e.schema_version === 3 ? 'source-based mod package (schema 3)' : e.trust === 'trusted-native-source' ? 'native-source patch package' : 'data-only BPS patch package';
   return trunc(`${e.name} ${e.version} for ${e.game} on ${PLATFORM[e.platform] ?? e.platform}: a segarecomp ${kind}. ${firstSentence(e.supported_scope)}`, 200);
 }
 
@@ -51,7 +51,9 @@ export function packageLd(site, base, e) {
   const url = absolute(site, base, `/catalog/${e.id}/${e.version}/`);
   const ld = { '@context': 'https://schema.org', '@type': 'SoftwareApplication', '@id': `${url}#software`, name: `${e.name} ${e.version}`, url, softwareVersion: e.version,
     description: e.supported_scope, downloadUrl: e.asset.url, fileSize: `${e.package_size} bytes`, inLanguage: 'en',
-    additionalProperty: [{ '@type': 'PropertyValue', name: 'Package SHA-256', value: e.package_sha256 }, { '@type': 'PropertyValue', name: 'Source image SHA-256', value: e.source_image_sha256 }] };
+    additionalProperty: [{ '@type': 'PropertyValue', name: 'Package SHA-256', value: e.package_sha256 },
+      // a schema 3 mod has no single source image: it lists the images it targets, and has no BPS or patched image to describe
+      ...(e.schema_version === 3 ? e.images.map((i) => ({ '@type': 'PropertyValue', name: `Target image SHA-256 (${i.label})`, value: i.sha256 })) : [{ '@type': 'PropertyValue', name: 'Source image SHA-256', value: e.source_image_sha256 }])] };
   if (LICENSE_URL[e.license]) ld.license = LICENSE_URL[e.license];
   return ld;
 }

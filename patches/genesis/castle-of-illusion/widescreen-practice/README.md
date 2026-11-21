@@ -2,7 +2,7 @@
 
 > One schema 3 / native ABI 2 mod. **Widescreen:** in the 17 verified scrolling scenes (every scrolling stage of the game) the cells beside the 320-pixel picture are rebuilt from the game's own block maps instead of repeating the wrapped VDP plane. **Actors:** the game's own sprites that its object sprite builder drops beside the picture are drawn as native ABI 2 virtual sprites from the game's own VRAM/CRAM art, on the layer of their own priority bit, so actors no longer pop in and out beside the picture (no ROM edit, no guest write). **Practice+:** pressing A+B+C together restores Mickey's power to full, only in the verified scenes, only when it is 1 to 4.
 
-**Status: unpublished source (SEG-149-T002 and SEG-149-T003, delivery W04, awaiting human review).** There is no `release.json`, no catalog entry and no release asset. Check, pack and build it locally with the product's `segarecomp mod` tools; nothing here has been released.
+**Status: publication candidate (SEG-149-T002 and SEG-149-T003, delivery W04; recorded for release by the per-patch layout follow-up).** Its package version `0.1.0` is recorded in [`package.json`](package.json) (identity and SHA-256 from the product's `mod pack`), and `publication.json` lists it as `candidate`: it is **not approved for publication**, no release selects it, it has no catalog entry and no release asset. Check, pack and build it locally with the product's `segarecomp mod` tools; nothing here has been released. To release it, a maintainer reviews it, marks it `eligible` and selects it in a release ([docs/releases.md](../../../../docs/releases.md)).
 
 | | |
 |---|---|
@@ -14,7 +14,7 @@
 | Guest memory | reads: the block tables, both maps, the scroll records (`mod.toml`). **Writes: only Practice+, three declared ranges** (power word, five HUD slot words, one HUD flag byte) |
 | Geometry claim | up to 32:9 (see "Coverage" for what is really delivered) |
 | Product dependencies | a `segarecomp` with product ADR 0311 (hook anchor), ADR 0312 (virtual-sprite priority in the extension columns), ADR 0313 (hardware-piece commands, independent provider contributions, two scenery windows per plane) ADR 0314 (a provider may leave a scenery plane to the VDP-derived extension) and ADR 0315 (the asymmetric viewport: `view_margin` / `view_left`). **Older products are not supported.** Demonstrated: against the SDK headers from before ADR 0313 the provider does not compile (`GenesisVirtualSprite` has no `flags`), and against those from before ADR 0315 it does not compile either (`SegaGenesisRenderApi` has no `view_margin`), so the package cannot be built. A second window on one plane was a range fault that disables the whole mod before ADR 0313 (the product's own duplicate-window test of that time). On a host with ADR 0313 but not 0314 the package builds and runs (mod healthy, Practice+ panel and actors unaffected, measured on the real image) but no authored scenery is served in the scenes where plane B has no window, so those margins fall back to the generic extension (about 14,000 margin pixels differ from an ADR 0314 host in a sampled frame; the picture is unchanged) |
-| Package identity | pinned in `tests/package.json` (identity and SHA-256 of the deterministic package); the pin changes with every source or manifest byte |
+| Package identity | pinned in `package.json` and `tests/package.json` (identity and SHA-256 of the deterministic package; they must agree); the pin changes with every source or manifest byte |
 
 | Original image | SHA-256 |
 |---|---|

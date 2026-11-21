@@ -10,4 +10,4 @@ Schema 1 (BPS-only) packages contain no executable code.
 
 Please report privately through GitHub's **Report a vulnerability** (Security tab of this repository) rather than a public issue. Include the package id/version, what you observed and, if possible, a minimal reproduction that does not contain game data. Do not attach ROMs or game dumps.
 
-Examples of in-scope reports: a published asset whose digest differs from `release.json`/`SHA256SUMS`, provider code that does more than its documentation states, or commercial game content committed to the repository.
+Examples of in-scope reports: a published asset whose digest differs from the catalog/`package.json`/`SHA256SUMS`, provider code that does more than its documentation states, or commercial game content committed to the repository.

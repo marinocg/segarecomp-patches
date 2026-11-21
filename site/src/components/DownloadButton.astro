@@ -1,0 +1,13 @@
+---
+// The prominent download link of one catalog package. The data-* attributes are the facts the `patch_download` Google Tag Manager event reports
+// (src/lib/consent.mjs): they come from the validated catalog entry only, never from the visitor.
+import { kib } from '../lib/catalog.mjs';
+const { e, location, compact = false } = Astro.props;
+---
+<a class:list={['download-button', compact && 'download-button--compact']} href={e.asset.url} rel="noopener"
+  aria-label={`Download ${e.name} ${e.version}, ${e.asset.name}, ${kib(e.package_size)}`}
+  data-patch-download data-patch-id={e.id} data-patch-version={e.version} data-patch-name={e.name} data-patch-release={e.release} data-patch-schema={e.schema_version}
+  data-patch-platform={e.platform} data-patch-game={e.game} data-patch-file={e.asset.name} data-download-location={location}>
+  <svg aria-hidden="true" focusable="false" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="currentColor" d="M7 1h2v7h2v1h-1v1H9v1H7v-1H6V9H5V8h2zM2 13h12v2H2z" /></svg>
+  <span><span class="download-button__label">Download</span><span class="download-button__meta">{e.asset.name} · {kib(e.package_size)}</span></span>
+</a>

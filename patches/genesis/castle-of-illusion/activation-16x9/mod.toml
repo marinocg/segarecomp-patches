@@ -1,5 +1,5 @@
 # Castle of Illusion activation 16x9 (gameplay-changing): the widescreen + Practice+ provider of patches/genesis/castle-of-illusion/widescreen-practice (src/provider.c is a byte-identical copy, checked by tests/test_castle_activation.py) plus a GAMEPLAY-CHANGING early object activation.
-# Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
+# Unpublished source project: not selected by any release, no catalog entry (publication.json). Native code is host code: the user approves the exact package identity.
 [mod]
 id = "castle-of-illusion-activation-16x9"
 author = "segarecomp-patches contributors"

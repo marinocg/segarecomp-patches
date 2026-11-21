@@ -1,6 +1,6 @@
-// Strict reader for catalog/index.json (catalog_format 1). Plain ESM so the Astro content collection and the Node tests share it.
+// Strict reader for catalog/index.json (catalog_format 1 or 2; 2 = 1 plus schema 3 mod entries). Plain ESM so the Astro content collection and the Node tests share it.
 // The pages are generated from this data only; a malformed entry throws and therefore fails `astro build`.
-// The authoritative format contract is catalog/schema/catalog-1.schema.json (validated in CI by scripts/validate_catalog.py before the build);
+// The authoritative format contract is catalog/schema/catalog-2.schema.json (validated in CI by scripts/validate_catalog.py before the build);
 // this schema asserts what the pages render, so a page can never show a missing digest or an unpinned source.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -10,30 +10,21 @@ const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const sha1 = z.string().regex(/^[0-9a-f]{40}$/);
 const https = z.string().regex(/^https:\/\/\S+$/);
 
-export const entrySchema = z.object({
+const common = {
   id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
   version: z.string().regex(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/),
   name: z.string().min(1),
   platform: z.enum(['genesis', 'master-system', 'game-gear', 'sega-cd']),
   game: z.string().min(1),
   game_path: z.string().min(1),
-  revision: z.string().min(1),
-  region: z.string().min(1),
+  source_path: z.string().min(1).optional(),   // where the sources were at source_revision.commit; absent on entries published before the per-patch layout (they were under game_path)
   release: z.string().regex(/^v\d+\.\d+\.\d+$/),
   source_identity_kind: z.enum(['cartridge-image-sha256', 'disc-image-identity']),
   bios_requirement: z.enum(['none', 'required', 'optional']),
-  schema_version: z.number().int(),
-  native_abi: z.number().int().nullish(),
-  capabilities: z.array(z.string()).optional(),
-  trust: z.enum(['data-only', 'trusted-native-source']),
   executable_code: z.boolean(),
   package_sha256: sha256,
   package_size: z.number().int().positive(),
   package_identity: sha256,
-  source_image_sha256: sha256,
-  patched_image_sha256: sha256,
-  bps_sha256: sha256,
-  native_source_sha256: sha256.nullish(),
   evidence_tier: z.enum(['synthetic-only', 'maintainer-attested', 'automated']),
   gameplay: z.string().min(1),
   license: z.string().min(1),
@@ -43,9 +34,44 @@ export const entrySchema = z.object({
   source_revision: z.object({ repository: https, commit: sha1, tag: z.string().optional(), tag_commit: sha1.optional() }).strict(),
   build: z.object({ writer: z.string(), writer_ref: sha1, deterministic: z.boolean() }).strict(),
   asset: z.object({ name: z.string().min(1), url: https }).strict(),
+};
+
+/** A schema 1 or 2 package: a BPS delta against one exact image, optionally with native C11 source. */
+export const patchEntrySchema = z.object({
+  ...common,
+  revision: z.string().min(1),
+  region: z.string().min(1),
+  schema_version: z.union([z.literal(1), z.literal(2)]),
+  native_abi: z.number().int().nullish(),
+  capabilities: z.array(z.string()).optional(),
+  trust: z.enum(['data-only', 'trusted-native-source']),
+  source_image_sha256: sha256,
+  patched_image_sha256: sha256,
+  bps_sha256: sha256,
+  native_source_sha256: sha256.nullish(),
 }).passthrough();
 
-export const catalogSchema = z.object({ catalog_format: z.literal(1), packages: z.array(entrySchema) }).strict();
+/** A schema 3 / native ABI 2 mod: source-based, no BPS delta and no patched image. `.strict()` so a fabricated BPS or ROM field fails the build. */
+export const modEntrySchema = z.object({
+  ...common,
+  schema_version: z.literal(3),
+  native_abi: z.literal(2),
+  capabilities: z.array(z.string().min(1)).min(1),
+  trust: z.literal('trusted-native-source'),
+  images: z.array(z.object({ label: z.string().min(1), sha256 }).strict()).min(1),
+}).strict();
+
+export const isMod = (e) => e.schema_version === 3;
+
+// One entry shape per package schema; the error names the real problem instead of "no alternative matched".
+export const entrySchema = z.unknown().transform((v, ctx) => {
+  const r = (v && typeof v === 'object' && v.schema_version === 3 ? modEntrySchema : patchEntrySchema).safeParse(v);
+  if (r.success) return r.data;
+  for (const i of r.error.issues) ctx.addIssue({ code: 'custom', message: i.message, path: i.path });
+  return z.NEVER;
+});
+
+export const catalogSchema = z.object({ catalog_format: z.union([z.literal(1), z.literal(2)]), packages: z.array(entrySchema) }).strict();
 
 /** Parse and validate; duplicates of (id, version) are refused. Returns the entries sorted by game, id, version. */
 export function parseCatalog(text, where = 'catalog') {

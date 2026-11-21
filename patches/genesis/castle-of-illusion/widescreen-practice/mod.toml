@@ -1,5 +1,5 @@
 # Castle of Illusion starring Mickey Mouse (Genesis, USA/Europe): authored widescreen scenery and Practice+ (a user-invoked power restore) as ONE schema 3 / native ABI 2 package.
-# Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
+# Unpublished source project: not selected by any release, no catalog entry (publication.json). Native code is host code: the user approves the exact package identity.
 [mod]
 id = "castle-of-illusion-widescreen-practice"
 author = "segarecomp-patches contributors"

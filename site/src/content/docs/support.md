@@ -10,6 +10,6 @@ This documentation site does not decide which games or platforms work. The only 
 
 The ledger link above is pinned to the product revision recorded in `docs/product-docs.pin.json`.
 
-Each published package states the exact image SHA-256 it applies to, its scope and its limitations in its own `release.json` and README in the [repository](https://github.com/marinocg/segarecomp-patches/tree/main/patches). A package that is not listed there, or an image whose digest differs, is not supported.
+Each published package states the exact image SHA-256 it applies to, its scope and its limitations in its own `package.json` and README in the [repository](https://github.com/marinocg/segarecomp-patches/tree/main/patches). A package that is not listed there, or an image whose digest differs, is not supported.
 
 Features that are not implemented yet are not documented here as available.

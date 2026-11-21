@@ -1,5 +1,5 @@
 # Castle of Illusion starring Mickey Mouse (Genesis, USA/Europe): INPUT RECORDER (a developer tool, not a game change). It only READS the controller once per guest frame and logs every change; it writes nothing to the game, adds no ROM edit and no guest code.
-# Unpublished source project: no release.json, no catalog entry. Native code is host code: the user approves the exact package identity.
+# Unpublished source project: not selected by any release, no catalog entry (publication.json). Native code is host code: the user approves the exact package identity.
 [mod]
 id = "castle-of-illusion-input-recorder"
 author = "segarecomp-patches contributors"

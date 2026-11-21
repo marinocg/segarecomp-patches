@@ -48,14 +48,16 @@ Screenshots are real captures of generated-native gameplay, linked from [segarec
 
 Details, command-line verification and troubleshooting: [docs/installation.md](docs/installation.md). Compatibility: [docs/compatibility.md](docs/compatibility.md). Release process: [docs/releases.md](docs/releases.md). Writing a patch: [docs/creating-patches.md](docs/creating-patches.md).
 
-segarecomp needs a build that includes the patch installer and native patch SDK. That functionality is on the product's `main` branch and is not part of the v0.7.0 release.
+segarecomp needs a build that includes the patch installer and native patch SDK. That functionality is on the product's `main` branch and is not part of the v0.7.0 release. Schema 3 (source-based mod) packages additionally need `segarecomp mod install`, which is not in any tagged release yet; they are catalogued for a future launcher and must not be assumed installable.
 
 ## Repository layout
 
 ```text
-patches/<platform>/<game>/   README.md, release.json, source/ (reviewed provider source and BPS deltas)
-catalog/index.json           static catalog of every PUBLISHED package, derived from release.json (also served on the site)
-catalog/schema/              versioned JSON Schemas of the catalog and release.json
+patches/<platform>/<game>/<patch>/   one project: README.md and mod.toml + src/ (schema 3), or package.json + source/ (schema 1/2)
+publication.json             which patches may be selected for a release (internal by default)
+releases/<tag>.json          one collection release: its explicit list of exact package versions and its lifecycle
+catalog/index.json           static catalog of every PUBLISHED package, generated from the records above (also served on the site)
+catalog/schema/              versioned JSON Schemas of the catalog, the release records and the package facts
 docs/                        installation, compatibility, authoring, releases, catalog format, artifact hosting, analytics and SEO
 site/                        Astro/Starlight documentation and catalog site (GitHub Pages)
 scripts/                     repository checks (no commercial data needed)
