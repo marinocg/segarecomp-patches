@@ -2,12 +2,15 @@
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { getCollection } from 'astro:content';
 import { kib, shortSha } from '../../lib/catalog.mjs';
+import { absolute, breadcrumbLd, collectionLd, ldScript } from '../../lib/seo.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const entries = (await getCollection('catalog')).map((e) => e.data);
+const description = 'Every published segarecomp patch package for Sega Genesis / Mega Drive games with its SHA-256, exact source revision, trust class and the exact images it applies to.';
+const site = Astro.site!;
 const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
 ---
-<StarlightPage frontmatter={{ title: 'Patch catalog', description: 'Every published package with its SHA-256, source revision, trust class and the exact images it applies to.', tableOfContents: false, head: [{ tag: 'link', attrs: { rel: 'alternate', type: 'application/json', href: `${base}/catalog/index.json`, title: 'Machine-readable catalog' } }] }}>
+<StarlightPage frontmatter={{ title: 'Patch catalog', description, tableOfContents: false, head: [{ tag: 'meta', attrs: { property: 'og:type', content: 'website' } }, ldScript(collectionLd(site, base, entries, description)), ldScript(breadcrumbLd([{ name: 'segarecomp patches', url: absolute(site, base, '/') }, { name: 'Patch catalog', url: absolute(site, base, '/catalog/') }])), { tag: 'link', attrs: { rel: 'alternate', type: 'application/json', href: `${base}/catalog/index.json`, title: 'Machine-readable catalog' } }] }}>
   <p>Generated from <code>catalog/index.json</code> at build time; there is no hand-maintained copy. Every entry names the exact package digest and the source commit it was built from. An image is identified by its SHA-256, never by its title.</p>
   <p>Machine-readable: <a href={`${base}/catalog/index.json`}>catalog/index.json</a> and the <a href={`${base}/schema/catalog-1.schema.json`}>catalog</a> and <a href={`${base}/schema/release-1.schema.json`}>release</a> JSON Schemas.</p>
   <p>{entries.length} package{entries.length === 1 ? '' : 's'} in {games.length} project{games.length === 1 ? '' : 's'}.</p>

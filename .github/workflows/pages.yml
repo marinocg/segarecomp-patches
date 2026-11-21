@@ -55,6 +55,7 @@ jobs:
         run: |
           python3 scripts/check_site_links.py site/dist
           python3 scripts/check_site_a11y.py site/dist
+          python3 scripts/check_site_seo.py site/dist
           (cd site && npm run test:search)
           python3 scripts/artifact_budget.py --site-files "$(find site/dist -type f | wc -l)"
       - uses: actions/upload-pages-artifact@v3

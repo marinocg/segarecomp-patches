@@ -50,6 +50,8 @@ try {
     check(doc.packages.every((p) => idx.includes(p.id)), 'index lists every package');
     execFileSync('python3', [path.resolve(site, '../scripts/check_site_a11y.py'), a, '--only', 'catalog/']);
     check(true, 'catalog pages pass the accessibility checks');
+    try { execFileSync('python3', [path.resolve(site, '../scripts/check_site_seo.py'), a], { stdio: 'pipe' }); check(true, 'fixture site passes the SEO, JSON-LD, sitemap, robots and public-catalog checks'); }
+    catch (e) { check(false, `fixture site SEO checks: ${e.stderr}`); }
   }
   const bad = clone(); delete bad.packages[1].package_identity; const badPath = path.join(tmp, 'bad.json'); writeFileSync(badPath, JSON.stringify(bad));
   const rbad = build(path.join(tmp, 'c'), badPath);

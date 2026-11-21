@@ -2,6 +2,7 @@
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { getCollection } from 'astro:content';
 import { kib } from '../../../../lib/catalog.mjs';
+import { absolute, breadcrumbLd, ldScript, packageDescription, packageLd } from '../../../../lib/seo.mjs';
 
 export async function getStaticPaths() {
   const all = (await getCollection('catalog')).map((e) => e.data);
@@ -9,6 +10,7 @@ export async function getStaticPaths() {
 }
 const { e, all } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const site = Astro.site!;
 const repo = e.source_revision.repository;
 const commit = e.source_revision.commit;
 const successor = e.superseded_by ? all.find((x) => `${x.id}@${x.version}` === e.superseded_by) : undefined;
@@ -17,14 +19,15 @@ const trustText = e.trust === 'trusted-native-source'
   ? 'Trusted native source: the package carries C11 source that is compiled and run natively on your machine, unsandboxed. Read the source before you trust it.'
   : 'Data only: a BPS delta and a manifest, no executable code.';
 ---
-<StarlightPage frontmatter={{ title: `${e.name} ${e.version}`, description: `Digests, source revision, trust class and compatible images for ${e.id} ${e.version}.`, tableOfContents: false }}>
+<StarlightPage frontmatter={{ title: `${e.name} ${e.version}`, description: packageDescription(e), tableOfContents: false, head: [{ tag: 'meta', attrs: { property: 'og:type', content: 'website' } }, ldScript(packageLd(site, base, e)), ldScript(breadcrumbLd([{ name: 'segarecomp patches', url: absolute(site, base, '/') }, { name: 'Patch catalog', url: absolute(site, base, '/catalog/') }, { name: `${e.name} ${e.version}`, url: absolute(site, base, `/catalog/${e.id}/${e.version}/`) }]))] }}>
   <p><a href={`${base}/catalog/`}>All packages</a></p>
   {successor && <aside aria-label="Superseded"><p><strong>Superseded</strong> by <a href={`${base}/catalog/${successor.id}/${successor.version}/`}>{successor.id} {successor.version}</a>. This version stays available and unchanged.</p></aside>}
   {e.superseded_by && !successor && <aside aria-label="Superseded"><p><strong>Superseded</strong> by {e.superseded_by}.</p></aside>}
   {predecessors.length > 0 && <p>Supersedes {predecessors.map((p, i) => <><a href={`${base}/catalog/${p.id}/${p.version}/`}>{p.id} {p.version}</a>{i < predecessors.length - 1 ? ', ' : ''}</>)}.</p>}
   <p>{e.supported_scope}</p>
+  <p>This is a segarecomp patch package for {e.game}, not the game and not the segarecomp recompiler itself: it contains no game image and applies only to an image you own that matches the digest below.</p>
   <h2 id="download">Download</h2>
-  <p><a href={e.asset.url}>{e.asset.name}</a> from release <code>{e.release}</code> ({kib(e.package_size)}). Verify the digest below before installing.</p>
+  <p><a href={e.asset.url}>{e.asset.name}</a> from release <code>{e.release}</code> ({kib(e.package_size)}). Verify the digest below before installing. How to install and verify a package: <a href={`${base}/getting-started/`}>getting started</a> and the <a href={`${base}/product/patch-packages/`}>patch package reference</a>.</p>
   <h2 id="digests">Digests</h2>
   <table>
     <caption>Package and source digests</caption>
