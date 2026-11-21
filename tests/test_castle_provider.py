@@ -121,6 +121,17 @@ def ranges():
 GENERIC_B = {"a16x240-b16", "a48x160-b16", "a48x128-b48", "a16x32-b16", "a192x48-b192", "a32x112-b32", "a14x320-b14", "a17x32-b17", "a48x256-b48", "a16x160-b16", "a32x32-b32", "a16x64-b16"}
 
 
+def ref_left(cam, cols, margin):
+    """The expected placement, written from the rule (not from the C): aligned left at the first column, centred in the middle, aligned right at the last (camera = cols * 16 - 320); the two ramps are
+    `zone = min(range / 2, 6 * margin)` camera pixels long and linear; a level narrower than the planned total keeps `min(camera, margin)`."""
+    rng = cols * 16 - 320
+    cam = max(0, min(cam, rng))
+    if rng < 2 * margin:
+        return min(cam, margin)
+    zone = min(rng // 2, 6 * margin)
+    return (margin * min(cam, zone)) // zone + margin - (margin * min(rng - cam, zone)) // zone
+
+
 def expect_window(ram, base, mapaddr, table, rows, stride, wrap, band=False, left=238):
     """The name-table window the provider must submit for the plane whose record is at `base` (independent re-derivation): the main window starting 6 cells left of the view (the view starts `left` pixels
     left of the camera; 238 is the symmetric 32:9 margin the provider assumes while the host's margin is unknown), 128 columns and 32 rows, or, with band=True, the second window of ADR 0313 (the band is not
@@ -374,13 +385,13 @@ class Provider(unittest.TestCase):
         self.assertNotIn("FAULT", out)
         return out[out.index("FRAME2") + 1:], out[:out.index("FRAME2")]
 
-    def test_the_placement_is_the_camera_clamped_to_the_margin(self):
-        # view_x = max(level_start, camera_x - margin), left = camera_x - view_x: the picture starts at the view's left edge at the level's first column and the view is centred once the camera is `margin` in
+    def test_the_placement_ramps_slowly_between_the_aligned_ends(self):
+        # left of the view at the level's first column, centred in the middle, right of the view at the last column, linear ramps in between (a slope of at most 1/6, so the parallax layers do not slide against the foreground)
         for margin in (39, 101, 238):
-            for cam in (0, 1, 38, 39, 40, 100, 237, 238, 239, 1000):
+            for cam in (0, 1, 38, 39, 40, 100, 237, 238, 239, 1000, 1500, 1800, 2100, 3000, 3282, 3300, 3481, 3520, 3600):
                 ram = Ram(rows=16, cols=240, brows=16, cam=cam, cam_b=cam // 2)
                 second, first = self.two_frames(ram, margin)
-                want = min(cam, margin)
+                want = ref_left(cam, 240, margin)
                 self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d %d" % (want, margin)], "margin %d camera %d" % (margin, cam))
                 self.assertEqual([l for l in first if l.startswith("view_left")], [], "the first frame knows no margin: nothing is declared")
                 wins = [l.split() for l in second if l.startswith("window")]
@@ -388,6 +399,32 @@ class Provider(unittest.TestCase):
                 self.assertEqual((int(wins[0][2]), [int(x, 16) for x in wins[0][6:]]), (x0, words), "the plane A window follows the placement (margin %d camera %d)" % (margin, cam))
                 bx0, _, _, bwords = expect_window(ram, REC_A, MAP_A, TBL_A, 16, 240, False, band=True, left=want)
                 self.assertEqual((int(wins[1][2]), [int(x, 16) for x in wins[1][6:]]), (bx0, bwords), "the band window follows the placement")
+
+    def test_the_placement_properties(self):
+        # pure properties of the rule over every camera of several level widths: the ends are aligned, the middle is centred, it never moves faster than the camera allows (no void left of the level or right of its end),
+        # it is monotone with a slope of at most 1/6 once the level is wide enough for the ramps, and it is symmetric (left(c) + left(range - c) = total)
+        for cols in (240, 160, 96, 48):
+            for margin in (39, 101, 238):
+                rng = cols * 16 - 320
+                prev = None
+                for cam in range(0, rng + 1):
+                    left = ref_left(cam, cols, margin)
+                    self.assertTrue(0 <= left <= 2 * margin)
+                    if rng >= 2 * margin:
+                        self.assertLessEqual(left, cam, "no void left of the level")
+                        self.assertGreaterEqual(left, 2 * margin - (rng - cam), "the view never passes the level's end")
+                        self.assertLessEqual(abs(left + ref_left(rng - cam, cols, margin) - 2 * margin), 1, "symmetric")
+                        if prev is not None:
+                            self.assertTrue(0 <= left - prev <= 1, "monotone, one pixel at most per camera pixel")
+                    prev = left
+                if rng >= 2 * margin:
+                    self.assertEqual((ref_left(0, cols, margin), ref_left(rng, cols, margin)), (0, 2 * margin), "aligned left at the start, right at the end")
+                    zone = min(rng // 2, 6 * margin)
+                    self.assertEqual({ref_left(c, cols, margin) for c in range(zone, rng - zone + 1)} - {margin}, set(), "centred between the ramps")
+                    # the slope over the first ramp is margin / zone <= 1/6 when the level is wide enough for a full 6-margin ramp
+                    if rng >= 12 * margin:
+                        self.assertLessEqual(ref_left(zone, cols, margin) - ref_left(0, cols, margin), margin)
+                        self.assertLessEqual((ref_left(zone // 2, cols, margin) + 1) * 6 * zone // zone, 6 * margin + 6)
 
     def test_no_placement_without_a_known_margin_or_a_verified_scene(self):
         ram = Ram(cam=100)
@@ -405,11 +442,11 @@ class Provider(unittest.TestCase):
         out = self.run_script(["init", "margin 238"] + self.frame(ram, frame=1) + self.frame(ram, frame=2) + ["margin 39"] + ["echo F3"] + self.frame(ram, frame=3) + ["echo F4"] + self.frame(ram, frame=4))
         f3 = out[out.index("F3") + 1:out.index("F4")]
         f4 = out[out.index("F4") + 1:]
-        self.assertEqual([l for l in out[:out.index("F3")] if l.startswith("view_left")], ["view_left 150 238"], "frame 2: margin 238 learnt in frame 1")
+        self.assertEqual([l for l in out[:out.index("F3")] if l.startswith("view_left")], ["view_left %d 238" % ref_left(150, 240, 238)], "frame 2: margin 238 learnt in frame 1")
         self.assertEqual([l for l in f3 if l.startswith("view_left")], [], "frame 3: the windows were built for margin 238 but the host now plans 39: no placement")
         self.assertEqual([l for l in f3 if l.startswith("window")], [], "frame 3: and no window either (they answer the cells of a view that is no longer the host's); the actors and the indicator are still submitted")
         self.assertTrue([l for l in f3 if l.startswith("rect")], "the indicator is independent of the view")
-        self.assertEqual([l for l in f4 if l.startswith("view_left")], ["view_left 39 39"], "frame 4: built for 39, declared for 39")
+        self.assertEqual([l for l in f4 if l.startswith("view_left")], ["view_left %d 39" % ref_left(150, 240, 39)], "frame 4: built for 39, declared for 39")
 
     def test_windows_cover_the_placed_view(self):
         # the whole presented view: screen x from -left to 320 + (2 * margin - left); scrolled playfield rows (and plane B's own scroll where it is authored) and the unscrolled band rows
@@ -417,7 +454,7 @@ class Provider(unittest.TestCase):
             for cam in (0, 7, 39, 96, 238, 343, 511, 512, 600, 1500, 3800):
                 for ram, planes in ((Ram(rows=32, cols=128, brows=32, bstride=128, cam=cam % 2000, cam_b=((cam * 3) // 5) % 2000), (0, 1)), (Ram(cam=cam, cam_b=(cam * 3) // 5), (0,))):
                     second, _ = self.two_frames(ram, margin)
-                    left = min(ram.r(REC_A + 4), margin)
+                    left = ref_left(ram.r(REC_A + 4), ram.cols, margin)
                     self.assertEqual([l for l in second if l.startswith("view_left")], ["view_left %d %d" % (left, margin)])
                     wins = [l.split() for l in second if l.startswith("window")]
                     for plane in planes:
@@ -491,8 +528,8 @@ class Provider(unittest.TestCase):
     # A piece is submitted only if the game DROPPED it (screen x < -32 or >= 352, d0 outside 0x60..0x1DF) or KEPT it beside the raster (its part beside the raster). Screen x = d0 - 128; every test piece is 32 x 32 px unless said.
     def at(self, sx, **kw): return self.piece((sx + 128) & 0xFFFF, **kw)
 
-    def actors_placed(self, hooks, margin=101, cam=100, margin2=None):
-        """Two frames: frame 1 learns the host's plan, frame 2 (with `hooks`, plan `margin2` or the same) builds the exact placement view_left = min(camera, margin). Returns frame 2's output only."""
+    def actors_placed(self, hooks, margin=101, cam=601, margin2=None):   # camera 601 of a 240-block level: the ramp (6 * 101 = 606 camera pixels) places the picture 100 columns from the left of the view
+        """Two frames: frame 1 learns the host's plan, frame 2 (with `hooks`, plan `margin2` or the same) builds the exact placement view_left = placement(camera). Returns frame 2's output only."""
         ram = Ram(cam=cam)
         lines = ["init"] + self.load(ram) + ["pad 0", "margin %d" % margin, "frame 1", "phase input", "phase post-input", "phase frame-end", "phase render", "echo ---\n"]
         if margin2 is not None: lines.append("margin %d" % margin2)
@@ -523,7 +560,7 @@ class Provider(unittest.TestCase):
         self.assertFalse(any(l.startswith("log ") for l in out))
 
     def test_both_directions_and_the_exact_edges_of_the_placed_view(self):
-        # camera 100 < margin 101: the picture sits 100 px from the view's left edge; the view is [-100, 422) in screen x (320 + 202 - 100); a piece is kept while a pixel of it is within 8 px of the view
+        # camera 601: the placement is 100 (see ref_left): the picture sits 100 px from the view's left edge; the view is [-100, 422) in screen x (320 + 202 - 100); a piece is kept while a pixel of it is within 8 px of the view
         for sx, shown in ((-141, False), (-140, False), (-139, True), (-120, True), (352, True), (429, True), (430, False), (600, False)):
             out = self.actors_placed([self.at(sx)])
             self.assertEqual(len(self.sprites(out)), 1 if shown else 0, sx)
