@@ -26,6 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # A release event's own ref is the tag, whose tree predates the site (v0.1.0). The site and catalog always come from the default
+          # branch (or the dispatched/pushed ref); the tag only selects which published assets are verified.
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -45,7 +48,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/published"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/published"
-          python3 scripts/check_repo.py --assets "$RUNNER_TEMP/published"
+          python3 scripts/check_repo.py --assets "$RUNNER_TEMP/published" --release "$TAG"
       - working-directory: site
         run: npm ci && npm run build
       - name: Link check and search test on exactly what will be published

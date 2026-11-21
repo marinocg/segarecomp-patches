@@ -5,12 +5,14 @@
 
 For every release.json `source_revision`:
   * `commit` exists and is an ancestor of HEAD (a source link that a force-push or an unmerged branch could orphan is refused);
-  * when `tag`/`tag_commit` are recorded the tag still resolves to `tag_commit` and has the same tree as `commit`
-    (the v0.1.0 tag points at the pre-squash PR head, which is NOT on `main`; its tree equals the squash commit's);
+  * the declared tag EXISTS (a missing tag fails) and equals the release; it resolves to `commit`, or, where the historical exception applies
+    (`tag_commit` recorded: the v0.1.0 tag points at the pre-squash PR head, which is NOT on `main`), exactly to `tag_commit`, whose tree equals the source commit's;
   * at `commit`, each package's manifest, BPS and provider source have exactly the digests recorded in release.json,
     so a rebuild from that commit (scripts/build_packages.py) reproduces the published package.
 """
 import argparse, hashlib, json, pathlib, subprocess, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import release_meta
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -28,30 +30,40 @@ def verify(root, errs, head="HEAD"):
     root = pathlib.Path(root)
     if git(root, "rev-parse", "--git-dir").returncode != 0: errs.append("provenance: not a Git checkout"); return
     if git(root, "rev-parse", "--is-shallow-repository").stdout.strip() == b"true": errs.append("provenance: shallow clone; fetch full history (fetch-depth: 0)"); return
-    for rj in sorted((root / "patches").glob("*/*/release.json")):
-        rel = json.loads(rj.read_text()); d = rj.parent.relative_to(root).as_posix(); sr = rel.get("source_revision", {})
-        c = sr.get("commit", ""); n = f"{d}"
-        if git(root, "cat-file", "-e", f"{c}^{{commit}}").returncode != 0: errs.append(f"provenance: {n}: source commit {c} does not exist"); continue
-        if git(root, "merge-base", "--is-ancestor", c, head).returncode != 0: errs.append(f"provenance: {n}: source commit {c} is not an ancestor of {head}")
-        tc = sr.get("tag_commit")
-        if tc:
-            if git(root, "cat-file", "-e", f"{tc}^{{commit}}").returncode != 0: errs.append(f"provenance: {n}: tag commit {tc} does not exist"); 
+    done = set()
+    for pk in release_meta.packages(root):
+        if pk.status != "published":
+            if pk.source_revision.get("tag") or pk.source_revision.get("tag_commit"): errs.append(f"provenance: {pk.id}@{pk.version}: a prepared release cannot declare a tag yet")
+            continue
+        sr, d, c = pk.source_revision, pk.dir.relative_to(root).as_posix(), pk.source_revision.get("commit", "")
+        n = f"{pk.release} {pk.id}@{pk.version}"
+        if (pk.release, c) not in done:   # one commit/tag verdict per release, not per package
+            done.add((pk.release, c))
+            if git(root, "cat-file", "-e", f"{c}^{{commit}}").returncode != 0: errs.append(f"provenance: {n}: source commit {c} does not exist"); continue
+            if git(root, "merge-base", "--is-ancestor", c, head).returncode != 0: errs.append(f"provenance: {n}: source commit {c} is not an ancestor of {head}")
+            tag, tc = sr.get("tag"), sr.get("tag_commit")
+            if tc and not tag: errs.append(f"provenance: {n}: tag_commit without a tag")
+            if not tag: errs.append(f"provenance: {n}: a published release must declare its tag")
             else:
-                t1, t2 = git(root, "rev-parse", f"{c}^{{tree}}").stdout, git(root, "rev-parse", f"{tc}^{{tree}}").stdout
-                if t1 != t2: errs.append(f"provenance: {n}: tag commit tree differs from the source commit tree")
-            tag = sr.get("tag")
-            r = git(root, "rev-parse", "--verify", "-q", f"refs/tags/{tag}^{{commit}}")
-            if r.returncode == 0 and r.stdout.decode().strip() != tc: errs.append(f"provenance: {n}: tag {tag} no longer points at {tc}")
-        for p in rel["packages"]:
-            files = [(f"{d}/source/{p['id']}.manifest.json", None), (f"{d}/{p['bps']['path']}", p["bps"]["sha256"])]
-            if p.get("source"): files.append((f"{d}/{p['source']['path']}", p["source"]["sha256"]))
-            for path, want in files:
-                data = blob(root, c, path)
-                if data is None: errs.append(f"provenance: {p['id']}: {path} not present at {c[:12]}"); continue
-                if want and hashlib.sha256(data).hexdigest() != want: errs.append(f"provenance: {p['id']}: {path} at {c[:12]} differs from release.json")
-                if want is None:
-                    m = json.loads(data); pl = m.get("payloads", {})
-                    if (m.get("id"), m.get("version"), pl.get("rom", {}).get("sha256")) != (p["id"], p["version"], p["bps_sha256"]): errs.append(f"provenance: {p['id']}: manifest at {c[:12]} differs from release.json")
+                if tag != pk.release: errs.append(f"provenance: {n}: source_revision.tag {tag!r} is not the release {pk.release!r}")
+                r = git(root, "rev-parse", "--verify", "-q", f"refs/tags/{tag}^{{commit}}")
+                if r.returncode != 0: errs.append(f"provenance: {n}: declared tag {tag} does not exist (fetch tags: fetch-depth: 0)")
+                else:
+                    got = r.stdout.decode().strip()
+                    if tc:   # the historical exception: the tag points at a pre-squash head that is NOT on main but has the same tree
+                        if got != tc: errs.append(f"provenance: {n}: tag {tag} resolves to {got[:12]}, not the recorded tag_commit {tc[:12]}")
+                        elif git(root, "rev-parse", f"{c}^{{tree}}").stdout != git(root, "rev-parse", f"{tc}^{{tree}}").stdout: errs.append(f"provenance: {n}: tag commit tree differs from the source commit tree")
+                    elif got != c: errs.append(f"provenance: {n}: tag {tag} resolves to {got[:12]}, not the source commit {c[:12]}")
+        p = pk.p
+        files = [(f"{d}/source/{p['id']}.manifest.json", None), (f"{d}/{p['bps']['path']}", p["bps"]["sha256"])]
+        if p.get("source"): files.append((f"{d}/{p['source']['path']}", p["source"]["sha256"]))
+        for path, want in files:
+            data = blob(root, c, path)
+            if data is None: errs.append(f"provenance: {p['id']}: {path} not present at {c[:12]}"); continue
+            if want and hashlib.sha256(data).hexdigest() != want: errs.append(f"provenance: {p['id']}: {path} at {c[:12]} differs from release.json")
+            if want is None:
+                m = json.loads(data); pl = m.get("payloads", {})
+                if (m.get("id"), m.get("version"), pl.get("rom", {}).get("sha256")) != (p["id"], p["version"], p["bps_sha256"]): errs.append(f"provenance: {p['id']}: manifest at {c[:12]} differs from release.json")
 
 
 def main(argv=None):
