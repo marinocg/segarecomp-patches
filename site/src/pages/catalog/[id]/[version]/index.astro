@@ -1,0 +1,70 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getCollection } from 'astro:content';
+import { kib } from '../../../../lib/catalog.mjs';
+
+export async function getStaticPaths() {
+  const all = (await getCollection('catalog')).map((e) => e.data);
+  return all.map((e) => ({ params: { id: e.id, version: e.version }, props: { e, all } }));
+}
+const { e, all } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const repo = e.source_revision.repository;
+const commit = e.source_revision.commit;
+const successor = e.superseded_by ? all.find((x) => `${x.id}@${x.version}` === e.superseded_by) : undefined;
+const predecessors = all.filter((x) => x.superseded_by === `${e.id}@${e.version}`);
+const trustText = e.trust === 'trusted-native-source'
+  ? 'Trusted native source: the package carries C11 source that is compiled and run natively on your machine, unsandboxed. Read the source before you trust it.'
+  : 'Data only: a BPS delta and a manifest, no executable code.';
+---
+<StarlightPage frontmatter={{ title: `${e.name} ${e.version}`, description: `Digests, source revision, trust class and compatible images for ${e.id} ${e.version}.`, tableOfContents: false }}>
+  <p><a href={`${base}/catalog/`}>All packages</a></p>
+  {successor && <aside aria-label="Superseded"><p><strong>Superseded</strong> by <a href={`${base}/catalog/${successor.id}/${successor.version}/`}>{successor.id} {successor.version}</a>. This version stays available and unchanged.</p></aside>}
+  {e.superseded_by && !successor && <aside aria-label="Superseded"><p><strong>Superseded</strong> by {e.superseded_by}.</p></aside>}
+  {predecessors.length > 0 && <p>Supersedes {predecessors.map((p, i) => <><a href={`${base}/catalog/${p.id}/${p.version}/`}>{p.id} {p.version}</a>{i < predecessors.length - 1 ? ', ' : ''}</>)}.</p>}
+  <p>{e.supported_scope}</p>
+  <h2 id="download">Download</h2>
+  <p><a href={e.asset.url}>{e.asset.name}</a> from release <code>{e.release}</code> ({kib(e.package_size)}). Verify the digest below before installing.</p>
+  <h2 id="digests">Digests</h2>
+  <table>
+    <caption>Package and source digests</caption>
+    <tbody>
+      <tr><th scope="row">Package SHA-256</th><td><code>{e.package_sha256}</code></td></tr>
+      <tr><th scope="row">Package identity</th><td><code>{e.package_identity}</code></td></tr>
+      <tr><th scope="row">BPS SHA-256</th><td><code>{e.bps_sha256}</code></td></tr>
+      {e.native_source_sha256 && <tr><th scope="row">Native source SHA-256</th><td><code>{e.native_source_sha256}</code></td></tr>}
+    </tbody>
+  </table>
+  <h2 id="source">Source revision</h2>
+  <table>
+    <caption>Exact source revision</caption>
+    <tbody>
+      <tr><th scope="row">Repository</th><td><a href={repo}>{repo}</a></td></tr>
+      <tr><th scope="row">Commit</th><td><a href={`${repo}/commit/${commit}`}><code>{commit}</code></a></td></tr>
+      {e.source_revision.tag && <tr><th scope="row">Release tag</th><td><code>{e.source_revision.tag}</code>{e.source_revision.tag_commit && <> (tag commit <code>{e.source_revision.tag_commit}</code>, same tree as the source commit)</>}</td></tr>}
+      <tr><th scope="row">Build</th><td>{e.build.writer} at <code>{e.build.writer_ref}</code>, deterministic: {e.build.deterministic ? 'yes' : 'no'}</td></tr>
+    </tbody>
+  </table>
+  <h2 id="images">Compatible images</h2>
+  <p>Applies only to the exact {e.source_identity_kind === 'cartridge-image-sha256' ? 'cartridge image' : 'disc image'} with this SHA-256 ({e.revision}, {e.region}; BIOS: {e.bios_requirement}). A title or region name is not an identity.</p>
+  <table>
+    <caption>Image digests</caption>
+    <tbody>
+      <tr><th scope="row">Source image SHA-256</th><td><code>{e.source_image_sha256}</code></td></tr>
+      <tr><th scope="row">Patched image SHA-256</th><td><code>{e.patched_image_sha256}</code></td></tr>
+    </tbody>
+  </table>
+  <h2 id="trust">Trust and evidence</h2>
+  <table>
+    <caption>Trust class and compatibility evidence</caption>
+    <tbody>
+      <tr><th scope="row">Trust class</th><td><code>{e.trust}</code></td></tr>
+      <tr><th scope="row">Package schema / SDK ABI</th><td>{e.schema_version}{e.native_abi ? ` / ${e.native_abi}` : ''}</td></tr>
+      <tr><th scope="row">Evidence tier</th><td><code>{e.evidence_tier}</code></td></tr>
+      <tr><th scope="row">Licence</th><td>{e.license}</td></tr>
+      <tr><th scope="row">Gameplay</th><td>{e.gameplay}</td></tr>
+    </tbody>
+  </table>
+  <p>{trustText} See <a href={`${base}/security/`}>security</a>.</p>
+  {e.limitations.length > 0 && <><h2 id="limitations">Limitations</h2><ul>{e.limitations.map((l) => <li>{l}</li>)}</ul></>}
+</StarlightPage>

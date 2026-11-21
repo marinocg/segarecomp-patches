@@ -39,6 +39,7 @@ export default defineConfig({
       components: { Hero: './src/components/Hero.astro' },
       sidebar: [
         { label: 'Start here', items: [{ slug: 'getting-started' }, { slug: 'security' }, { slug: 'support' }] },
+        { label: 'Catalog', items: [{ label: 'All packages', link: '/catalog/' }] },
         {
           label: 'Reference (imported)',
           items: [

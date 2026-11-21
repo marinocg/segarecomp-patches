@@ -10,6 +10,8 @@ The rules for contributing and publishing live in the repository and are enforce
 * [Publication restrictions](https://github.com/marinocg/segarecomp-patches/blob/main/docs/publication-restrictions.md): what may and may never be committed
 * [Trust classes and licensing](https://github.com/marinocg/segarecomp-patches/blob/main/docs/policy.md)
 * [Repository settings](https://github.com/marinocg/segarecomp-patches/blob/main/docs/repository-settings.md): branch protection and required checks
+* [Catalog format](https://github.com/marinocg/segarecomp-patches/blob/main/docs/catalog-format.md): the JSON Schemas, immutability and supersession rules behind the [catalog](/catalog/)
+* [Artifact hosting](https://github.com/marinocg/segarecomp-patches/blob/main/docs/artifact-hosting.md): where release artifacts live, why Cloudflare R2 is not used, reproducible builds and provenance
 * [Imported product documentation](https://github.com/marinocg/segarecomp-patches/blob/main/docs/product-docs.md): the pinned-revision import rule
 
 Nothing in this repository is a commercial game, firmware, extracted asset or disassembly. Packages are built from source in CI and attached to releases, never committed.

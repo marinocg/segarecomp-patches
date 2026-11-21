@@ -1,0 +1,42 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getCollection } from 'astro:content';
+import { kib, shortSha } from '../../lib/catalog.mjs';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const entries = (await getCollection('catalog')).map((e) => e.data);
+const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
+---
+<StarlightPage frontmatter={{ title: 'Patch catalog', description: 'Every published package with its SHA-256, source revision, trust class and the exact images it applies to.', tableOfContents: false }}>
+  <p>Generated from <code>catalog/index.json</code> at build time; there is no hand-maintained copy. Every entry names the exact package digest and the source commit it was built from. An image is identified by its SHA-256, never by its title.</p>
+  <p>{entries.length} package{entries.length === 1 ? '' : 's'} in {games.length} project{games.length === 1 ? '' : 's'}.</p>
+  {games.map((g) => {
+    const [platform, game] = g.split('|');
+    const rows = entries.filter((e) => e.platform === platform && e.game === game);
+    return (
+      <section aria-labelledby={`g-${rows[0].game_path.replace(/\W+/g, '-')}`}>
+        <h2 id={`g-${rows[0].game_path.replace(/\W+/g, '-')}`}>{game} <small>({platform})</small></h2>
+        <div class="catalog-scroll" role="region" aria-label={`${game} packages`} tabindex="0">
+          <table>
+            <caption>Published packages for {game}</caption>
+            <thead><tr><th scope="col">Package</th><th scope="col">Version</th><th scope="col">Release</th><th scope="col">Trust</th><th scope="col">Evidence</th><th scope="col">Size</th><th scope="col">SHA-256</th><th scope="col">Source revision</th></tr></thead>
+            <tbody>
+              {rows.map((e) => (
+                <tr>
+                  <th scope="row"><a href={`${base}/catalog/${e.id}/${e.version}/`}>{e.name}</a></th>
+                  <td>{e.version}</td>
+                  <td>{e.release}</td>
+                  <td>{e.trust}</td>
+                  <td>{e.evidence_tier}</td>
+                  <td>{kib(e.package_size)}</td>
+                  <td><code title={e.package_sha256}>{shortSha(e.package_sha256)}</code></td>
+                  <td><a href={`${e.source_revision.repository}/commit/${e.source_revision.commit}`}><code>{e.source_revision.commit.slice(0, 12)}</code></a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  })}
+</StarlightPage>
