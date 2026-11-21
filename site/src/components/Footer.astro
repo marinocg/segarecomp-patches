@@ -10,7 +10,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   <button type="button" id="consent-settings">Cookie settings</button>
 </div>
 <section id="consent-banner" aria-label="Analytics consent" hidden>
-  <p><strong>Analytics cookies?</strong> This site works fully without them. <strong>Accept</strong> lets Google Analytics, loaded through Google Tag Manager, use cookies to measure how the pages are used. <strong>Reject</strong> sets no analytics cookie: Google Analytics then runs in its cookieless mode and receives only anonymous pings. Nothing is requested from Google before you choose. <a href={`${base}/privacy/`}>Privacy and cookies</a></p>
+  <p><strong>Analytics cookies?</strong> This site works fully without them. With your permission it loads Google Tag Manager to measure how the pages are used. Nothing is requested from Google before you accept, and <strong>Reject</strong> means nothing is ever requested from Google. <a href={`${base}/privacy/`}>Privacy and cookies</a></p>
   <p id="consent-status" class="consent-status" aria-live="polite"></p>
   <div class="consent-actions">
     <button type="button" data-consent="reject">Reject</button>
