@@ -3,6 +3,7 @@
 // The authoritative format contract is catalog/schema/catalog-1.schema.json (validated in CI by scripts/validate_catalog.py before the build);
 // this schema asserts what the pages render, so a page can never show a missing digest or an unpinned source.
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { z } from 'astro/zod';
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
@@ -67,3 +68,10 @@ export function loadCatalog(path) { return parseCatalog(readFileSync(path, 'utf8
 export const slug = (e) => `${e.id}/${e.version}`;
 export const shortSha = (s) => s.slice(0, 12);
 export const kib = (n) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KiB`);
+
+// The one place the catalog location is decided (CATALOG_PATH is only for the fixture tests): the content collection, the HTML pages and the
+// public /catalog/index.json endpoint all read the same validated file.
+// Astro (and its bundled endpoints) always run with the site/ directory as cwd, so the repository root is its parent.
+export const REPO_ROOT = resolve(process.cwd(), '..');
+export const CATALOG_PATH = process.env.CATALOG_PATH ?? resolve(REPO_ROOT, 'catalog/index.json');
+export const SCHEMA_DIR = resolve(REPO_ROOT, 'catalog/schema');

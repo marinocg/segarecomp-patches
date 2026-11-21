@@ -40,6 +40,12 @@ try {
       const html = readFileSync(path.join(a, 'catalog', p.id, p.version, 'index.html'), 'utf8');
       check(html.includes(p.package_sha256) && html.includes(p.source_revision.commit), `${p.id}@${p.version} page shows SHA-256 and exact source commit`);
     }
+    // The public machine-readable catalog is the validated input, byte for byte, and the schemas are served at their `$id` URLs.
+    check(readFileSync(path.join(a, 'catalog', 'index.json'), 'utf8') === readFileSync(example, 'utf8'), 'public /catalog/index.json equals the validated catalog');
+    for (const n of ['catalog-1', 'release-1']) {
+      const s = JSON.parse(readFileSync(path.join(a, 'schema', `${n}.schema.json`), 'utf8'));
+      check(s.$id.endsWith(`/schema/${n}.schema.json`), `schema ${n} is served at its $id`);
+    }
     const idx = readFileSync(path.join(a, 'catalog', 'index.html'), 'utf8');
     check(doc.packages.every((p) => idx.includes(p.id)), 'index lists every package');
     execFileSync('python3', [path.resolve(site, '../scripts/check_site_a11y.py'), a, '--only', 'catalog/']);
