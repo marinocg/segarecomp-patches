@@ -60,7 +60,7 @@ class Synthetic:
         text = (S / "check_repo.py").read_text(); block = text[text.index('for f in ("README.md"'):text.index("    for p in tracked(root)")]
         for rel in re.findall(r'"([A-Za-z0-9_./-]+\.(?:md|json|yml|txt))"', block):   # stubs of every file check_repo requires
             f = self.d / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text("stub\n")
-        (self.d / ".github/CODEOWNERS").write_text("* @x\n"); (self.d / "docs/repository-settings.md").write_text("check / repository\nsite / build\nsite / samples\n")
+        (self.d / ".github/CODEOWNERS").write_text("* @x\n"); (self.d / "docs/repository-settings.md").write_text("check / repository\ncheck / exec\nsite / build\nsite / samples\n")
         (self.d / "LICENSE").write_text("MPL stub\n"); (self.d / "LICENSES").mkdir(exist_ok=True); (self.d / "LICENSES/MIT.txt").write_text("MIT stub\n")
         shutil.rmtree(self.d / "catalog/schema"); shutil.copytree(ROOT / "catalog/schema", self.d / "catalog/schema")
         (self.d / "scripts").mkdir(exist_ok=True); shutil.copy(ROOT / "scripts/SEGAPATCH_REF", self.d / "scripts/SEGAPATCH_REF"); (self.d / "scripts/PRODUCT_REF").write_text(PRODUCT_REF + "\n")
