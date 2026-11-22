@@ -111,24 +111,6 @@
       "rationale": "Original assembly text assembled by the product tool; it contains no embedded image, table dump or asset data."
     },
     {
-      "path": "patches/genesis/castle-of-illusion/widescreen-practice/mod.toml",
-      "sha256": "53d755e1c1b528e68658f898f01604f76e92e34f90406fa86fb435ea1ab66a14",
-      "size": 4197,
-      "longest_byte_literal_run": 0,
-      "class": "mod-manifest-source",
-      "decision": "published",
-      "rationale": "The schema 3 project manifest: identifiers, capabilities, declared memory ranges and image digests; no image content."
-    },
-    {
-      "path": "patches/genesis/castle-of-illusion/widescreen-practice/src/provider.c",
-      "sha256": "9a4c7f9b10679907407f65baca34e50f7d09f12aa89b38ce0ed80746e3502bc2",
-      "size": 33478,
-      "longest_byte_literal_run": 0,
-      "class": "native-provider-source",
-      "decision": "published",
-      "rationale": "Original provider code written for the public SDK ABI (C11 text); it contains no embedded image, table dump or asset data."
-    },
-    {
       "path": "patches/genesis/sonic-1/native-widescreen/source/provider.c",
       "sha256": "1693d65d0a248f053cc0d10cb8c32e2389dc099a818d6d7c0fe4742d9dcef4d5",
       "size": 21043,

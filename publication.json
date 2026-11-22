@@ -22,8 +22,8 @@
       "note": "Temporary developer tool. Public source, never a catalog entry or release asset."
     },
     "genesis/castle-of-illusion/widescreen-practice": {
-      "state": "eligible",
-      "review": "Approved for release selection after the per-file source review (docs/source-review.md): original C11 provider and manifest only, work-RAM facts of the exact pinned image, no cartridge data, asset or disassembly; gameplay verified on the exact image (widescreen scenery, virtual sprites, Practice+)."
+      "state": "candidate",
+      "note": "v0.2.0 was withdrawn by the maintainer; superseded for publication by the activation variants in v0.3.0."
     },
     "genesis/sonic-1/native-widescreen": {
       "state": "eligible",

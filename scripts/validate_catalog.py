@@ -147,6 +147,12 @@ def validate_package(doc, schema=None):
     return errs
 
 
+def withdrawn(root=ROOT):
+    """`withdrawn.json` lists `id@version` entries the maintainer deliberately removed from a published release; only those may disappear from the catalog."""
+    f = pathlib.Path(root) / "withdrawn.json"
+    return {w["package"] for w in json.loads(f.read_text()).get("withdrawn", [])} if f.is_file() else set()
+
+
 def immutability_errors(old, new):
     """A published (id, version) never changes: every field it already had keeps its exact value, and none is removed. Permitted evolution is purely additive:
     new entries, new optional fields introduced by a compatible format revision (the v0.1.0 entries gained `source_revision` and `build` this way), and a
@@ -155,6 +161,7 @@ def immutability_errors(old, new):
     for o in _entries(old):
         n = f"{o.get('id')}@{o.get('version')}"
         c = cur.get(_key(o))
+        if c is None and n in withdrawn(): continue
         if c is None: errs.append(f"{n}: a published release entry was removed"); continue
         for k in sorted(o):
             if k not in c: errs.append(f"{n}: published field {k!r} was removed"); continue
