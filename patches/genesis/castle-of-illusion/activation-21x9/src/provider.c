@@ -65,12 +65,20 @@ static uint32_t plane_b_authored;  /* plane B has a window (its map is a real wo
 static uint32_t band_ready;        /* the second (band) windows were built too: without them only the rows the main window covers are served */
 static int32_t band_x0;            /* the band windows' first plane cell: the band is not scrolled, so its cells are the screen's own: the view starts `left` pixels left of the picture */
 /* The asymmetric view (product ADR 0315). The host plans one total of 2 * margin extra columns and learns it to the provider (`view_margin`, in the render phase); the provider only chooses how many of them lie
- * left of the picture. The view is aligned left at the level's first column, centred in the middle and aligned right at the last one; `placement` ramps between them slowly and as a pure function of the camera (see there). The level's first column is the map's own (the planes hold no world left of block 0). The
+ * left of the picture. The view is centred at every camera (see `placement`: any placement that follows the camera distorts the picture's own parallax layers). The
  * margin is read in the render phase and used by the next frame-end that builds the windows, so a placement is declared only when the margin it was computed for is still the host's. */
 static uint32_t margin_learnt;     /* per-side margin of the host's latest produced frame, 0 = none yet (or no extension): the centred layout is assumed */
 static uint32_t margin_used;       /* the margin the windows of this frame were built for */
 static int32_t view_left_px;       /* columns of the planned total left of the picture, for the frame the windows were built for */
 static uint32_t view_declared;     /* a placement is to be declared at render (a margin is known) */
+
+/* The columns of the planned total (2 * margin) that lie left of the picture: `margin`, the CENTRED view, at every camera (no state: replay, rewind and load see the same value for every camera).
+ * The guest draws its parallax layers for ITS camera (a layer of speed factor k at screen x0 - k * camera), and the picture is only placed in the view, never redrawn. A placement that follows the camera therefore adds its change to the motion of every layer:
+ * d(left) per camera pixel on top of -k, so a layer with k <= d(left)/d(camera) stops or moves backwards, and the others move at the wrong speed, and only for as long as the picture is being moved. A slower ramp only spreads that error over more camera
+ * travel (the layers are then offset from a world-anchored view by (1 - k) * left, up to 238 * (1 - k) pixels at 32:9); no placement of the picture alone can remove it. Only a constant placement keeps every layer at exactly -k * camera, in both
+ * directions and through stops and reversals. The cost is at a level's ends, where the extension beside the level's first or last column is the game's own edge column repeated outward (the plane A rule below) and the generic background, instead of the
+ * picture being aligned to that end. */
+static int32_t placement(int32_t margin) { return margin; }
 
 static int rd(const SegaModHost *h, uint32_t offset, uint32_t width, uint32_t *value) { return h->read(SEGA_GEN_SPACE_M68K_WORK_RAM, offset, width, value); }
 
@@ -224,9 +232,9 @@ static int provider_hook(void *state, const SegaModHost *h, uint32_t hook_id) {
     c.size = (uint8_t)size;
     c.edge = (uint8_t)edge;
     if (!piece_visible(&c, -LEGACY_LEFT, RASTER_W + 2 * LEGACY_LEFT)) return 0;
-    {   /* "likely": visible under the best plan known now (the host's last margin and this frame's camera). Only a full scratch makes it matter: a likely piece then takes the place of the newest unlikely one (which may still be needed in the frame the plan changes). */
-      uint32_t cam = 0U, m = margin_learnt > margin_used ? margin_learnt : margin_used;
-      const int32_t left = (rd(h, REC_A + 4U, 2U, &cam) == 0 && (int32_t)cam < (int32_t)m) ? (int32_t)cam : (int32_t)m;
+    {   /* "likely": visible under the best plan known now (the host's last margin: the picture is centred). Only a full scratch makes it matter: a likely piece then takes the place of the newest unlikely one (which may still be needed in the frame the plan changes). */
+      const uint32_t m = margin_learnt > margin_used ? margin_learnt : margin_used;
+      const int32_t left = placement((int32_t)m);
       c.likely = (uint8_t)(piece_visible(&c, -left, RASTER_W + 2 * (int32_t)m - left) ? 1U : 0U);
     }
     if (collected_n >= COLLECT_MAX) {
@@ -286,24 +294,6 @@ static void submit_actors(const SegaModHost *h, const SegaGenesisRenderApi *rend
 
 static uint32_t scene_id_valid_for_actors(const SegaModHost *h) { Plane a, b; return classify(h, &a, &b) != 0U; }
 
-/* The columns of the planned total (2 * margin) that lie left of the picture, as a pure function of the camera (no state: replay, rewind and load see the same value for the same camera).
- * `range` is the camera's last value (level width - 320). The view is aligned left at the level's first column, centred in the middle and aligned right at its last column, as a side-scroller wants, but the
- * picture is not moved with the camera: while `left` changes, the picture's own parallax layers (the guest draws them for ITS camera, scroll k * camera) are offset from the view's world by (1 - k) * left, so they
- * drift against the foreground at (1 - k) * d(left)/d(camera) of the camera's speed. A 1:1 slide (left = camera) froze the world in the view while every background layer slid backwards, which is the dizzying parallax.
- * `left` therefore ramps slowly, over RAMP_DEN margins of camera travel at each end (at most 1/RAMP_DEN of a pixel per camera pixel, and never more than the camera moved, so no void is shown left of the level
- * and the view's right edge never passes the level's end), and is constant everywhere else. A level too short for the ramp keeps the plain rule: the picture at the left until the camera is `margin` in. */
-#define RAMP_DEN 6
-static int32_t placement(int32_t cam, int32_t range, int32_t margin) {
-  int64_t zone, lo, hi;
-  if (cam < 0) cam = 0;
-  if (range < 2 * margin) return cam < margin ? cam : margin;   /* the level is narrower than the planned total: no room for a ramp at each end */
-  if (cam > range) cam = range;
-  zone = range / 2 < (int64_t)RAMP_DEN * margin ? range / 2 : (int64_t)RAMP_DEN * margin;   /* >= margin: a slope of at most 1 */
-  lo = cam < zone ? cam : zone;
-  hi = range - cam < zone ? range - cam : zone;
-  return (int32_t)(((int64_t)margin * lo) / zone + (int64_t)margin - ((int64_t)margin * hi) / zone);
-}
-
 static void provider_frame_end(const SegaModHost *h) {
   served_n = scene_id_valid_for_actors(h) ? collected_n : 0U;
   { uint32_t k; for (k = 0U; k < served_n; ++k) served[k] = collected[k]; }
@@ -316,7 +306,7 @@ static void provider_frame_end(const SegaModHost *h) {
   if (scene_id == 0U) return;
   margin_used = margin_learnt;
   if (margin_used != 0U) {
-    view_left_px = placement(plane_a.cam, (int32_t)plane_a.cols * 16 - 320, (int32_t)margin_used);
+    view_left_px = placement((int32_t)margin_used);
     view_declared = 1U;
   } else {
     view_left_px = LEGACY_LEFT;

@@ -122,14 +122,9 @@ GENERIC_B = {"a16x240-b16", "a48x160-b16", "a48x128-b48", "a16x32-b16", "a192x48
 
 
 def ref_left(cam, cols, margin):
-    """The expected placement, written from the rule (not from the C): aligned left at the first column, centred in the middle, aligned right at the last (camera = cols * 16 - 320); the two ramps are
-    `zone = min(range / 2, 6 * margin)` camera pixels long and linear; a level narrower than the planned total keeps `min(camera, margin)`."""
-    rng = cols * 16 - 320
-    cam = max(0, min(cam, rng))
-    if rng < 2 * margin:
-        return min(cam, margin)
-    zone = min(rng // 2, 6 * margin)
-    return (margin * min(cam, zone)) // zone + margin - (margin * min(rng - cam, zone)) // zone
+    """The expected placement, written from the rule (not from the C): the picture is CENTRED in the planned total at every camera. A placement that changes with the camera adds its change to every layer the guest has already
+    drawn for its own camera, which no presentation-only provider can undo (see test_layer_motion_*)."""
+    return margin
 
 
 def expect_window(ram, base, mapaddr, table, rows, stride, wrap, band=False, left=238):
@@ -385,10 +380,10 @@ class Provider(unittest.TestCase):
         self.assertNotIn("FAULT", out)
         return out[out.index("FRAME2") + 1:], out[:out.index("FRAME2")]
 
-    def test_the_placement_ramps_slowly_between_the_aligned_ends(self):
-        # left of the view at the level's first column, centred in the middle, right of the view at the last column, linear ramps in between (a slope of at most 1/6, so the parallax layers do not slide against the foreground)
+    def test_the_view_is_centred_and_the_windows_follow_it_at_every_camera(self):
+        # the picture is centred in the planned total at every camera (start, middle, end, both ends of the VDP's 10-bit scroll): see the layer-motion tests for why a placement that follows the camera is not offered
         for margin in (39, 101, 238):
-            for cam in (0, 1, 38, 39, 40, 100, 237, 238, 239, 1000, 1500, 1800, 2100, 3000, 3282, 3300, 3481, 3520, 3600):
+            for cam in (0, 1, 38, 39, 40, 100, 237, 238, 239, 511, 512, 513, 1000, 1500, 1800, 2100, 3000, 3282, 3300, 3481, 3520, 3600):
                 ram = Ram(rows=16, cols=240, brows=16, cam=cam, cam_b=cam // 2)
                 second, first = self.two_frames(ram, margin)
                 want = ref_left(cam, 240, margin)
@@ -400,31 +395,81 @@ class Provider(unittest.TestCase):
                 bx0, _, _, bwords = expect_window(ram, REC_A, MAP_A, TBL_A, 16, 240, False, band=True, left=want)
                 self.assertEqual((int(wins[1][2]), [int(x, 16) for x in wins[1][6:]]), (bx0, bwords), "the band window follows the placement")
 
-    def test_the_placement_properties(self):
-        # pure properties of the rule over every camera of several level widths: the ends are aligned, the middle is centred, it never moves faster than the camera allows (no void left of the level or right of its end),
-        # it is monotone with a slope of at most 1/6 once the level is wide enough for the ramps, and it is symmetric (left(c) + left(range - c) = total)
-        for cols in (240, 160, 96, 48):
-            for margin in (39, 101, 238):
-                rng = cols * 16 - 320
-                prev = None
-                for cam in range(0, rng + 1):
-                    left = ref_left(cam, cols, margin)
-                    self.assertTrue(0 <= left <= 2 * margin)
-                    if rng >= 2 * margin:
-                        self.assertLessEqual(left, cam, "no void left of the level")
-                        self.assertGreaterEqual(left, 2 * margin - (rng - cam), "the view never passes the level's end")
-                        self.assertLessEqual(abs(left + ref_left(rng - cam, cols, margin) - 2 * margin), 1, "symmetric")
-                        if prev is not None:
-                            self.assertTrue(0 <= left - prev <= 1, "monotone, one pixel at most per camera pixel")
-                    prev = left
-                if rng >= 2 * margin:
-                    self.assertEqual((ref_left(0, cols, margin), ref_left(rng, cols, margin)), (0, 2 * margin), "aligned left at the start, right at the end")
-                    zone = min(rng // 2, 6 * margin)
-                    self.assertEqual({ref_left(c, cols, margin) for c in range(zone, rng - zone + 1)} - {margin}, set(), "centred between the ramps")
-                    # the slope over the first ramp is margin / zone <= 1/6 when the level is wide enough for a full 6-margin ramp
-                    if rng >= 12 * margin:
-                        self.assertLessEqual(ref_left(zone, cols, margin) - ref_left(0, cols, margin), margin)
-                        self.assertLessEqual((ref_left(zone // 2, cols, margin) + 1) * 6 * zone // zone, 6 * margin + 6)
+    # ---- the motion of rendered content over a camera sequence (an oracle independent of the placement rule) ----
+    # The guest draws a layer of speed factor k = num / den for ITS camera: a feature of the layer sits at native screen x = X0 - k * camera (k = 1 is the foreground, 0 a layer that never scrolls). The host puts the native picture at
+    # `view_left` of the presented view, so the feature is PRESENTED at X0 - k * camera + view_left. A view that is world-anchored (what a fixed widescreen game shows) presents it at X0 - k * camera + constant: the layer moves
+    # exactly -k * (camera step) per frame, whatever the camera did before. Any change of view_left with the camera is added to every layer's motion, so a layer of speed k <= d(view_left)/d(camera) freezes or reverses.
+    LAYERS = ((1, 1), (1, 2), (1, 4), (1, 8), (1, 16), (0, 1))   # foreground, parallax layers of several speeds and a layer that does not scroll
+
+    def run_camera(self, cams, margin, level_cols=240, prelude=(), state_cut=None):
+        """The view_left the provider declares for every camera of `cams` (one frame each, in order), after one frame that only learns the host's plan. `state_cut` = frame index before which the provider's state is saved and loaded back (rewind/load)."""
+        lines = ["init", "margin %d" % margin] + self.frame(Ram(cols=level_cols, cam=cams[0], cam_b=cams[0] // 2), frame=1, extra=prelude)
+        for i, cam in enumerate(cams):
+            if i == state_cut: lines += ["save", "load " + " ".join("00" for _ in range(16))]
+            lines += ["echo F%d" % i] + self.frame(Ram(cols=level_cols, cam=cam, cam_b=cam // 2), frame=2 + i)
+        out = self.run_script(lines)
+        self.assertNotIn("FAULT", out)
+        res, cur = [], None
+        for l in out:
+            if l.startswith("echo") or (l.startswith("F") and l[1:].isdigit()): cur = None; res.append(None); continue
+            if l.startswith("view_left") and res and res[-1] is None: res[-1] = int(l.split()[1])
+        return res
+
+    @staticmethod
+    def sweep(rng, step):
+        """stationary, right to the end, stop, back to the start (the same coordinates in the other direction), stop, reverse mid-way, a few frames at the end, back"""
+        up = list(range(0, rng + 1, step)) + [rng]
+        down = up[::-1]
+        mid = rng // 2
+        return [0] * 3 + up + [rng] * 3 + down + [0] * 3 + [c for c in up if c <= mid] + [c for c in down if c <= mid and c >= mid - 6 * step] + [c for c in up if mid - 6 * step <= c <= mid] + [c for c in up if c > mid] + down
+
+    def test_layers_move_at_their_own_speed_while_the_camera_moves_in_either_direction(self):
+        # 16:9, 21:9 and 32:9 (the host's per-side margins 39, 101, 238) over the whole level (240 columns: camera 0 .. 3520)
+        for margin in (39, 101, 238):
+            cams = self.sweep(3520, 55)
+            lefts = self.run_camera(cams, margin)
+            self.assertEqual(len(lefts), len(cams))
+            self.assertNotIn(None, lefts)
+            for num, den in self.LAYERS:
+                ideal0 = -cams[0] * num / den
+                for i in range(1, len(cams)):
+                    # the layer's presented displacement since the first frame against a world-anchored view: constant (the view's placement must not leak into any layer's motion)
+                    drift = (-cams[i] * num / den + lefts[i]) - (ideal0 + lefts[0])
+                    ideal = -(cams[i] - cams[0]) * num / den
+                    self.assertAlmostEqual(drift, ideal, delta=1.0, msg="margin %d layer %d/%d frame %d (camera %d -> %d): presented displacement %.1f, a world-anchored view gives %.1f" % (margin, num, den, i, cams[i - 1], cams[i], drift, ideal))
+                    step_motion = (-cams[i] * num / den + lefts[i]) - (-cams[i - 1] * num / den + lefts[i - 1])
+                    self.assertAlmostEqual(step_motion, -(cams[i] - cams[i - 1]) * num / den, delta=0.5, msg="margin %d layer %d/%d step %d: moved %.2f for a camera step of %d" % (margin, num, den, i, step_motion, cams[i] - cams[i - 1]))
+
+    def test_the_same_camera_is_presented_the_same_whichever_way_it_was_reached(self):
+        for margin in (39, 101, 238):
+            cams = self.sweep(3520, 55)
+            lefts = self.run_camera(cams, margin)
+            seen = {}
+            for cam, left in zip(cams, lefts): seen.setdefault(cam, set()).add(left)
+            self.assertTrue(all(len(v) == 1 for v in seen.values()), "margin %d: a camera was presented at two placements %s" % (margin, {c: v for c, v in seen.items() if len(v) > 1}))
+            self.assertEqual({l for l in lefts}, {margin}, "a stationary, moving, stopped or reversed camera never changes the placement")
+
+    def test_real_scroll_speeds_with_rounded_layers(self):
+        # per-frame speeds of the game (1 to 4 px per frame, a stop and a reversal): the layer positions the guest rounds to whole pixels move by exactly the camera step times k, and never by anything the placement added
+        for margin in (39, 101, 238):
+            cams = [0] * 4 + [c * 2 for c in range(0, 400)] + [800] * 5 + [800 - c * 3 for c in range(1, 200)] + [203] * 4 + [203 + c for c in range(0, 1500)]
+            lefts = self.run_camera(cams, margin)
+            for num, den in self.LAYERS:
+                pos = [(-(c * num) // den) + l for c, l in zip(cams, lefts)]
+                for i in range(1, len(cams)):
+                    self.assertEqual(pos[i] - pos[i - 1], (-(cams[i] * num) // den) - (-(cams[i - 1] * num) // den), "margin %d layer %d/%d frame %d" % (margin, num, den, i))
+
+    def test_the_placement_survives_a_state_load_and_a_margin_change(self):
+        for margin in (39, 101, 238):
+            cams = self.sweep(3520, 110)
+            plain = self.run_camera(cams, margin)
+            cut = self.run_camera(cams, margin, state_cut=len(cams) // 2)
+            # the provider loses its frame state on a load (the next frame-end rebuilds it): the frame right after a load declares the same placement as the uninterrupted run
+            self.assertEqual(cut[len(cams) // 2:], plain[len(cams) // 2:], "margin %d" % margin)
+        # a narrow level (fewer columns than the planned total) is centred too
+        for cols in (32, 64):
+            rng = cols * 16 - 320
+            self.assertEqual(set(self.run_camera(list(range(0, rng + 1, max(1, rng // 7))), 101, level_cols=cols)), {101}, "level of %d columns" % cols)
 
     def test_no_placement_without_a_known_margin_or_a_verified_scene(self):
         ram = Ram(cam=100)
@@ -560,15 +605,15 @@ class Provider(unittest.TestCase):
         self.assertFalse(any(l.startswith("log ") for l in out))
 
     def test_both_directions_and_the_exact_edges_of_the_placed_view(self):
-        # camera 601: the placement is 100 (see ref_left): the picture sits 100 px from the view's left edge; the view is [-100, 422) in screen x (320 + 202 - 100); a piece is kept while a pixel of it is within 8 px of the view
-        for sx, shown in ((-141, False), (-140, False), (-139, True), (-120, True), (352, True), (429, True), (430, False), (600, False)):
+        # the picture is centred: it sits 101 px from the view's left edge; the view is [-101, 421) in screen x (320 + 202 - 101); a piece is kept while a pixel of it is within 8 px of the view
+        for sx, shown in ((-141, False), (-140, True), (-139, True), (-120, True), (352, True), (428, True), (429, False), (600, False)):
             out = self.actors_placed([self.at(sx)])
             self.assertEqual(len(self.sprites(out)), 1 if shown else 0, sx)
-        # the camera at the level's first column (left = 0): nothing left of the picture is presented, so nothing there is submitted (the host would refuse it as "virtual sprites not presented"); the right side holds the whole total
-        out = self.actors_placed([self.at(-90), self.at(-40), self.piece(0x70)], cam=0)    # two dropped pieces left of the picture and one KEPT piece straddling the left edge (its part beside the raster is left of 0)
-        self.assertEqual(self.xs(out), [], "left placement 0: the margin left of the picture has no width")
-        self.assertEqual(self.xs(self.actors_placed([self.at(421), self.at(521)], cam=0)), [421, 521], "right of the picture the view reaches 320 + 202 - 0 = 522")
-        # far from the level start the view is centred: left = margin = 101
+        # the view does not depend on the camera: at the level's first column (and at its last) the same view [-101, 421) is presented, with the game's own edge column repeated beside the picture
+        for cam in (0, 3520):
+            out = self.actors_placed([self.at(-90), self.at(-40), self.at(-150), self.at(421), self.at(521)], cam=cam)
+            self.assertEqual(self.xs(out), [-90, -40, 421], "camera %d" % cam)
+        # mid-level: the same centred view
         out = self.actors_placed([self.at(-100), self.at(-150), self.piece(0x80 + 321), self.at(430)], cam=2000)
         self.assertEqual(self.xs(out), [-100, 321], "view [-101, 421): -150 and 430 are beyond it")
 
