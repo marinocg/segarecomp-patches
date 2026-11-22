@@ -1,0 +1,12 @@
+{
+  "release_format": 2,
+  "release": "v0.2.0",
+  "status": "prepared",
+  "source_layout": "patch-dir",
+  "source_revision": {
+    "repository": "https://github.com/marinocg/segarecomp-patches"
+  },
+  "packages": [
+    "castle-of-illusion-widescreen-practice@0.1.0"
+  ]
+}
