@@ -77,12 +77,12 @@ class Checks(unittest.TestCase):
 
     def test_sums_required(self):
         d = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d); e = []
-        check_repo.check_assets(ROOT, d, None, e); self.assertTrue(any("SHA256SUMS is missing" in x for x in e))
+        check_repo.check_assets(ROOT, d, None, e, "v0.1.0"); self.assertTrue(any("SHA256SUMS is missing" in x for x in e))
 
     def test_bad_asset(self):
         d = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d)
         (d / "sor2-widescreen.segapatch").write_bytes(b"not it"); e = []
-        check_repo.check_assets(ROOT, d, None, e); self.assertTrue(any("differs" in x for x in e))
+        check_repo.check_assets(ROOT, d, None, e, "v0.1.0"); self.assertTrue(any("differs" in x for x in e))
 
 
 if __name__ == "__main__":

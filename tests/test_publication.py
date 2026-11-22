@@ -432,6 +432,7 @@ class CastleIntegration(unittest.TestCase):
 
     def test_dry_run_selects_only_the_widescreen_practice_package(self):
         d = self.copy(); st = json.loads((d / "publication.json").read_text())
+        for f in ("releases/v0.2.0.json", "docs/release-notes/v0.2.0.md"): (d / f).unlink(missing_ok=True)   # the dry run models the FIRST selection of the Castle package, whatever release the repository has prepared since
         st["patches"]["genesis/castle-of-illusion/widescreen-practice"] = {"state": "eligible", "review": "dry run only (test fixture)"}; (d / "publication.json").write_text(json.dumps(st))
         run(S / "prepare_release.py", "--root", d, "begin", "--tag", "v0.2.0", "--package", f"{self.PID}@0.1.0", check=True)
         self.assertEqual(json.loads((d / "releases/v0.2.0.json").read_text())["packages"], [f"{self.PID}@0.1.0"])

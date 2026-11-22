@@ -47,20 +47,21 @@ class Assets(unittest.TestCase):
     def assets(self, t, root=ROOT):
         d = tmp(t); lines = []
         for pk in release_meta.packages(root):
+            if pk.release != "v0.1.0": continue   # the assets of the historical v0.1.0 release (a later, prepared release has its own)
             data = b"synthetic-" + pk.id.encode(); (d / pk.package_file).write_bytes(data); lines.append(f"{pk.p['package_sha256']}  {pk.package_file}")
         (d / "SHA256SUMS").write_text("\n".join(lines) + "\n"); return d
 
     def test_wrong_digest_fails(self):
-        e = []; check_repo.check_assets(ROOT, self.assets(self), None, e)
+        e = []; check_repo.check_assets(ROOT, self.assets(self), None, e, "v0.1.0")
         self.assertTrue(any("asset SHA-256 differs" in x for x in e), e)
 
     def test_missing_sums_fails(self):
-        d = self.assets(self); (d / "SHA256SUMS").unlink(); e = []; check_repo.check_assets(ROOT, d, None, e)
+        d = self.assets(self); (d / "SHA256SUMS").unlink(); e = []; check_repo.check_assets(ROOT, d, None, e, "v0.1.0")
         self.assertTrue(any("SHA256SUMS" in x for x in e))
 
     def test_correct_digests_pass(self):
         d = tmp(self); lines = []; root = tmp(self)
-        shutil.copytree(ROOT / "releases", root / "releases"); released = {pk.id for pk in release_meta.packages(ROOT) if pk.release}
+        shutil.copytree(ROOT / "releases", root / "releases"); released = {pk.id for pk in release_meta.packages(ROOT) if pk.release == "v0.1.0"}
         for pj in sorted((ROOT / "patches").glob("*/*/*/package.json")):
             target = root / pj.relative_to(ROOT); target.parent.mkdir(parents=True, exist_ok=True); meta = json.loads(pj.read_text())
             for p in meta["packages"]:
@@ -68,7 +69,7 @@ class Assets(unittest.TestCase):
                 data = b"synthetic-" + p["id"].encode(); (d / p["package_file"]).write_bytes(data)
                 p["package_sha256"] = hashlib.sha256(data).hexdigest(); p["package_size"] = len(data); lines.append(f"{p['package_sha256']}  {p['package_file']}")
             target.write_text(json.dumps(meta))
-        (d / "SHA256SUMS").write_text("\n".join(lines) + "\n"); e = []; check_repo.check_assets(root, d, None, e); self.assertEqual(e, [])
+        (d / "SHA256SUMS").write_text("\n".join(lines) + "\n"); e = []; check_repo.check_assets(root, d, None, e, "v0.1.0"); self.assertEqual(e, [])
 
 
 def git(d, *a): return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=d, check=True, capture_output=True, text=True).stdout.strip()
