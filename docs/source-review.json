@@ -3,6 +3,114 @@
   "scope": "source files of every patch that publication.json marks eligible (v0.1.0: patches/genesis/<game>/source/, moved to patches/<platform>/<game>/<patch>/source/ with identical bytes)",
   "files": [
     {
+      "path": "patches/genesis/castle-of-illusion/activation-16x9/mod.toml",
+      "sha256": "42b661e651273423851c2e00a96e521d304fe51bd3aeb19f563143693869bca1",
+      "size": 5410,
+      "longest_byte_literal_run": 0,
+      "class": "mod-manifest-source",
+      "decision": "published",
+      "rationale": "The schema 3 project manifest: identifiers, capabilities, declared memory ranges and image digests; no image content."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-16x9/edits/activation.edits",
+      "sha256": "560de3ff8d854b64d3ff296f1fe6c71a9a62b42a2ad5a52bed0fd430755af303",
+      "size": 519,
+      "longest_byte_literal_run": 0,
+      "class": "rom-edit-set",
+      "decision": "published",
+      "rationale": "A typed edit set (offsets and a few asserted values) applied by the product tool to an image the user owns; it carries no image content."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-16x9/src/provider.c",
+      "sha256": "9a4c7f9b10679907407f65baca34e50f7d09f12aa89b38ce0ed80746e3502bc2",
+      "size": 33478,
+      "longest_byte_literal_run": 0,
+      "class": "native-provider-source",
+      "decision": "published",
+      "rationale": "Original provider code written for the public SDK ABI (C11 text); it contains no embedded image, table dump or asset data."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-16x9/src/retry.asm",
+      "sha256": "e11ee8040c78ead88d8ce2891e204529c7c596b15f1d19477b44bc82b564b233",
+      "size": 10324,
+      "longest_byte_literal_run": 0,
+      "class": "guest-asm-source",
+      "decision": "published",
+      "rationale": "Original assembly text assembled by the product tool; it contains no embedded image, table dump or asset data."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-21x9/mod.toml",
+      "sha256": "5f0cd561b2b690294e48407288a146c45088abef298344b212dbb5e91de2f705",
+      "size": 5410,
+      "longest_byte_literal_run": 0,
+      "class": "mod-manifest-source",
+      "decision": "published",
+      "rationale": "The schema 3 project manifest: identifiers, capabilities, declared memory ranges and image digests; no image content."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-21x9/edits/activation.edits",
+      "sha256": "2a36956539a187e76d71a9dabaa00a924c19e9631617dbe9cf84e9485efcc91a",
+      "size": 519,
+      "longest_byte_literal_run": 0,
+      "class": "rom-edit-set",
+      "decision": "published",
+      "rationale": "A typed edit set (offsets and a few asserted values) applied by the product tool to an image the user owns; it carries no image content."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-21x9/src/provider.c",
+      "sha256": "9a4c7f9b10679907407f65baca34e50f7d09f12aa89b38ce0ed80746e3502bc2",
+      "size": 33478,
+      "longest_byte_literal_run": 0,
+      "class": "native-provider-source",
+      "decision": "published",
+      "rationale": "Original provider code written for the public SDK ABI (C11 text); it contains no embedded image, table dump or asset data."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-21x9/src/retry.asm",
+      "sha256": "b1152ec30cf0d9218a206356def16ca5501b8d62c29e10a50dba4dcc6bd72ac1",
+      "size": 10324,
+      "longest_byte_literal_run": 0,
+      "class": "guest-asm-source",
+      "decision": "published",
+      "rationale": "Original assembly text assembled by the product tool; it contains no embedded image, table dump or asset data."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-32x9/mod.toml",
+      "sha256": "04d81dd4569968852e51a98fa6f1b4dc12fca91ec130243a8ea610ac3984bfcf",
+      "size": 5418,
+      "longest_byte_literal_run": 0,
+      "class": "mod-manifest-source",
+      "decision": "published",
+      "rationale": "The schema 3 project manifest: identifiers, capabilities, declared memory ranges and image digests; no image content."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-32x9/edits/activation.edits",
+      "sha256": "7487d16aabf8f2958f0290a83fcc834d74615ad4a3bfc4ec5ce06419a288b07d",
+      "size": 519,
+      "longest_byte_literal_run": 0,
+      "class": "rom-edit-set",
+      "decision": "published",
+      "rationale": "A typed edit set (offsets and a few asserted values) applied by the product tool to an image the user owns; it carries no image content."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-32x9/src/provider.c",
+      "sha256": "9a4c7f9b10679907407f65baca34e50f7d09f12aa89b38ce0ed80746e3502bc2",
+      "size": 33478,
+      "longest_byte_literal_run": 0,
+      "class": "native-provider-source",
+      "decision": "published",
+      "rationale": "Original provider code written for the public SDK ABI (C11 text); it contains no embedded image, table dump or asset data."
+    },
+    {
+      "path": "patches/genesis/castle-of-illusion/activation-32x9/src/retry.asm",
+      "sha256": "a3ab701abe35f1c312e8b98b82aa973a0429a8ae73a4b181947a203d41fa5ebd",
+      "size": 10324,
+      "longest_byte_literal_run": 0,
+      "class": "guest-asm-source",
+      "decision": "published",
+      "rationale": "Original assembly text assembled by the product tool; it contains no embedded image, table dump or asset data."
+    },
+    {
       "path": "patches/genesis/castle-of-illusion/widescreen-practice/mod.toml",
       "sha256": "53d755e1c1b528e68658f898f01604f76e92e34f90406fa86fb435ea1ab66a14",
       "size": 4197,
