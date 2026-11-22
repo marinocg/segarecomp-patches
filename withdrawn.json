@@ -1,0 +1,5 @@
+{
+  "withdrawn": [
+    {"package": "castle-of-illusion-widescreen-practice@0.1.0", "release": "v0.2.0", "reason": "Maintainer decision: the intended Castle of Illusion packages (16:9, 21:9, 32:9) are published in v0.3.0 instead."}
+  ]
+}
