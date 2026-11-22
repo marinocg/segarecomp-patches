@@ -2,16 +2,16 @@
   "publication_format": 1,
   "patches": {
     "genesis/castle-of-illusion/activation-16x9": {
-      "state": "candidate",
-      "note": "Gameplay-changing variant; becomes selectable only after its own publication review."
+      "state": "eligible",
+      "review": "Approved for release selection after the per-file source review (docs/source-review.md): original C11 provider, guest assembly and typed edit set against the exact pinned image, no cartridge data, asset or disassembly; gameplay-changing early object activation, disclosed in the package metadata."
     },
     "genesis/castle-of-illusion/activation-21x9": {
-      "state": "candidate",
-      "note": "Gameplay-changing variant; becomes selectable only after its own publication review."
+      "state": "eligible",
+      "review": "Approved for release selection after the per-file source review (docs/source-review.md): original C11 provider, guest assembly and typed edit set against the exact pinned image, no cartridge data, asset or disassembly; gameplay-changing early object activation, disclosed in the package metadata."
     },
     "genesis/castle-of-illusion/activation-32x9": {
-      "state": "candidate",
-      "note": "Gameplay-changing variant; becomes selectable only after its own publication review."
+      "state": "eligible",
+      "review": "Approved for release selection after the per-file source review (docs/source-review.md): original C11 provider, guest assembly and typed edit set against the exact pinned image, no cartridge data, asset or disassembly; gameplay-changing early object activation, disclosed in the package metadata."
     },
     "genesis/castle-of-illusion/debug-fly": {
       "state": "internal",

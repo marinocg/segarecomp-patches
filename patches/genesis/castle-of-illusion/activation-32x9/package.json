@@ -1,0 +1,54 @@
+{
+  "package_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Castle of Illusion Starring Mickey Mouse",
+  "packages": [
+    {
+      "id": "castle-of-illusion-activation-32x9",
+      "version": "0.1.0",
+      "name": "Castle of Illusion activation 32x9 (gameplay-changing)",
+      "schema_version": 3,
+      "native_abi": 2,
+      "capabilities": [
+        "frame.work_ram",
+        "hook.function",
+        "host.log",
+        "input.intercept",
+        "input.read",
+        "memory.read.m68k.work_ram",
+        "memory.write.m68k.work_ram",
+        "scenery.words",
+        "state.mod"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "package_sha256": "61f8fe3d90888ebe4f9925fc4600f87e1389936e59907a8518e83f7ba075d00e",
+      "package_size": 48854,
+      "package_identity": "f4680cf77e476f001e05ac5708e683f5c839b6f8a9f93edeebe5a82827c16b04",
+      "images": [
+        {
+          "label": "usa-europe",
+          "sha256": "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
+        }
+      ],
+      "license": "MIT",
+      "author": "segarecomp-patches contributors",
+      "evidence_tier": "synthetic-only",
+      "gameplay": "Changed: layout objects are activated earlier and farther away for 32:9 (widescreen scenery and actors are presentation only; user-invoked Practice+ restores power)",
+      "supported_scope": "Castle of Illusion widescreen for 32:9 with authored scenery in the verified scrolling scenes, actors beside the picture, a gameplay-changing early object activation sized for 32:9, and the user-invoked Practice+ power restore.",
+      "limitations": [
+        "Applies only to the one image this entry lists (USA, Europe); any other image is refused by digest.",
+        "Gameplay-changing: objects farther from the camera exist earlier than in the original, so enemy contact and damage events can differ (damage-event counts differed on some stages in the maintainers' deterministic-route measurement). Items, collisions, RNG effects, boss completion and natural level progression were not verified.",
+        "Authored scenery covers the verified scrolling scenes only; menus, cutscenes, level loads and any other layout use the host's generic extension.",
+        "Needs a segarecomp build that can install schema 3 / native ABI 2 packages (v0.9.0 or later). See docs/installation.md."
+      ],
+      "build": {
+        "writer": "segarecomp mod pack",
+        "writer_ref": "8d419ab029c2222ab6b699b516c6fee53bac650c",
+        "deterministic": true
+      }
+    }
+  ]
+}
