@@ -3,6 +3,67 @@
   "packages": [
     {
       "platform": "genesis",
+      "game": "Castle of Illusion Starring Mickey Mouse",
+      "game_path": "patches/genesis/castle-of-illusion",
+      "source_path": "patches/genesis/castle-of-illusion/widescreen-practice",
+      "source_identity_kind": "cartridge-image-sha256",
+      "bios_requirement": "none",
+      "release": "v0.2.0",
+      "source_revision": {
+        "repository": "https://github.com/marinocg/segarecomp-patches",
+        "commit": "932f0cc147c97d1c8f61822738d7d1b0191180d3",
+        "tag": "v0.2.0",
+        "tag_commit": "932f0cc147c97d1c8f61822738d7d1b0191180d3"
+      },
+      "build": {
+        "writer": "segarecomp mod pack",
+        "writer_ref": "8d419ab029c2222ab6b699b516c6fee53bac650c",
+        "deterministic": true
+      },
+      "id": "castle-of-illusion-widescreen-practice",
+      "version": "0.1.0",
+      "name": "Castle of Illusion widescreen + Practice+",
+      "schema_version": 3,
+      "native_abi": 2,
+      "capabilities": [
+        "frame.work_ram",
+        "hook.function",
+        "host.log",
+        "input.intercept",
+        "input.read",
+        "memory.read.m68k.work_ram",
+        "memory.write.m68k.work_ram",
+        "scenery.words",
+        "state.mod"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "package_sha256": "f797975468a53d5f3a641ce9a27f6a23bd14e6ed8bfda87f6439a6673ac51948",
+      "package_size": 36613,
+      "package_identity": "4cf83a10cce7bc7b918d9383b4077c73875cba5defb0e990b78504c3bc008313",
+      "images": [
+        {
+          "label": "usa-europe",
+          "sha256": "2d535ff7eda650a64a9093ba6fabf8d5ac87801b898a76b591db41a1c8e47c4f"
+        }
+      ],
+      "evidence_tier": "synthetic-only",
+      "gameplay": "Unchanged, except Practice+, a power restore the player invokes",
+      "license": "MIT",
+      "supported_scope": "Authored widescreen scenery in the 17 verified scrolling scenes, the game's own sprites drawn beside the picture, and the user-invoked Practice+ power restore.",
+      "limitations": [
+        "Applies only to the one image this entry lists (USA, Europe); any other image is refused by digest.",
+        "Authored scenery covers the 17 verified scrolling scenes only; menus, cutscenes, level loads and any other layout use the host's generic extension.",
+        "Practice+ writes three declared guest-memory ranges when the player invokes it; nothing else is written.",
+        "Needs a segarecomp build that can install schema 3 / native ABI 2 packages (product ADRs 0311 to 0315, mod install); no tagged segarecomp release (v0.8.0 and earlier) can. See docs/installation.md."
+      ],
+      "asset": {
+        "name": "castle-of-illusion-widescreen-practice.segapatch",
+        "url": "https://github.com/marinocg/segarecomp-patches/releases/download/v0.2.0/castle-of-illusion-widescreen-practice.segapatch"
+      }
+    },
+    {
+      "platform": "genesis",
       "game": "Sonic the Hedgehog",
       "game_path": "patches/genesis/sonic-1",
       "source_identity_kind": "cartridge-image-sha256",

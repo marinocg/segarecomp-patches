@@ -111,10 +111,11 @@ class Lifecycle(unittest.TestCase):
 class RepositoryModel(unittest.TestCase):
     def test_the_published_v010_identities_are_unchanged(self):
         cat = json.loads((ROOT / "catalog/index.json").read_text())["packages"]
-        self.assertEqual({(p["id"], p["version"], p["release"]) for p in cat}, {("sonic1-native-widescreen", "2.0.1", "v0.1.0"), ("sonic2-native-widescreen", "3.0.1", "v0.1.0"),
+        v010 = [p for p in cat if p["release"] == "v0.1.0"]
+        self.assertEqual({(p["id"], p["version"], p["release"]) for p in v010}, {("sonic1-native-widescreen", "2.0.1", "v0.1.0"), ("sonic2-native-widescreen", "3.0.1", "v0.1.0"),
             ("sonic2-native-widescreen-rev01", "3.0.1", "v0.1.0"), ("sonic3k-native-widescreen", "1.0.1", "v0.1.0"), ("sor2-widescreen", "1.0.0", "v0.1.0")})
-        self.assertIn("636342c8a44516cc86bed4325c7f75d5721f0b38de8e852e2964a015566a5921", {p["package_sha256"] for p in cat})
-        self.assertTrue(all(p["asset"]["url"].startswith(f"{REPO}/releases/download/v0.1.0/") for p in cat))
-
+        self.assertIn("636342c8a44516cc86bed4325c7f75d5721f0b38de8e852e2964a015566a5921", {p["package_sha256"] for p in v010})
+        self.assertEqual({(p["id"], p["version"]) for p in cat if p["release"] != "v0.1.0"}, {("castle-of-illusion-widescreen-practice", "0.1.0")}, "the only later package is the one v0.2.0 release")
+        self.assertTrue(all(p["asset"]["url"].startswith(f"{REPO}/releases/download/{p['release']}/") for p in cat), "every asset is served by its own release")
 
 if __name__ == "__main__": unittest.main()

@@ -391,7 +391,7 @@ class HistoricalIntegrity(unittest.TestCase):
     def test_v010_is_reconstructed_from_its_pinned_commit_with_its_original_digests(self):
         out = pathlib.Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, out)
         r = run(S / "build_packages.py", "--release", "v0.1.0", "--segapatch", SEGAPATCH, "--out", out); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        cat = {p["id"]: p for p in json.loads((ROOT / "catalog/index.json").read_text())["packages"]}
+        cat = {p["id"]: p for p in json.loads((ROOT / "catalog/index.json").read_text())["packages"] if p["release"] == "v0.1.0"}   # later releases (v0.2.0) are verified by their own rebuild
         self.assertEqual(len(cat), 5)
         sums = dict(l.split("  ")[::-1] for l in (out / "SHA256SUMS").read_text().splitlines())
         for pid, p in cat.items():
@@ -403,7 +403,8 @@ class HistoricalIntegrity(unittest.TestCase):
         first = subprocess.run(["git", "show", "2f6bdb7:catalog/index.json"], cwd=ROOT, capture_output=True, text=True)
         if first.returncode: self.skipTest("the W02 commit is not in this checkout")
         old, new = json.loads(first.stdout)["packages"], json.loads((ROOT / "catalog/index.json").read_text())["packages"]
-        self.assertEqual(new[:len(old)], old, "every published entry is byte-for-byte the same value")
+        by_id = {p["id"]: p for p in new}   # the catalog is sorted by id, so a later release's entry may precede the originals: compare each original entry by its id
+        self.assertEqual([by_id.get(p["id"]) for p in old], old, "every published entry is byte-for-byte the same value")
 
 
 def check_repo_assets(out):
