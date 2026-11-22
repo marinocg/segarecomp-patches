@@ -265,7 +265,7 @@ class AffectedReleases(unittest.TestCase):
     def test_a_changed_patch_rebuilds_only_the_releases_that_contain_it(self):
         s, base = self.fixture(); r, n, tags = self.change(s, base, "touch pa", lambda: (s.patch("a", "main") / "README.md").write_text("# changed\n"))
         self.assertEqual((r.returncode, tags, n), (0, ["v2.0.0"], 2), r.stdout + r.stderr)   # v2.0.0 = pa (legacy) + pb (mod): 2 builds; v3.0.0 and the published v1.0.0 untouched
-        self.assertNotIn("pc", " ".join(s.mod_calls())); self.assertFalse(any(l.startswith("old") for l in s.writer_calls()))
+        self.assertNotIn("pc.segapatch", " ".join(s.mod_calls())); self.assertFalse(any(l.startswith("old") for l in s.writer_calls()))
 
     def test_a_patch_in_two_prepared_releases_rebuilds_both(self):
         s, base = self.fixture(); s.legacy_patch("a", "main", "pa2", "1.0.0", "a2", tag="v3.0.0")   # a second package of the SAME patch directory

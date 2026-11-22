@@ -54,8 +54,8 @@ static Plane plane_a, plane_b;
 static uint16_t words_a[WCOLS * WROWS], words_b[WCOLS * WROWS], band_a[WCOLS * BROWS], band_b[WCOLS * BROWS];
 typedef struct ModState {
   uint32_t chord_held;    /* the chord was down at the latest post-input (an edge needs it up first) */
-  uint32_t restores;      /* completed restorations since reset */
-  uint32_t flash;         /* frames left of the "POWER" notice */
+  uint32_t restores;      /* completed restorations since reset (kept in the save state; nothing is drawn for it: the package shows no indicator) */
+  uint32_t flash;         /* frames since the latest restoration, counted down (kept in the save state; no notice is drawn) */
   uint32_t chord_now;     /* the chord is down in this frame's sample (set at `input`, read at `post-input`) */
 } ModState;
 static ModState st;
@@ -361,16 +361,6 @@ static void practice(const SegaModHost *h) {
   st.chord_held = st.chord_now;   /* updated every frame, valid scene or not: a chord that was already down never fires later */
 }
 
-static void draw_number(const SegaGenesisRenderApi *render, int32_t x, int32_t y, uint32_t value, uint32_t rgba) {
-  char digits[4];
-  value %= 1000U;
-  digits[0] = (char)('0' + value / 100U);
-  digits[1] = (char)('0' + (value / 10U) % 10U);
-  digits[2] = (char)('0' + value % 10U);
-  digits[3] = 0;
-  (void)render->overlay_text(x, y, digits + (value >= 100U ? 0 : (value >= 10U ? 1 : 2)), value >= 100U ? 3U : (value >= 10U ? 2U : 1U), rgba);
-}
-
 static void provider_render(const SegaModHost *h) {
   uint32_t serve, m = 0U;
   int32_t view_lo, view_hi;
@@ -402,17 +392,6 @@ static void provider_render(const SegaModHost *h) {
   else if (view_declared != 0U && m == margin_used) { view_lo = -view_left_px; view_hi = RASTER_W + 2 * (int32_t)margin_used - view_left_px; }
   else { const int32_t mw = (int32_t)(m > margin_used ? m : margin_used); view_lo = -mw; view_hi = RASTER_W + 2 * mw; }
   submit_actors(h, render, view_lo, view_hi, render->view_margin != NULL && render->view_left != NULL && view_declared != 0U && m == margin_used);
-  /* The Practice+ indicator: a small panel with the number of restorations, and a notice for a moment after one. Presentation only. It is always a positioned layer anchored to the top-right corner of the whole
-   * presented view, never the fixed overlay: the fixed overlay sits at the left edge of the view, which is the picture's own power meter when the picture is placed at the left (a level's first columns, ADR 0315),
-   * and the host counts only the fixed overlay as the game's relocated HUD, which this package does not provide. With no extension (Original, 4:3) the view is the picture and the corner is the picture's. */
-  if (render->overlay_layer(1U, 2U, 1U, 0, 0, 40U, 16U, 0U) == 0) (void)render->overlay_target(1U);
-  (void)render->overlay_rect(0, 0, st.restores != 0U ? 38 : 24, 8, 0x000000C0U);
-  (void)render->overlay_text(2, 0, "P+", 2U, 0xFFD040FFU);
-  if (st.restores != 0U) draw_number(render, 16, 0, st.restores, 0xFFFFFFFFU);
-  if (st.flash != 0U) {
-    (void)render->overlay_rect(0, 8, 40, 8, 0x000000C0U);
-    (void)render->overlay_text(2, 8, "POWER", 5U, 0x60FF60FFU);
-  }
 }
 
 static int provider_init(void *state, const SegaModHost *host) {
