@@ -424,7 +424,7 @@ class CastleIntegration(unittest.TestCase):
 
     def test_classification_in_the_repository(self):
         st = lambda n: release_meta.state_of(ROOT, f"genesis/castle-of-illusion/{n}")
-        self.assertEqual(st("widescreen-practice"), "eligible"); self.assertEqual([st(f"activation-{v}") for v in ("16x9", "21x9", "32x9")], ["candidate"] * 3)
+        self.assertEqual(st("widescreen-practice"), "eligible"); self.assertEqual([st(f"activation-{v}") for v in ("16x9", "21x9", "32x9")], ["eligible"] * 3)
         self.assertEqual((st("debug-fly"), st("input-recorder")), ("internal", "internal"))
 
     def test_the_castle_package_is_recorded_and_reproducible(self):
