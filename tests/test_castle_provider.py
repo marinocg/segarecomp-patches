@@ -444,8 +444,7 @@ class Provider(unittest.TestCase):
         f4 = out[out.index("F4") + 1:]
         self.assertEqual([l for l in out[:out.index("F3")] if l.startswith("view_left")], ["view_left %d 238" % ref_left(150, 240, 238)], "frame 2: margin 238 learnt in frame 1")
         self.assertEqual([l for l in f3 if l.startswith("view_left")], [], "frame 3: the windows were built for margin 238 but the host now plans 39: no placement")
-        self.assertEqual([l for l in f3 if l.startswith("window")], [], "frame 3: and no window either (they answer the cells of a view that is no longer the host's); the actors and the indicator are still submitted")
-        self.assertTrue([l for l in f3 if l.startswith("rect")], "the indicator is independent of the view")
+        self.assertEqual([l for l in f3 if l.startswith("window")], [], "frame 3: and no window either (they answer the cells of a view that is no longer the host's); the actors are still submitted")
         self.assertEqual([l for l in f4 if l.startswith("view_left")], ["view_left %d 39" % ref_left(150, 240, 39)], "frame 4: built for 39, declared for 39")
 
     def test_windows_cover_the_placed_view(self):
@@ -469,13 +468,13 @@ class Provider(unittest.TestCase):
                                     cx, cy = (x - hs) // 8, (line + vs) // 8
                                     self.assertTrue(any(x0 <= cx < x0 + c and y0 <= cy < y0 + r for x0, y0, c, r in mine), "margin %d camera %d plane %d: cell (%d, %d) at x %d line %d is in no window" % (margin, cam, plane, cx, cy, x, line))
 
-    def test_the_indicator_is_always_a_top_right_layer_never_the_fixed_overlay(self):
-        # the fixed overlay is the game's relocated HUD in the host's accounting and sits at the left edge of the view (the picture's own power meter when the picture is placed left): the panel is a layer
+    def test_the_package_draws_no_overlay_indicator(self):
+        # the "P+" panel and the "POWER" notice were removed: no overlay layer, target, rectangle or text is requested at any frame, planned or not, with or without a restoration
         second, first = self.two_frames(Ram(cam=100), 238)
-        for out in (second, first, self.run_script(["init"] + self.frame(Ram(cam=100)))):   # planned, learnt in the same render, and no extension (margin 0)
-            self.assertIn("layer 1 2 1 0 0 40 16 0", out, "anchored to the top right of the presentation, where the picture's own HUD never is")
-            self.assertLess(out.index("layer 1 2 1 0 0 40 16 0"), out.index("target 1"))
-            self.assertLess(out.index("target 1"), out.index("rect 0 0 24 8"), "the panel is drawn into the layer, never into the fixed overlay (target 0)")
+        chord = self.run_script(["init", "margin 238"] + self.frame(Ram(cam=100, ), frame=1) + self.frame(Ram(cam=100), pad=0x70, frame=2) + self.frame(Ram(cam=100), pad=0, frame=3))
+        for out in (second, first, self.run_script(["init"] + self.frame(Ram(cam=100))), chord):
+            self.assertEqual([l for l in out if l.startswith(("layer", "target", "rect", "text"))], [])
+        self.assertTrue([l for l in chord if l.startswith("write")], "Practice+ itself still restores the power")
 
     def test_the_hardware_piece_flag_is_set_on_kept_edge_pieces_only(self):
         # ADR 0313: a piece the game kept (the host's Level 3 extension already draws it with the original rules) carries HARDWARE_PIECE; a piece the game dropped does not
