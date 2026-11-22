@@ -1,10 +1,13 @@
 {
   "release_format": 2,
   "release": "v0.3.0",
-  "status": "prepared",
+  "status": "published",
   "source_layout": "patch-dir",
   "source_revision": {
-    "repository": "https://github.com/marinocg/segarecomp-patches"
+    "repository": "https://github.com/marinocg/segarecomp-patches",
+    "commit": "7975a4aa6e9c24eadb8330dceb1fa59ccfefc89f",
+    "tag": "v0.3.0",
+    "tag_commit": "7975a4aa6e9c24eadb8330dceb1fa59ccfefc89f"
   },
   "packages": [
     "castle-of-illusion-activation-16x9@0.1.0",

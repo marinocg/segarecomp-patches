@@ -8,9 +8,9 @@ Measured by `python3 scripts/artifact_budget.py` on `catalog/index.json` (record
 
 | Measure | Value | Threshold that would justify R2 |
 |---|---|---|
-| Packages in the catalog | 5 | n/a |
-| Largest package | 36613 bytes | more than 20 MiB |
-| All packages together | 72442 bytes | more than 500 MiB |
+| Packages in the catalog | 8 | n/a |
+| Largest package | 48854 bytes | more than 20 MiB |
+| All packages together | 182391 bytes | more than 500 MiB |
 | Static files in the built site | counted in CI, a few dozen | more than 15,000 |
 
 Vendor limits (GitHub Pages: published site up to 1 GB with soft bandwidth guidance; GitHub Release assets up to 2 GiB each) are those documented when the decision was written; re-verify them before relying on a margin. Every package is several orders of magnitude below the thresholds, and a release asset URL is already immutable, versioned and HTTPS. R2 would add an account, a bucket, credentials and a second place a digest could drift, for no measured benefit.
