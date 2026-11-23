@@ -2,7 +2,7 @@
 """Per-file publication review record for every source file of an ELIGIBLE patch (docs/source-review.md).
 
   check_source_review.py            fail unless docs/source-review.json has an exact, current record for every source file of every patch that
-                                    publication.json marks `eligible` (legacy: source/*; schema 3: mod.toml and the files under src/, scripts/, edits/)
+                                    publication.json marks `eligible` (legacy: source/*; schema 3: mod.toml and the files under src/, scripts/, edits/, bps/)
   check_source_review.py --write    regenerate the mechanical fields (path, SHA-256, size, class, measurements); keeps the reviewed rationale
 
 The record is a technical content classification (what the file is, how large it is, that it carries no reconstructable image data). It is
@@ -44,7 +44,7 @@ def current(root):
     out = {}
     for pt in release_meta.patches(root):
         if release_meta.state_of(root, pt.rel) != "eligible": continue
-        files = [pt.dir / "mod.toml", *sorted(f for top in ("src", "scripts", "edits") for f in (pt.dir / top).rglob("*") if f.is_file())] if pt.is_mod \
+        files = [pt.dir / "mod.toml", *sorted(f for top in ("src", "scripts", "edits", "bps") for f in (pt.dir / top).rglob("*") if f.is_file())] if pt.is_mod \
             else sorted(f for f in (pt.dir / "source").glob("*") if f.is_file())
         for f in files: out[f.relative_to(root).as_posix()] = (f, classify(f))
     return out

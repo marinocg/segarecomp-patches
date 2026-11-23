@@ -70,8 +70,21 @@ class Lint(unittest.TestCase):
     def test_disallowed_file_type(self):
         self.expect(self.project(toml=TOML.replace("provider.c", "provider.bin"))[0], "disallowed file type")
     def test_platform_mismatch(self): self.expect(self.project(platform="master-system")[0], "differs from directory")
-    def test_binary_source_kind_rejected(self):
-        self.expect(self.project(toml=TOML.replace("native-c11", "bps-image"))[0], "not accepted in a repository project")
+    BPS_TOML = TOML.replace('[[source]]', '[[source]]\nkind = "bps-image"\npath = "bps/game.bps"\ntarget_sha256 = "%s"\n\n[[source]]' % ("cd" * 32), 1)
+    def bps_project(self, toml=None, data=b"BPS1" + b"\0" * 20):
+        r, d = self.project(toml=toml or self.BPS_TOML); (d / "bps").mkdir(); (d / "bps/game.bps").write_bytes(data); return r, d
+    def test_bps_image_positive(self): self.assertEqual(self.errs(self.bps_project()[0]), [])
+    def test_bps_image_needs_target_digest(self):
+        self.expect(self.bps_project(toml=self.BPS_TOML.replace('target_sha256 = "%s"\n' % ("cd" * 32), ""))[0], "declares no target_sha256")
+    def test_bps_image_must_be_a_small_bps_delta(self):
+        self.expect(self.bps_project(data=b"MZ" + b"\0" * 30)[0], "must be a BPS1 delta")
+        self.expect(self.bps_project(data=b"BPS1" + b"\0" * 5000)[0], "must be a BPS1 delta")
+    def test_bps_image_lives_in_bps_dir_only(self):
+        self.expect(self.bps_project(toml=self.BPS_TOML.replace("bps/game.bps", "src/game.bps"))[0], "bps/ holds the bps-image source and nothing else")
+    def test_bps_directory_holds_declared_sources_only(self):
+        r, d = self.bps_project(); (d / "bps/extra.bps").write_bytes(b"BPS1"); self.expect(r, "not a declared source file")
+    def test_other_binary_kinds_stay_rejected(self):
+        self.expect(self.project(toml=TOML.replace("native-c11", "guest-code"))[0], "not accepted in a repository project")
     def test_stray_entry(self):
         r, d = self.project(); (d / "notes.txt").write_text("x"); self.expect(r, "unexpected entry")
     def test_symlink_source(self):

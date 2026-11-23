@@ -1,0 +1,45 @@
+# Sonic the Hedgehog (Genesis, USA/Europe REV00): native widescreen as a schema 3 / native ABI 2 package (SEG-152-T009). The same game knowledge, BPS delta and verification as the ABI 1 package
+# patches/genesis/sonic-1/native-widescreen (which stays published and unchanged); only the SDK it is written against differs. Native code is host code: the user approves the exact package identity.
+[mod]
+id = "sonic1-native-widescreen-abi2"
+author = "segarecomp SEG-124"
+version = "0.1.0"
+name = "Sonic 1 Native Widescreen (REV00, ABI 2)"
+license = "MPL-2.0"
+
+[target]
+platform = "genesis"
+
+[[target.revision]]
+label = "usa-europe-rev00"
+sha256 = "46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6"
+
+[[source]]
+kind = "bps-image"
+path = "bps/game.bps"
+target_sha256 = "985d25fff81cf1506072869e013e7eabb0b26572061cf6c5aa4b5383091d2b7f"
+
+[[source]]
+kind = "native-c11"
+path = "src/provider.c"
+
+[abi]
+native = 2
+minor = 2
+
+[capabilities]
+required = ["frame.vdp", "frame.work_ram", "overlay.rgba", "scenery.words"]
+
+[build]
+header_repair = "none"
+
+[geometry]
+aspect_max = "32:9"
+
+[[scene]]
+id = "level"
+components = ["scenery", "hud"]
+
+[[scene]]
+id = "special-stage"
+components = ["scenery"]

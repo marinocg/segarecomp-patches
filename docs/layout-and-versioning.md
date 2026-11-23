@@ -18,6 +18,7 @@ schema 3 / native ABI 2 (source-based mod)       schema 1 / 2 (BPS delta, option
 ├── README.md                                    ├── README.md
 ├── mod.toml                  authoritative      ├── package.json      package facts (digests, versions, evidence)
 ├── src/ scripts/ edits/      declared sources   ├── source/
+├── bps/                      optional: one BPS delta (bps-image)
 ├── tests/                    optional           │   ├── <package-id>.bps            BPS delta that produced the package (<= 4 KiB, no game content)
 └── package.json              once a version     │   ├── <package-id>.manifest.json  the exact manifest shipped in the package
                               was recorded       │   └── provider.c                  only for schema 2; SHA-256 = native source digest
@@ -46,7 +47,7 @@ Rules, all checked by the lint:
 * `package.json` `platform` must equal the directory. Packages (`.segapatch`) are never committed.
 * **Compatibility declaration:** the README and the package facts state the exact image SHA-256 digests, supported scope and limitations. A title or region is never an identity.
 * **Expected digests:** a schema 1/2 `package.json` carries the SHA-256 of the package, manifest identity, source image, patched image, BPS and native source; CI recomputes the ones it can without a game image. A schema 3 entry carries the package digest, size and identity produced by the product tool and the images and capabilities declared by `mod.toml`; CI checks that they agree with `mod.toml` and, with the product CLI, that `mod pack` still produces exactly those bytes.
-* **Schema 3 project:** `mod.toml` plus the files it declares under `src/`, `scripts/` or `edits/` (text only: `.c`/`.h`, `.luau`, `.edits`, `.asm`). `lint_layout.py` checks layout, declared files, safe paths, links, text-only sources and the schema/ABI combination (`native-c11` requires `[abi] native = 2`); the product's `segarecomp mod check/pack/build` is the only manifest and package authority. An optional `tests/package.json` (`package_identity`, `package_sha256`) pins the expected rebuild so a changed source byte fails; when a recorded version exists both must agree.
+* **Schema 3 project:** `mod.toml` plus the files it declares under `src/`, `scripts/`, `edits/` or `bps/` (text only: `.c`/`.h`, `.luau`, `.edits`, `.asm`, plus the one `bps-image` delta: a `.bps` file of at most 4 KiB under `bps/` that carries a `target_sha256` in `mod.toml`; it is a binary patch against an original image, never a game image, and is reviewed like a schema 1/2 delta). `lint_layout.py` checks layout, declared files, safe paths, links, text-only sources and the schema/ABI combination (`native-c11` requires `[abi] native = 2`; a `bps-image` source is a `BPS1` delta of at most 4 KiB with a `target_sha256`); the product's `segarecomp mod check/pack/build` is the only manifest and package authority. An optional `tests/package.json` (`package_identity`, `package_sha256`) pins the expected rebuild so a changed source byte fails; when a recorded version exists both must agree.
 * **Publication is separate from layout.** Where a patch lives says nothing about whether it may be released: that is `publication.json` (default `internal`) and `releases/<tag>.json` ([releases.md](releases.md)).
 
 ## Historical layout (v0.1.0)

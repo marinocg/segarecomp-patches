@@ -1,0 +1,51 @@
+{
+  "package_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Sonic the Hedgehog 2",
+  "packages": [
+    {
+      "id": "sonic2-native-widescreen-abi2-rev01",
+      "version": "0.1.0",
+      "name": "Sonic 2 Native Widescreen (JUE REV01, ABI 2)",
+      "schema_version": 3,
+      "native_abi": 2,
+      "capabilities": [
+        "frame.vdp",
+        "frame.work_ram",
+        "memory.read.m68k.work_ram",
+        "overlay.rgba",
+        "scenery.words",
+        "state.mod"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "package_sha256": "47e93dd3a5d98267ac7b13d5ae8fcb203237829e207190f57ce4bfbb1b42a881",
+      "package_size": 33896,
+      "package_identity": "0737738d56a8278930248e8d3b5f8d865f38308026e2917c421b907a734c5c50",
+      "images": [
+        {
+          "label": "jue-rev01",
+          "sha256": "193bc4064ce0daf27ea9e908ed246d87ec576cc294833badebb590b6ad8e8f6b"
+        }
+      ],
+      "license": "MPL-2.0",
+      "author": "segarecomp SEG-124",
+      "evidence_tier": "synthetic-only",
+      "gameplay": "changes slightly",
+      "supported_scope": "Single-player running levels and attract demos of JUE REV01 with reconstructed scenery and the relocated animated HUD (the ABI 2 successor of the published ABI 1 package: same scope, same BPS delta, same verification).",
+      "limitations": [
+        "Applies only to the one image this entry lists (JUE REV01); any other image is refused by digest.",
+        "Gameplay can differ slightly: additional actors become active or visible in the widened margins (the BPS delta is the ABI 1 package's).",
+        "Hill Top's lower lava background band, Wing Fortress beyond its first sections, the ending and special-stage presentation fall back to the generic renderer. Two-player mode and 240-line PAL frames are not covered.",
+        "Needs a segarecomp build with native ABI 2 minor 2 (a product revision that contains SEG-152-T003 to SEG-152-T008, pinned in scripts/PRODUCT_REF); no tagged segarecomp release can install it yet. The ABI 1 package of this image stays the published one."
+      ],
+      "build": {
+        "writer": "segarecomp mod pack",
+        "writer_ref": "69a3bf6fd2235b6cdde0c0f0eedc8a1060149eec",
+        "deterministic": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+[mod]
+id = "sonic2-native-widescreen-abi2-rev00"
+author = "segarecomp SEG-124"
+version = "0.1.0"
+name = "Sonic 2 Native Widescreen (World REV00, ABI 2)"
+license = "MPL-2.0"
+
+[target]
+platform = "genesis"
+
+[[target.revision]]
+label = "world-rev00"
+sha256 = "07329f4561044a504923eb0742894485c61fc42ebb0891eebff247ca2e086d61"
+
+[[source]]
+kind = "bps-image"
+path = "bps/game.bps"
+target_sha256 = "1dc384e493b0ac53424046bcd0acc793ef0fde6427de323f1f047550dbf8ecac"
+
+[[source]]
+kind = "native-c11"
+path = "src/provider.c"
+
+[abi]
+native = 2
+minor = 2
+
+[capabilities]
+required = ["frame.vdp", "frame.work_ram", "memory.read.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+
+[state]
+schema = 1
+
+[build]
+header_repair = "none"
+
+# game mode: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "world-rev00"
+space = "m68k.work_ram"
+offset = 62976
+length = 1
+access = "read"
+
+# level-started flag: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "world-rev00"
+space = "m68k.work_ram"
+offset = 63249
+length = 1
+access = "read"
+
+# split-screen flag: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "world-rev00"
+space = "m68k.work_ram"
+offset = 65496
+length = 2
+access = "read"
+
+# HUD flash phase: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "world-rev00"
+space = "m68k.work_ram"
+offset = 65029
+length = 1
+access = "read"
+
+# ring count: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "world-rev00"
+space = "m68k.work_ram"
+offset = 65056
+length = 2
+access = "read"
+
+# timer minutes: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "world-rev00"
+space = "m68k.work_ram"
+offset = 65059
+length = 1
+access = "read"
+
+[geometry]
+aspect_max = "32:9"
+
+[[scene]]
+id = "level"
+components = ["scenery", "hud"]
