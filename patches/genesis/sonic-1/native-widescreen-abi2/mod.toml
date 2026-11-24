@@ -25,7 +25,7 @@ path = "src/provider.c"
 
 [abi]
 native = 2
-minor = 2
+minor = 3
 
 [capabilities]
 required = ["frame.vdp", "frame.work_ram", "overlay.rgba", "scenery.words"]
@@ -42,4 +42,4 @@ components = ["scenery", "hud"]
 
 [[scene]]
 id = "special-stage"
-components = ["scenery"]
+components = ["scenery", "actors"]

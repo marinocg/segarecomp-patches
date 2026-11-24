@@ -1,32 +1,31 @@
-# Sonic the Hedgehog (Genesis): native widescreen as a schema 3 / ABI 2 package (SEG-152-T009): BLOCKED, NOT RELEASABLE
+# Sonic the Hedgehog (Genesis): native widescreen as a schema 3 / ABI 2 package (SEG-152-T009)
 
-> The source of the ABI 2 port of the [Sonic 1 widescreen provider](../native-widescreen/README.md), kept as **internal** public source so the blocking evidence is reproducible. It is **not** a candidate, has no package pin, is never selected by a release and must not be installed to replace the published ABI 1 package. SEG-152-T009 stopped on its own rule: *if exact parity is impossible because of an architectural limitation, stop, record the evidence and return to refinement*.
+> The source of the ABI 2 port of the [Sonic 1 widescreen provider](../native-widescreen/README.md). It reproduces the published ABI 1 package's behaviour frame for frame, with one operator-approved addition: the special-stage maze is drawn into the widescreen margins (below). It has no package pin yet, is not selected by any release and does not replace the published ABI 1 package (which stays published and unchanged).
 
 | | |
 |---|---|
 | Platform | Sega Genesis / Mega Drive |
 | Revision | USA/Europe REV00 only: original image SHA-256 `46160baa06362c711c9f1a5017cb7371026444936c8af5e93a78996cf32ff2a6` |
-| Package schema / ABI | schema 3, native ABI 2 minor 2 (`bps-image` + `native-c11`; capabilities `frame.vdp`, `frame.work_ram`, `overlay.rgba`, `scenery.words`) |
+| Package schema / ABI | schema 3, native ABI 2 minor 3 (`bps-image` + `native-c11`; capabilities `frame.vdp`, `frame.work_ram`, `overlay.rgba`, `scenery.words`) |
 | BPS delta | `bps/game.bps` is byte-for-byte the delta of the published ABI 1 package (source and target digests unchanged); `[build] header_repair = "none"` keeps the patched image equal to that target |
-| Status | **internal, blocked**: see below |
+| Special stage | the maze blocks the game culls at the 4:3 edges are drawn in the margins (virtual sprites; the native picture stays pixel-identical to ABI 1; `actors` is declared for the `special-stage` scene) |
+| Presentation | the centred baseline (the provider declares no `view_left`); windows are built from the planned margin and a `left_px` variable |
 
-## Why it is blocked
+## How the scenery is delivered
 
-The port keeps the ABI 1 provider's game knowledge, constants and verification logic unchanged and only changes how the answers are delivered (scenery windows instead of the per-cell callback, the generic mask for the special stage, one RGBA bitmap for the HUD, a refusal with the ABI 1 reason instead of a decline). Its window builder asks exactly the cells the host asks (only off-picture pixels, per line). Played in the real viewer next to the ABI 1 package with identical input, the HUD and the foreground plane match, but **the background plane of Green Hill Zone cannot be expressed by the ABI 2 scenery windows** (the mechanism, with a synthetic schematic: [docs/abi2-scenery-line-origins.md](../../../../docs/abi2-scenery-line-origins.md)):
+The game scrolls every line of the lower background by a different amount, so two lines of one plane-cell row can ask the same plane cell with world origins 512 px (64 cells) apart ([the mechanism](../../../../docs/abi2-scenery-line-origins.md)). The provider therefore states, per produced row and plane, the line's whole-cell world shift with `scenery_row_origin` (ABI 2 minor 3) and keys its windows by the translated world column: one window when the translated width is at most 128 columns, else two equal halves up to 256, else the scenery is declined (`bad_state`). The special-stage wrapped plane stays on the per-row generic mask, the HUD is one RGBA bitmap, and refusals carry the ABI 1 reason.
 
-* The ABI 1 provider answers every off-picture cell of every screen line with the world cell at *that line's own* world origin. The ABI 2 window is keyed by **plane cell** (`plane x = screen x - hscroll`, `plane y = line + vscroll`, unwrapped): one word per plane cell for the whole frame.
-* In the lower background region the game scrolls every line by a different amount. As that per-line scroll ramps, the nearest-alias world origin of adjacent lines flips by 512 px (64 plane cells), so two lines of one plane-cell row ask the same plane cell with origins 512 px apart and need two different words. This is the "origin-multiple" class that SEG-152-T001 recorded as *watched* with a synthetic failing fixture only. The per-row generic mask of SEG-152-T007 answers a line with the VDP's *own* plane word, which is not the world cell the ABI 1 provider serves in the margin columns, so it cannot express it either.
-* Measured (aggregate): the HUD is served on the same 3,775 frames for both packages, but of the 3,775 frames in which the ABI 1 provider authors scenery the ABI 2 port can serve **877**; **2,898 (77%) differ** in accepted components, authored status and coverage accounting (the window builder refuses the frame's scenery: a refusal, not a fault). Every refused frame contains a conflict and every conflict frame is refused (one-to-one, one constant frame-number offset between the provider's and the viewer's numbering). A conflict is always plane B, one or two plane-cell rows and 118 to 215 cells at 32:9 (18 to 21 at 16:9), always a difference of exactly 64 cells. The conflicting cells and their two words were **recomputed independently from the game's work RAM** (not from this source) and match the instrumented port exactly at the previous-onset RAM in every captured conflict frame; where no such pair exists the port is pixel-identical to ABI 1. Serving only the cells that do not conflict would be a documented difference and a regression, which the task forbids.
+## The special-stage maze in the margins
 
-No tolerance, no skipped frame, no exception and no ad hoc API addition was used. The way forward is the product-side capability proposed as SEG-152-T017 (a per-row scenery origin delta), which is a refinement decision, not a patches change.
+The special stage's maze is sprites, and the game only builds the sprites of the blocks inside its own 320 px view, so in ABI 1 the maze stops at the old 4:3 edges while the background keeps going. The provider reconstructs the blocks the game would have drawn there: it extends the game's own 16 x 16 block-position grid to more cells (the extension is verified against all 256 buffered positions of the frame; on any doubt nothing is added), learns the sprite pieces of each block type from the sprites the game DID build in the same frame (they are emitted one block after the other, centred on the block), and submits the pieces that reach into the margins as one virtual-sprite set (presentation space, art copied from the frame's own VRAM/CRAM, pieces the game kept are marked so a host that draws the hardware sprite layer in the margins does not draw them twice). It remembers nothing between frames, so save/load and rewind need no special care, and no game art or table is stored in this repository. A block type that has no instance inside the picture in that frame cannot be learned and is left out of that frame; at most 64 pieces are submitted per frame (the nearest to the picture first; 52 was the maximum measured at 32:9).
 
-## Reproduce (local only; needs the legally held image and a product checkout)
+## Reproduce the parity comparison (local only; needs the legally held image and a product checkout built at `scripts/PRODUCT_REF`)
 
 ```sh
 python3 tools/abi_parity_compare.py --product-root <product> --cli <segarecomp> --sdl <sdl3> --cc cc --rom <Sonic 1 image> \
   --abi1 patches/genesis/sonic-1/native-widescreen --abi1-id sonic1-native-widescreen \
-  --abi2 patches/genesis/sonic-1/native-widescreen-abi2 --work <dir> --scenario-set s1 --only level-wide,level-w169
-python3 tools/sonic1_conflict_diagnosis.py --product-root <product> --cli <segarecomp> --sdl <sdl3> --cc cc --rom <Sonic 1 image> --work <dir> --diag <a directory OUTSIDE this repository>
+  --abi2 patches/genesis/sonic-1/native-widescreen-abi2 --work <dir> --scenario-set s1 \
+  --only level,demos,transitions,lifecycle,visual,acts,special
 ```
 
-The first prints aggregates only (frame counts and the named mechanisms that differ). The second writes side-by-side captures, difference pictures and conflict overlays of the real game into `--diag` (refused inside the repository: real-game pictures are never committed or uploaded) and prints aggregates only.
+It prints aggregates only (frame counts and the named mechanisms that differ); there is no tolerance, no skipped frame and no normalisation.

@@ -196,10 +196,12 @@ static unsigned ss_check(Sonic1Frame *f, const SegaGenesisFrameView *v) {
 
 /* ---------------------------------------------------------------------------------------------------------------- scenery windows */
 
-/* The scenery of one plane as bounded windows. The host looks a column outside the picture up at plane x = screen x - hscroll, plane y = line + vscroll of that line; the ABI 1 provider answered
- * the same lookup with the world cell at world x = screen x + off(line) (off(line) is -hscroll up to a multiple of 512, verified per line). A plane cell (c, r) therefore holds the world cell
- * (c + k, r + dy) where k = (hscroll + off) / 8 is the line's own whole-plane shift. Lines of one plane cell row that need DIFFERENT shifts for the same plane cell cannot be expressed by one window
- * word; that (and a span wider than two windows) is reported to the caller, which then refuses the frame's scenery honestly instead of serving wrong cells.
+/* The scenery of one plane as bounded windows plus a per-row origin delta (ABI minor 3, `scenery_row_origin`). The host looks a column outside the picture up at plane x = screen x - hscroll, plane y =
+ * line + vscroll of that line; the ABI 1 provider answered the same lookup with the world cell at world x = screen x + off(line) (off(line) is -hscroll up to a multiple of 512, verified per line).
+ * A line therefore needs the world cell (c + k, r + dy) for the plane cell (c, r) it asks, k = (hscroll + off) / 8 being the line's own whole-plane shift. The provider states that shift per produced
+ * row as the origin delta, so the host looks up the TRANSLATED world column c + k_row; the windows are keyed by world column and plane row, i.e. by a function of the world cell alone, and two lines of
+ * one plane cell row whose shifts differ by a multiple of 64 cells no longer need different words for the same window cell. Packing: one window when the translated width is at most MAX_COLS columns,
+ * else two EQUAL halves up to SPAN_MAX columns, else the plane cannot be expressed and the caller declines the scenery.
  * `left_px` / `margin_px`: the planned per-side margin and the number of planned columns left of the picture (the centred baseline: left_px == margin_px). The windows are built for exactly that
  * pair; a placement is a different `left_px` and nothing else changes. Returns 0 on success. */
 static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic1Frame *f, const uint8_t *ram, unsigned plane, unsigned height, unsigned left_px, unsigned margin_px) {
@@ -212,13 +214,14 @@ static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic1Frame 
   for (l = 0U; l < height; ++l) {
     /* The host asks ONLY the off-picture pixels of a line: x = -left_px .. -1 on the left and x = 320 .. 319 + right_px on the right (never an in-picture pixel), each at plane x = x - hscroll. */
     const int a = floor_div(-(int)left_px - f->hs[plane][l], 8), b = floor_div(319 + (int)right_px - f->hs[plane][l], 8);
+    const int k = (f->hs[plane][l] + off[l]) / 8;
     al_[l] = (int16_t)a;
     bl_[l] = (int16_t)floor_div(-1 - f->hs[plane][l], 8);
     ar_[l] = (int16_t)floor_div(320 - f->hs[plane][l], 8);
     br_[l] = (int16_t)b;
-    k_[l] = (int16_t)((f->hs[plane][l] + off[l]) / 8);
-    if (l == 0U || a < cmin) cmin = a;
-    if (l == 0U || b > cmax) cmax = b;
+    k_[l] = (int16_t)k;
+    if (l == 0U || a + k < cmin) cmin = a + k;   /* translated world columns */
+    if (l == 0U || b + k > cmax) cmax = b + k;
   }
   rmin = floor_div(f->vs[plane][0], 8);
   rmax = floor_div((int)height - 1 + f->vs[plane][0], 8);
@@ -232,17 +235,19 @@ static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic1Frame 
     const int wrow = rmin + row + (camy - f->vs[plane][0]) / 8;   /* the world cell row of this plane cell row */
     for (unsigned side = 0U; side < 2U; ++side)
       for (c = side == 0U ? al_[l] : ar_[l]; c <= (side == 0U ? bl_[l] : br_[l]); ++c) {
-        int32_t *o = &g_cell[row][c - cmin];
-        const int word = world_cell(ram, plane, c + k_[l], wrow);
-        if (word < 0) return 3;
-        if (*o < 0) *o = word;
-        else if (*o != word) return 2;   /* one plane cell asked by two lines that need different words (per-line origins that differ by a multiple of 512) */
+        int32_t *o = &g_cell[row][c + k_[l] - cmin];
+        if (*o < 0) {
+          const int word = world_cell(ram, plane, c + k_[l], wrow);
+          if (word < 0) return 3;
+          *o = word;   /* a function of the world cell alone: every line that asks this translated cell wants this word */
+        }
       }
   }
   windows = span > (int)MAX_COLS ? 2U : 1U;
   for (unsigned w = 0U; w < windows; ++w) {
-    const int c0 = (w == 0U) ? cmin : cmax - (int)MAX_COLS + 1;
-    const unsigned cols = windows == 1U ? (unsigned)span : MAX_COLS;
+    const unsigned n0 = windows == 1U ? (unsigned)span : ((unsigned)span + 1U) / 2U;
+    const int c0 = w == 0U ? cmin : cmin + (int)n0;
+    const unsigned cols = windows == 1U ? (unsigned)span : (w == 0U ? n0 : (unsigned)span - n0);
     for (rr = 0; rr < rows; ++rr)
       for (unsigned i = 0U; i < cols; ++i) {
         const int32_t word = g_cell[rr][c0 - cmin + (int)i];
@@ -250,7 +255,184 @@ static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic1Frame 
       }
     if (r->scenery_window(plane, c0, rmin, cols, (uint32_t)rows, g_words[plane][w]) != 0) return 4;
   }
+  if (r->scenery_row_origin(plane, k_, height, height * 2U) != 0) return 5;
   return 0;
+}
+
+
+/* ---------------------------------------------------------------------------------------------------------------- special stage maze in the margins */
+/* The special stage's maze is sprites, and the game only builds the sprites of the blocks inside its own 320 px view (it computes the screen position of a 16 x 16 window of 24 px blocks into a position
+ * buffer and culls each block against the picture). The blocks that would be visible in the widescreen margins are therefore never drawn by the game. This reconstructs them: the game's own position
+ * grid is extended to more cells (positions are linear in the cell index before one rounding, so the extension is exact and is verified against all 256 buffered positions of the frame, otherwise nothing is
+ * added), the sprite pieces of each block type are learned from the sprites the game DID build this frame (they are emitted in cell order, one block after the other, and a block's pieces are centred on the
+ * block), and the pieces that reach into the margins are submitted as one virtual-sprite set whose art is the frame's own VRAM/CRAM. Nothing is remembered between frames and no game art is stored here. */
+#define SS_SCRX 0xF700U         /* words: the stage camera (the same variables as the level camera) */
+#define SS_SCRY 0xF704U
+#define SS_ANGLE 0xF780U        /* word: the rotation angle; its high byte (low 2 bits cleared) indexes the sine table */
+#define SS_POSBUF 0x8000U       /* 16 x 16 x (x word, y word): the screen position of every block of the window, relative to the picture centre */
+#define SS_LAYOUT_STRIDE 128U   /* the maze layout (one byte per block, 128 x 128) starts at work RAM 0 */
+#define SS_TYPE_MAX 0x4EU       /* block types above this are not drawn */
+#define SS_BLOCK 24
+#define SS_MAX_PIECES 4U
+#define SS_SAT_MAX 80U
+typedef struct { int x, y; unsigned w, h, tile; } SsSprite;              /* screen px / px / name-table-style tile word */
+typedef struct { uint8_t n; int16_t x[SS_MAX_PIECES], y[SS_MAX_PIECES]; uint8_t wc[SS_MAX_PIECES], hc[SS_MAX_PIECES]; uint16_t tile[SS_MAX_PIECES]; } SsType;   /* pieces relative to the block centre */
+typedef struct { uint8_t type; int cx, cy; } SsCell;
+static SsType g_sstype[SS_TYPE_MAX + 1U];
+static SsSprite g_sat[SS_SAT_MAX];
+static SsCell g_sscell[256];
+static GenesisVirtualSpriteSet g_vset;
+static struct { GenesisVirtualSprite s; int dist; } g_cand[512];
+
+static int ss_x(int c, int s, int dx, int dy, int j) { return floor_div(c * dx - s * dy + j * c * SS_BLOCK, 256); }
+static int ss_y(int c, int s, int dx, int dy, int j) { return floor_div(s * dx + c * dy + j * s * SS_BLOCK, 256); }
+
+/* Finds the sine/cosine pair (the game's table values) and offsets that reproduce the 256 buffered block positions exactly; 0 on success. */
+static int ss_fit(const uint8_t *ram, int *s_out, int *c_out, int *dx0, int *dy0) {
+  const int scrx = (int)u16(ram, SS_SCRX), scry = (int)u16(ram, SS_SCRY);
+  const int x00 = (int16_t)u16(ram, SS_POSBUF), x015 = (int16_t)u16(ram, SS_POSBUF + 15U * 4U);
+  const int y00 = (int16_t)u16(ram, SS_POSBUF + 2U), y015 = (int16_t)u16(ram, SS_POSBUF + 15U * 4U + 2U);
+  const int c0 = ((x015 - x00) * 256) / (15 * SS_BLOCK), s0 = ((y015 - y00) * 256) / (15 * SS_BLOCK);
+  int s, c, i, j;
+  *dx0 = -180 - scrx % SS_BLOCK;
+  *dy0 = -180 - scry % SS_BLOCK;
+  for (s = s0 - 3; s <= s0 + 3; ++s)
+    for (c = c0 - 3; c <= c0 + 3; ++c) {
+      int ok = 1;
+      for (i = 0; i < 16 && ok; ++i)
+        for (j = 0; j < 16; ++j) {
+          const unsigned o = SS_POSBUF + (unsigned)(i * 16 + j) * 4U;
+          if (ss_x(c, s, *dx0, *dy0 + SS_BLOCK * i, j) != (int16_t)u16(ram, o) || ss_y(c, s, *dx0, *dy0 + SS_BLOCK * i, j) != (int16_t)u16(ram, o + 2U)) { ok = 0; break; }
+        }
+      if (ok) { *s_out = s; *c_out = c; return 0; }
+    }
+  return 1;
+}
+
+static unsigned ss_read_sat(const SegaGenesisFrameView *v) {
+  const unsigned base = ((unsigned)v->lines[0].registers[5] & 0x7EU) << 9;
+  unsigned link = 0U, n = 0U;
+  do {
+    const uint8_t *e = v->vram + ((base + link * 8U) & 0xFFFFU);
+    const unsigned size = e[2] & 0xFU;
+    g_sat[n].y = (int)((((unsigned)e[0] << 8) | e[1]) & 0x3FFU) - 128;
+    g_sat[n].x = (int)((((unsigned)e[6] << 8) | e[7]) & 0x1FFU) - 128;
+    g_sat[n].w = (((size >> 2) & 3U) + 1U) * 8U;
+    g_sat[n].h = ((size & 3U) + 1U) * 8U;
+    g_sat[n].tile = ((unsigned)e[4] << 8) | e[5];
+    link = e[3] & 0x7FU;
+    ++n;
+  } while (link != 0U && n < SS_SAT_MAX);
+  return n;
+}
+
+/* Learns the pieces of every block type that the game drew this frame; 0 on success (every drawn block is accounted for, in order). */
+static int ss_learn(unsigned nsat, unsigned ncell) {
+  for (unsigned p0 = 0U; p0 < 4U && p0 < nsat; ++p0) {
+    unsigned p = p0, k, t, ok = 1U;
+    for (t = 0U; t <= SS_TYPE_MAX; ++t) g_sstype[t].n = 0U;
+    for (k = 0U; k < ncell; ++k) {
+      int xmin = 0, xmax = 0, ymin = 0, ymax = 0;
+      unsigned g = 0U, matched = 0U;
+      if (p >= nsat) break;   /* the game ran out of sprites: the remaining blocks have none */
+      while (p + g < nsat && g < SS_MAX_PIECES) {
+        const SsSprite *q = &g_sat[p + g];
+        if (g == 0U || q->x < xmin) xmin = q->x;
+        if (g == 0U || q->y < ymin) ymin = q->y;
+        if (g == 0U || q->x + (int)q->w > xmax) xmax = q->x + (int)q->w;
+        if (g == 0U || q->y + (int)q->h > ymax) ymax = q->y + (int)q->h;
+        ++g;
+        if (xmin + xmax == 2 * g_sscell[k].cx && ymin + ymax == 2 * g_sscell[k].cy) { matched = 1U; break; }
+      }
+      if (!matched) { ok = 0U; break; }
+      t = g_sscell[k].type;
+      if (g_sstype[t].n == 0U) {
+        g_sstype[t].n = (uint8_t)g;
+        for (unsigned q = 0U; q < g; ++q) {
+          const SsSprite *sp = &g_sat[p + q];
+          g_sstype[t].x[q] = (int16_t)(sp->x - g_sscell[k].cx);
+          g_sstype[t].y[q] = (int16_t)(sp->y - g_sscell[k].cy);
+          g_sstype[t].wc[q] = (uint8_t)(sp->w / 8U);
+          g_sstype[t].hc[q] = (uint8_t)(sp->h / 8U);
+          g_sstype[t].tile[q] = (uint16_t)sp->tile;
+        }
+      } else if (g_sstype[t].n != g) { ok = 0U; break; }   /* the same type drew a different number of pieces: not the grouping this relies on */
+      p += g;
+    }
+    if (ok != 0U && k > 0U) return 0;
+  }
+  return 1;
+}
+
+/* Submits the maze blocks that reach into the margins as virtual sprites (presentation space). Silent on any doubt: the frame then simply has no maze in its margins, as before. */
+static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, const uint8_t *ram, unsigned left_px, unsigned margin_px) {
+  const int right_px = (int)(2U * margin_px - left_px), lpx = (int)left_px;
+  const int scrx = (int)u16(ram, SS_SCRX), scry = (int)u16(ram, SS_SCRY);
+  int s, c, dx0, dy0, i, j;
+  unsigned nsat, ncell = 0U, ncand = 0U, n, q;
+  if (margin_px == 0U || v->lines == NULL || v->vram == NULL) return;
+  if (ss_fit(ram, &s, &c, &dx0, &dy0) != 0) return;
+  /* the blocks the game drew: its own 16 x 16 window, culled against the picture exactly as the game does (position + 0x120 in [0x70, 0x1D0), position + 0xF0 in [0x70, 0x170)) */
+  for (i = 0; i < 16; ++i)
+    for (j = 0; j < 16; ++j) {
+      const unsigned o = SS_POSBUF + (unsigned)(i * 16 + j) * 4U;
+      const int px = (int16_t)u16(ram, o), py = (int16_t)u16(ram, o + 2U);
+      const unsigned t = ram[(((unsigned)(scry / SS_BLOCK + i)) * SS_LAYOUT_STRIDE + (unsigned)(scrx / SS_BLOCK + j)) & 0xFFFFU];
+      if (t == 0U || t > SS_TYPE_MAX || px < -176 || px >= 176 || py < -128 || py >= 128) continue;
+      g_sscell[ncell].type = (uint8_t)t;
+      g_sscell[ncell].cx = px + 160;
+      g_sscell[ncell].cy = py + 112;
+      ++ncell;
+    }
+  nsat = ss_read_sat(v);
+  if (ss_learn(nsat, ncell) != 0) return;
+  for (i = -24; i < 40; ++i)
+    for (j = -24; j < 40; ++j) {
+      const int row = scry / SS_BLOCK + i, col = scrx / SS_BLOCK + j;
+      const int cx = ss_x(c, s, dx0, dy0 + SS_BLOCK * i, j) + 160, cy = ss_y(c, s, dx0, dy0 + SS_BLOCK * i, j) + 112;
+      unsigned t;
+      const int kept = i >= 0 && i < 16 && j >= 0 && j < 16 && cx >= -16 && cx < 336 && cy >= -16 && cy < 240;
+      if (row < 0 || row >= 128 || col < 0 || col >= 128 || cy < -16 || cy >= 240 || cx < -16 - lpx || cx >= 336 + right_px) continue;
+      t = ram[(unsigned)row * SS_LAYOUT_STRIDE + (unsigned)col];
+      if (t == 0U || t > SS_TYPE_MAX || g_sstype[t].n == 0U) continue;
+      for (q = 0U; q < g_sstype[t].n && ncand < 512U; ++q) {
+        const int x = cx + g_sstype[t].x[q], y = cy + g_sstype[t].y[q], w = (int)g_sstype[t].wc[q] * 8;
+        GenesisVirtualSprite *sp = &g_cand[ncand].s;
+        if ((x >= 0 && x + w <= 320) || x + w <= -lpx || x >= 320 + right_px) continue;   /* wholly inside the picture (the game drew it) or beyond what is presented */
+        for (unsigned zb = 0U; zb < (unsigned)sizeof(*sp); ++zb) ((uint8_t *)sp)[zb] = 0U;
+        sp->provenance = GENESIS_VSPRITE_MOD_AUTHORED;
+        sp->layer = (g_sstype[t].tile[q] & 0x8000U) != 0U ? GENESIS_VSPRITE_LAYER_ABOVE_ALL : GENESIS_VSPRITE_LAYER_BETWEEN;
+        sp->width_cells = g_sstype[t].wc[q];
+        sp->height_cells = g_sstype[t].hc[q];
+        sp->palette = (uint8_t)((g_sstype[t].tile[q] >> 13) & 3U);
+        sp->v_flip = (uint8_t)((g_sstype[t].tile[q] >> 12) & 1U);
+        sp->h_flip = (uint8_t)((g_sstype[t].tile[q] >> 11) & 1U);
+        sp->tile_index = (uint16_t)(g_sstype[t].tile[q] & 0x7FFU);
+        sp->x = (int16_t)x;
+        sp->y = (int16_t)y;
+        if (kept) sp->flags = GENESIS_VSPRITE_FLAG_HARDWARE_PIECE;   /* the game's own sprite table holds this piece: the host does not draw it twice where it draws that layer */
+        if (x < 0 && x + w > 0) { sp->has_clip = 1U; sp->clip_x = (int16_t)(-lpx); sp->clip_y = 0; sp->clip_w = (uint16_t)(lpx > 320 ? 320 : lpx); sp->clip_h = (uint16_t)v->height; if (lpx > 320) sp->clip_x = -320; }   /* only the margin part: the picture keeps its native pixels */
+        else if (x < 320 && x + w > 320) { sp->has_clip = 1U; sp->clip_x = 320; sp->clip_y = 0; sp->clip_w = (uint16_t)(right_px > 320 ? 320 : right_px); sp->clip_h = (uint16_t)v->height; }
+        g_cand[ncand].dist = x < 0 ? -x : x + w - 320;
+        ++ncand;
+      }
+    }
+  if (ncand == 0U) return;
+  /* at most GENESIS_VSPRITE_MAX commands: the pieces nearest to the picture first (a stable, deterministic choice) */
+  n = 0U;
+  while (n < GENESIS_VSPRITE_MAX && n < ncand) {
+    unsigned best = n;
+    for (q = n + 1U; q < ncand; ++q) if (g_cand[q].dist < g_cand[best].dist) best = q;
+    if (best != n) { GenesisVirtualSprite ts = g_cand[n].s; int td = g_cand[n].dist; g_cand[n].s = g_cand[best].s; g_cand[n].dist = g_cand[best].dist; g_cand[best].s = ts; g_cand[best].dist = td; }
+    g_vset.sprites[n] = g_cand[n].s;
+    ++n;
+  }
+  g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_EXTENDED;
+  g_vset.space = GENESIS_VSPRITE_SPACE_PRESENTATION;
+  g_vset.count = n;
+  for (q = 0U; q < GENESIS_VSPRITE_VRAM_BYTES; ++q) g_vset.authored_vram[q] = v->vram[q];
+  for (q = 0U; q < GENESIS_VSPRITE_CRAM_BYTES; ++q) g_vset.authored_cram[q] = v->lines[0].cram[q];
+  (void)r->virtual_sprites(&g_vset);
 }
 
 /* ---------------------------------------------------------------------------------------------------------------- HUD */
@@ -343,6 +525,7 @@ static void render_frame(const SegaModHost *host) {
       for (unsigned i = 0U; i < 28U; ++i) mask[i] = 0xFFU;
       (void)r->scene("special-stage", 13U);
       if (r->scenery_generic_rows(0U, mask, 224U, 28U) != 0 || r->scenery_generic_rows(1U, mask, 224U, 28U) != 0) return;   /* both planes: the VDP's own wrapped plane */
+      if (v->side != 0U) ss_margin_maze(r, v, ram, left_px, margin_px);   /* the maze blocks the game culls at the picture edges, drawn into the margins */
     }
     return;
   }
@@ -380,7 +563,7 @@ static void provider_phase(void *state, const SegaModHost *host) {
   if (host->phase == SEGA_MOD_PHASE_RENDER) render_frame(host);
 }
 
-static const SegaModProvider provider = {sizeof(SegaModProvider), SEGA_MOD_ABI_MAJOR, 2U, SEGA_MOD_PLATFORM, "sonic1.native-widescreen", 2U, provider_init, provider_phase, NULL, NULL, NULL,
+static const SegaModProvider provider = {sizeof(SegaModProvider), SEGA_MOD_ABI_MAJOR, 3U, SEGA_MOD_PLATFORM, "sonic1.native-widescreen", 2U, provider_init, provider_phase, NULL, NULL, NULL,
                                          {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}};
 
 const SegaModProvider *segarecomp_mod_provider(void **state_out) {

@@ -103,6 +103,51 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class MarginMaze(unittest.TestCase):
+    """The operator-approved special-stage difference (SEG-152-T009): ONLY the accepted mask gains a bit, in the frames that deliver the margin maze."""
+    SS = {f: (2, 238, 0, 2, 0, 1) for f in range(1, 40)}
+
+    def comparer(self):
+        c = object.__new__(tool.Cmp)
+        c.failures, c.report = [], {}
+        return c
+
+    def with_maze(self, frames, field=3, value=3):
+        v = dict(self.SS)
+        for f in frames:
+            row = list(v[f]); row[field] = value; v[f] = tuple(row)
+        return v
+
+    def test_the_extra_mask_bit_in_some_frames_is_the_approved_difference(self):
+        a, b = run(self.SS), run(self.with_maze(range(10, 20)))
+        extra, bad = self.comparer().maze_frames(a, b)
+        self.assertEqual((extra, bad), (list(range(10, 20)), []))
+        self.assertTrue(self.comparer().equal_maze("special-wide", a, b, "wide", minimum=30))
+
+    def test_any_other_difference_is_not_approved(self):
+        a = run(self.SS)
+        for field, value in ((0, 3), (1, 300), (2, 5), (4, 7), (5, 0)):   # status, side, shift, reason, authored
+            extra, bad = self.comparer().maze_frames(a, run(self.with_maze([12], field, value)))
+            self.assertEqual((extra, bad), ([], [12]), field)
+        extra, bad = self.comparer().maze_frames(a, run(self.with_maze([12], 3, 6)))   # a different mask, not "one more bit"
+        self.assertEqual(bad, [12])
+        c = self.comparer()
+        self.assertFalse(c.equal_maze("special-wide", a, run(self.with_maze([12], 4, 7)), "wide", minimum=30))
+
+    def test_without_a_presented_margin_nothing_may_differ(self):
+        a = run(self.SS)
+        self.assertTrue(self.comparer().equal_maze("special-orig", a, run(self.SS), "orig", minimum=30))
+        self.assertFalse(self.comparer().equal_maze("special-orig", a, run(self.with_maze([12])), "orig", minimum=30))
+        self.assertFalse(self.comparer().equal_maze("special-wide", a, run(self.SS), "wide", minimum=30))   # a margin mode that never delivers the maze proves nothing
+
+    def test_content_rect_finds_the_presented_picture(self):
+        w, h = 40, 30
+        paint = {(x, y): (9, 9, 9) for x in range(10, 30) for y in range(5, 25)}
+        black = {(x, y): (0, 0, 0) for x in range(w) for y in range(h)}
+        black.update(paint)
+        self.assertEqual(tool.content_rect(make_bmp(w, h, black)), (10, 5, 30, 25))
+
+
 class Privacy(unittest.TestCase):
     """--work holds intermediate ROM images, captures and RAM snapshots and --diag the pictures: neither may resolve inside the public repository."""
     def test_paths_inside_the_repository_are_refused(self):

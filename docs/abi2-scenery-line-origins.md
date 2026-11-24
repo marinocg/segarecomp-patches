@@ -1,6 +1,6 @@
 # ABI 2 scenery windows and per-line world origins
 
-Status: finding of SEG-152-T009 (Sonic 1). Aggregate, synthetic explanation only: the real-game captures, frame numbers and word values that back it stay in local, ignored diagnostics.
+Status: finding of SEG-152-T009 (Sonic 1), **resolved** by the product's per-row scenery origin delta (SEG-152-T017, ABI 2 minor 3, `scenery_row_origin`): the provider states each produced row's whole-cell world shift `k` and keys its windows by the translated world column, so two lines that ask one plane cell with origins a multiple of 64 cells apart no longer need two words. The Sonic 1 provider declares `abi.minor = 3`. Aggregate, synthetic explanation only: the real-game captures, frame numbers and word values that back it stay in local, ignored diagnostics.
 
 ![Two parallax bands asking one plane cell with origins 512 pixels apart](assets/line-origin-conflict.svg)
 
@@ -17,7 +17,7 @@ Only when all of the following hold in one frame: a plane with per-line scroll, 
 ## How it was verified (local; the evidence itself is not published)
 
 * An instrumented copy of the port (the same builder plus log lines) records, per refused frame, the conflicting plane-cell rows, the two line ranges, their scrolls, shifts and the cell columns; refused frames and logged conflict frames are the same set.
-* An independent re-computation (`tools/sonic1_conflict_diagnosis.py`, written from the game's work RAM and the layout formulas, not from the port) recovers the same cells, rows and the two different words from the RAM of the previous onset, and finds none where the port serves the scenery.
+* An independent re-computation (a one-off local tool, since retired with the conflict path it measured; it was written from the game's work RAM and the layout formulas, not from the port) recovered the same cells, rows and the two different words from the RAM of the previous onset, and finds none where the port serves the scenery.
 * Pictures: where the port serves the scenery it equals ABI 1 pixel for pixel; where it refuses, the difference is the whole generic fallback of the frame (tens of thousands of pixels), far larger than the few conflicting cell rows that cause it.
 
 ## What it is not
