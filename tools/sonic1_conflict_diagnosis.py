@@ -176,6 +176,9 @@ def model_conflicts(r, side, plane=1):
     return {"rows": rows, "cells": cells, "origin_ok": origin_ok, "tuples": tuples, "hsum": "%016x" % hsum, "hxor": "%016x" % hxor}
 
 
+MAX_LOGGED_ROWS = 10   # row lines the instrumented port prints per frame (see shown < 10 in the probe)
+
+
 def exact_compare(rec, model):
     """Every conflict datum of the instrumented port against the independent model, for one frame: `rec` = the parsed log of the frame (None when the port logged no conflict), `model` = model_conflicts(...). Returns the list
     of disagreements (empty = exact): the number of conflicting cells, the plane rows, the order-independent digest of EVERY (plane row, column, first word, second word) tuple, and each tuple the port printed verbatim (it must be one
@@ -188,14 +191,32 @@ def exact_compare(rec, model):
     S = rec["S"]
     if model["cells"] != S["n"]:
         bad.append(f"cells: port {S['n']}, model {model['cells']}")
-    if sorted(model["rows"]) != sorted(int(r["r"]) for r in rec["R"]) and len(rec["R"]) == S["rows"]:
-        bad.append(f"plane rows: port {sorted(int(r['r']) for r in rec['R'])}, model {sorted(model['rows'])}")
+    logged = sorted(int(r["r"]) for r in rec["R"])
+    expect = min(S["rows"], MAX_LOGGED_ROWS)   # the port prints at most this many row lines (a callback may log 16 lines)
+    if S["rows"] != len(model["rows"]):
+        bad.append(f"plane row count: port {S['rows']}, model {len(model['rows'])}")
+    if len(logged) != expect or len(set(logged)) != len(logged):
+        bad.append(f"row log incomplete or malformed: {len(logged)} distinct row lines logged, {expect} expected")
+    if (S["rows"] <= MAX_LOGGED_ROWS and logged != sorted(model["rows"])) or not set(logged) <= set(model["rows"]):
+        bad.append(f"plane row identities: port {logged}, model {sorted(model['rows'])}")
     if S.get("h") != model["hsum"] or S.get("x") != model["hxor"]:
         bad.append(f"digest of every conflicting (row, column, word, word) tuple: port {S.get('h')}/{S.get('x')}, model {model['hsum']}/{model['hxor']}")
     missing = [t for t in rec.get("T", []) if tuple(t) not in model["tuples"]]
     if missing or not rec.get("T"):
         bad.append(f"printed tuples not conflicts of the model: {missing[:3]}" if missing else "the port printed no explicit tuples")
     return bad
+
+
+def model_samples(rams, side, rec):
+    """The independent-model samples of one capture, one per available RAM lag (0 = the RAM of the captured frame, 1 = the previous onset, 2 = two earlier), for a conflict frame (`rec` = its log) and for a control frame
+    (`rec` None: the model must find no conflict and the port logged none) alike, so the lag-1 requirement of manifest_failures is always satisfiable by a valid capture."""
+    out = []
+    for k, ram in enumerate(rams):
+        m = model_conflicts(ram, side)
+        problems = exact_compare(rec, m)
+        out.append({"ram_lag": k, "cells": m["cells"], "plane_rows": sorted(m["rows"]), "origin_multiple_of_512": m["origin_ok"], "equals_instrumented_log": not problems, "disagreements": problems,
+                    "example": next((v["example"] for v in m["rows"].values() if v["example"]), None)})
+    return out
 
 
 def manifest_failures(manifest):
@@ -471,16 +492,10 @@ def select_and_capture(a, c, pad, diag):
                 entry["differing_pixels_in_conflicting_lines"] = inside
                 entry["differing_pixels_elsewhere_fallback"] = d["differing"] - inside
             # the independent model: the RAM of the end of the guest frame before the view (candidate lags 0, 1, 2 of the captured run)
-            matches = []
-            for k, rk in enumerate(ras):
-                m = model_conflicts(rk["ram"], side)
-                problems = exact_compare(lg, m)
-                matches.append({"ram_lag": k, "cells": m["cells"], "plane_rows": sorted(m["rows"]), "origin_multiple_of_512": m["origin_ok"], "equals_instrumented_log": not problems, "disagreements": problems,
-                                "example": next((v["example"] for v in m["rows"].values() if v["example"]), None)})
+            matches = model_samples([rk["ram"] for rk in ras], side, lg)
             entry["independent_model"] = matches
         else:
-            m = model_conflicts(ras[0]["ram"], side) if mode != "43" else None   # exact 4:3 presents no extension: the host asks no margin cell, there is nothing to model
-            entry["independent_model"] = [{"ram_lag": k, "cells": mk["cells"], "equals_instrumented_log": not exact_compare(None, mk), "disagreements": exact_compare(None, mk)} for k, mk in ((k, model_conflicts(rk["ram"], side)) for k, rk in enumerate(ras))] if m else None
+            entry["independent_model"] = model_samples([rk["ram"] for rk in ras], side, None) if mode != "43" else None   # exact 4:3 presents no extension: the host asks no margin cell, there is nothing to model
         manifest.append(entry)
     (diag / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True))
     lines = ["# Sonic 1 ABI 1 / ABI 2 scenery conflict: local diagnostics (real-game pictures: NEVER commit or upload)", "",

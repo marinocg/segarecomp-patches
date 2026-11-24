@@ -74,9 +74,28 @@ class Model(unittest.TestCase):
         bad_count = dict(good, S=dict(good["S"], n=good["S"]["n"] + 1))
         self.assertTrue(any("cells" in p for p in diag.exact_compare(bad_count, m)))
         bad_rows = dict(good, R=[{"r": str(int(r["r"]) + 1)} for r in good["R"]])
-        self.assertTrue(any("plane rows" in p for p in diag.exact_compare(bad_rows, m)))
+        self.assertTrue(any("plane row identities" in p for p in diag.exact_compare(bad_rows, m)))
         self.assertTrue(any("logged none" in p for p in diag.exact_compare(None, m)))                       # the model finds conflicts the port did not log
         self.assertTrue(any("no explicit tuples" in p for p in diag.exact_compare(dict(good, T=[]), m)))
+
+    def test_row_checks_are_unconditional(self):
+        m = diag.model_conflicts(synthetic_ram(lambda l: 0 if l < 5 else 8), 238)
+        good = self.port_record(m)
+        self.assertEqual(diag.exact_compare(good, m), [])
+        self.assertTrue(any("incomplete or malformed" in p for p in diag.exact_compare(dict(good, R=[]), m)))                       # no row lines at all
+        self.assertTrue(any("incomplete or malformed" in p for p in diag.exact_compare(dict(good, R=good["R"] + good["R"]), m)))    # duplicated row lines
+        self.assertTrue(any("row count" in p for p in diag.exact_compare(dict(good, S=dict(good["S"], rows=good["S"]["rows"] + 1)), m)))
+        self.assertTrue(any("identities" in p for p in diag.exact_compare(dict(good, R=[{"r": "999"}]), m)))
+
+    def test_control_captures_get_every_lag_including_the_previous_onset(self):
+        quiet = synthetic_ram(lambda l: 0)
+        samples = diag.model_samples([quiet, quiet, quiet], 238, None)
+        self.assertEqual([x["ram_lag"] for x in samples], [0, 1, 2])
+        entry = {"name": "control", "aspect": "wide", "requested_guest_frame": 5, "same_frame_identity": True, "independent_model": samples}
+        self.assertEqual(diag.manifest_failures([entry]), [])                                          # a valid control capture passes
+        flip = synthetic_ram(lambda l: 0 if l < 5 else 8)
+        bad = dict(entry, independent_model=diag.model_samples([quiet, flip, quiet], 238, None))      # a conflict at the previous onset that the port did not log
+        self.assertTrue(diag.manifest_failures([bad]))
 
     def test_digest_mirrors_the_port_and_ignores_order(self):
         self.assertEqual(diag.fnv4(1, 2, 3, 4), diag.fnv4(1, 2, 3, 4))
