@@ -29,10 +29,6 @@
       "state": "eligible",
       "review": "Published in v0.1.0 after the per-file source review (docs/source-review.md)."
     },
-    "genesis/sonic-1/native-widescreen-abi2": {
-      "state": "internal",
-      "note": "SEG-152-T009: the ABI 2 port is blocked on the origin-multiple scenery class (see its README); public source for the reproducible evidence, never a catalog entry or release asset."
-    },
     "genesis/sonic-2/native-widescreen": {
       "state": "eligible",
       "review": "Published in v0.1.0 after the per-file source review (docs/source-review.md)."

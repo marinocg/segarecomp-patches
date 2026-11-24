@@ -223,18 +223,20 @@ static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic2Frame 
   const int camy = plane == 0U ? f->camy : f->bgy;
   int cmin = 0, cmax = 0, rmin = 0, rmax = 0, rows, span, c, rr, have = 0;
   unsigned l, windows;
-  int a_[S2_HSCROLL_LINES], b_[S2_HSCROLL_LINES];
+  int al_[S2_HSCROLL_LINES], bl_[S2_HSCROLL_LINES], ar_[S2_HSCROLL_LINES], br_[S2_HSCROLL_LINES];
   for (l = 0U; l < 28U; ++l) mask[l] = 0U;
   for (l = 0U; l < height; ++l) {
     const int a = floor_div(-(int)left_px - f->hs[plane][l], 8), b = floor_div(319 + (int)right_px - f->hs[plane][l], 8), row = floor_div((int)l + f->vs[plane][l], 8);
     if (f->own[l] != 0U || f->own_plane[l][plane] != 0U) {   /* answered by the VDP's own plane: marks the screen row, asks the windows nothing */
       mask[l >> 3] = (uint8_t)(mask[l >> 3] | (1U << (l & 7U)));
       *any_mask = 1U;
-      a_[l] = 1; b_[l] = 0;
+      al_[l] = 1; bl_[l] = 0; ar_[l] = 1; br_[l] = 0;
       continue;
     }
-    a_[l] = a;
-    b_[l] = b;
+    al_[l] = a;   /* the host asks ONLY the off-picture pixels of a line: x = -left_px .. -1 and x = 320 .. 319 + right_px */
+    bl_[l] = floor_div(-1 - f->hs[plane][l], 8);
+    ar_[l] = floor_div(320 - f->hs[plane][l], 8);
+    br_[l] = b;
     if (!have || a < cmin) cmin = a;
     if (!have || b > cmax) cmax = b;
     if (!have || row < rmin) rmin = row;
@@ -250,13 +252,14 @@ static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic2Frame 
   for (l = 0U; l < height; ++l) {
     const int row = floor_div((int)l + f->vs[plane][l], 8) - rmin;
     const int wrow = rmin + row + (camy - f->vs[plane][0]) / 8;
-    if (a_[l] > b_[l]) continue;
-    for (c = a_[l]; c <= b_[l]; ++c) {
-      int32_t *o = &g_cell[row][c - cmin];
-      const int word = (int)world_answer(ram, f, plane, c * 8 + f->hs[plane][l] + off[l], wrow * 8);
-      if (*o < 0) *o = word;
-      else if (*o != word) return 2;   /* one plane cell asked by two lines that need different words */
-    }
+    if (al_[l] > bl_[l] && ar_[l] > br_[l]) continue;
+    for (unsigned side = 0U; side < 2U; ++side)
+      for (c = side == 0U ? al_[l] : ar_[l]; c <= (side == 0U ? bl_[l] : br_[l]); ++c) {
+        int32_t *o = &g_cell[row][c - cmin];
+        const int word = (int)world_answer(ram, f, plane, c * 8 + f->hs[plane][l] + off[l], wrow * 8);
+        if (*o < 0) *o = word;
+        else if (*o != word) return 2;   /* one plane cell asked by two lines that need different words */
+      }
   }
   windows = span > (int)MAX_COLS ? 2U : 1U;
   for (unsigned w = 0U; w < windows; ++w) {

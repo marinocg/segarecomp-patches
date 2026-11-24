@@ -12,7 +12,7 @@ A schema 2 package contains C source that is compiled into the Patched program a
 ## What you need
 
 * A clone of [`marinocg/segarecomp-patches`](https://github.com/marinocg/segarecomp-patches) (this repository) for the synthetic fixture script and the sample provider.
-* The product's authoring tool `tools/segapatch.py` and the SDK header `platforms/genesis/sdk/segarecomp_genesis_patch.h`, taken at the revision this repository pins in `scripts/SEGAPATCH_REF`.
+* The product's authoring tool `tools/segapatch.py` and the SDK header `platforms/genesis/sdk/segarecomp_genesis_patch.h` with the header it includes, `segarecomp_genesis_vsprite.h` (the same directory), taken at the revision this repository pins in `scripts/SEGAPATCH_REF`.
 * A C11 compiler (`cc`) and Python 3.
 * The shipped `segarecomp` command-line tool from the pinned product release, for `segarecomp patch verify`.
 
@@ -23,6 +23,7 @@ The commands below use four environment variables: `WORK` (an empty scratch dire
 REF=$(cat scripts/SEGAPATCH_REF)
 curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$REF/tools/segapatch.py" -o segapatch.py
 curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$REF/platforms/genesis/sdk/segarecomp_genesis_patch.h" -o segarecomp_genesis_patch.h
+curl -fsSL "https://raw.githubusercontent.com/marinocg/segarecomp/$REF/platforms/genesis/sdk/segarecomp_genesis_vsprite.h" -o segarecomp_genesis_vsprite.h
 export WORK="$(mktemp -d)" SEGAPATCH="$PWD/segapatch.py" SDK_INCLUDE="$PWD" SEGARECOMP=/path/to/segarecomp
 ```
 

@@ -21,9 +21,9 @@
       ],
       "trust": "trusted-native-source",
       "executable_code": true,
-      "package_sha256": "7b72d547dc0a3910773fb53047149fcccf7120e1a08ad0dadd78c39454c6e10a",
-      "package_size": 33912,
-      "package_identity": "9ba7d2de62538ba188a9e7b77870f192f9523ab11d88bcbd792235633ccea04c",
+      "package_sha256": "06e4ae77c890315730865b12df2f4523564d49830fa6703c400de62f8aa1845b",
+      "package_size": 34326,
+      "package_identity": "49679ab5ee2e12f992f4bee752ac69adf9357e30b05fc89ebd1aa97184b2a865",
       "images": [
         {
           "label": "world-rev00",

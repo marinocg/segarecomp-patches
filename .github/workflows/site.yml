@@ -55,6 +55,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tools" && cd "$RUNNER_TEMP/tools"
           curl -fsSL "$RAW/tools/segapatch.py" -o segapatch.py
           curl -fsSL "$RAW/platforms/genesis/sdk/segarecomp_genesis_patch.h" -o segarecomp_genesis_patch.h
+          curl -fsSL "$RAW/platforms/genesis/sdk/segarecomp_genesis_vsprite.h" -o segarecomp_genesis_vsprite.h
           REL=$(python3 -c "import json;print(json.load(open('$GITHUB_WORKSPACE/docs/product-docs.pin.json'))['executable_sample_tooling']['cli_release'])")
           V=${REL#v}; A="segarecomp-$V-linux-x86_64.tar.gz"
           curl -fsSL "https://github.com/marinocg/segarecomp/releases/download/$REL/$A" -o "$A"
