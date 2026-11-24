@@ -31,6 +31,12 @@ class Checks(unittest.TestCase):
         d = self.copy(); (d / "docs/other.bps").write_bytes(b"x")
         self.assertTrue(any("forbidden" in e for e in self.errs(d)))
 
+    def test_bps_only_in_its_two_homes(self):
+        d = self.copy(); (d / "patches/genesis/sonic-1/native-widescreen/bps").mkdir(); (d / "patches/genesis/sonic-1/native-widescreen/bps/extra.bps").write_bytes(b"x")
+        self.assertFalse(any("forbidden" in e and "bps/extra.bps" in e for e in self.errs(d)))   # a schema 3 project's bps/ directory is a home of the one BPS delta (layout lint checks the rest)
+        (d / "patches/genesis/sonic-1/native-widescreen/bps/Extra.bps").write_bytes(b"x")
+        self.assertTrue(any("forbidden" in e and "bps/Extra.bps" in e for e in self.errs(d)))   # upper case is not a slug
+
     def test_source_digest_mismatch(self):
         d = self.copy(); (d / "patches/genesis/sonic-1/native-widescreen/source/provider.c").write_text("tampered")
         self.assertTrue(any("digest" in e for e in self.errs(d)))

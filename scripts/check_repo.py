@@ -155,7 +155,7 @@ def check(root, errs):
         rel = p.relative_to(root).as_posix()
         if rel.startswith(".github/") and p.suffix not in {".yml", ".yaml"}: pass
         too_big = p.stat().st_size > (LOCKFILE_MAX_BYTES if rel in LOCKFILES else MAX_BYTES)
-        if p.suffix.lower() in FORBIDDEN_EXT or too_big or (p.suffix == ".bps" and not re.fullmatch(r"patches/[^/]+/[^/]+/[^/]+/source/[a-z0-9-]+\.bps", rel)):
+        if p.suffix.lower() in FORBIDDEN_EXT or too_big or (p.suffix == ".bps" and not re.fullmatch(r"patches/[^/]+/[^/]+/[^/]+/(source/[a-z0-9-]+|bps/[a-z0-9-]+)\.bps", rel)):
             errs.append(f"forbidden file type or size: {rel}")
         if p.suffix in TEXT_EXT and rel not in ("scripts/check_repo.py", "tests/test_check_repo.py"):
             t = p.read_text(errors="replace")

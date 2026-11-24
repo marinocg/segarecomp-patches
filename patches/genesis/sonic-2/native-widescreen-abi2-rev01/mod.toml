@@ -1,0 +1,90 @@
+[mod]
+id = "sonic2-native-widescreen-abi2-rev01"
+author = "segarecomp SEG-124"
+version = "0.1.0"
+name = "Sonic 2 Native Widescreen (JUE REV01, ABI 2)"
+license = "MPL-2.0"
+
+[target]
+platform = "genesis"
+
+[[target.revision]]
+label = "jue-rev01"
+sha256 = "193bc4064ce0daf27ea9e908ed246d87ec576cc294833badebb590b6ad8e8f6b"
+
+[[source]]
+kind = "bps-image"
+path = "bps/game.bps"
+target_sha256 = "e67cba1f637709bc254fc3ab0fdfbca02d0212148579ade4bc6ca375ba80a513"
+
+[[source]]
+kind = "native-c11"
+path = "src/provider.c"
+
+[abi]
+native = 2
+minor = 2
+
+[capabilities]
+required = ["frame.vdp", "frame.work_ram", "memory.read.m68k.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+
+[state]
+schema = 1
+
+[build]
+header_repair = "none"
+
+# game mode: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "jue-rev01"
+space = "m68k.work_ram"
+offset = 62976
+length = 1
+access = "read"
+
+# level-started flag: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "jue-rev01"
+space = "m68k.work_ram"
+offset = 63249
+length = 1
+access = "read"
+
+# split-screen flag: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "jue-rev01"
+space = "m68k.work_ram"
+offset = 65496
+length = 2
+access = "read"
+
+# HUD flash phase: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "jue-rev01"
+space = "m68k.work_ram"
+offset = 65029
+length = 1
+access = "read"
+
+# ring count: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "jue-rev01"
+space = "m68k.work_ram"
+offset = 65056
+length = 2
+access = "read"
+
+# timer minutes: read at frame-end for the HUD continuity records.
+[[memory]]
+revision = "jue-rev01"
+space = "m68k.work_ram"
+offset = 65059
+length = 1
+access = "read"
+
+[geometry]
+aspect_max = "32:9"
+
+[[scene]]
+id = "level"
+components = ["scenery", "hud"]

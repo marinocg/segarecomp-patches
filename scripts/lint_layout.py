@@ -18,9 +18,10 @@ COLLECTION = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 SCHEMAS = {1, 2}          # legacy .segapatch schemas (BPS delta, optional native C11 source) described by a patch's package.json
 NATIVE_ABIS = {1}
 PROJECT_ENTRIES = {"README.md", "package.json", "source", "tests"}                      # a schema 1/2 patch
-MOD_ENTRIES = {"README.md", "mod.toml", "package.json", "src", "scripts", "edits", "tests"}   # a schema 3 patch; package.json exists only once a package version was pinned (prepare_release.py pin)
+MOD_ENTRIES = {"README.md", "mod.toml", "package.json", "src", "scripts", "edits", "bps", "tests"}   # a schema 3 patch; package.json exists only once a package version was pinned (prepare_release.py pin)
 PROJECT_FILES = PROJECT_ENTRIES | MOD_ENTRIES | {"release.json"}
-MOD_SOURCE_EXT = {"native-c11": {".c", ".h"}, "luau-source": {".luau"}, "rom-edit-set": {".edits"}, "guest-asm": {".asm"}}   # what a schema 3 project may commit as source: text only, never a binary payload
+MOD_SOURCE_EXT = {"native-c11": {".c", ".h"}, "luau-source": {".luau"}, "rom-edit-set": {".edits"}, "guest-asm": {".asm"}, "bps-image": {".bps"}}   # what a schema 3 project may commit as source: text, plus the one small BPS delta (a binary patch against an original image, never a game image: bounded by BPS_MAX_BYTES)
+BPS_MAX_BYTES = 4096        # a BPS delta of a schema 3 project (the same bound as a schema 1/2 patch, docs/layout-and-versioning.md)
 MOD_NATIVE_ABI = 2
 
 
@@ -69,7 +70,7 @@ def _mod_project(d, platform, where, errs, ids):
     if not SLUG.match(d.name): errs.append(f"layout: {where}: directory name must be a lowercase slug")
     for e in sorted(d.iterdir()):
         if e.name == "release.json": errs.append(f"layout: {where}: release.json no longer exists: package facts live in package.json and release membership in releases/<tag>.json")
-        elif e.name not in MOD_ENTRIES: errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, mod.toml, package.json, src/, scripts/, edits/, tests/)")
+        elif e.name not in MOD_ENTRIES: errs.append(f"layout: {where}: unexpected entry {e.name!r} (allowed: README.md, mod.toml, package.json, src/, scripts/, edits/, bps/, tests/)")
     if not (d / "README.md").is_file(): errs.append(f"layout: {where}: missing README.md")
     tests = d / "tests"
     if tests.is_dir():
@@ -102,13 +103,18 @@ def _mod_project(d, platform, where, errs, ids):
         if kind not in MOD_SOURCE_EXT: errs.append(f"layout: {where}: source kind {kind!r} is not accepted in a repository project (allowed: {', '.join(sorted(MOD_SOURCE_EXT))})"); continue
         if pathlib.PurePosixPath(path).suffix not in MOD_SOURCE_EXT[kind]: errs.append(f"layout: {where}/{path}: disallowed file type for {kind}")
         top = pathlib.PurePosixPath(path).parts[0]
-        if top not in {"src", "scripts", "edits"}: errs.append(f"layout: {where}/{path}: sources live under src/, scripts/ or edits/")
+        if top not in {"src", "scripts", "edits", "bps"}: errs.append(f"layout: {where}/{path}: sources live under src/, scripts/, edits/ or bps/")
+        elif (top == "bps") != (kind == "bps-image"): errs.append(f"layout: {where}/{path}: bps/ holds the bps-image source and nothing else")
         if not (d / path).is_file(): errs.append(f"layout: {where}: declared source {path} is missing")
+        elif kind == "bps-image":
+            data = (d / path).read_bytes()
+            if len(data) > BPS_MAX_BYTES or data[:4] != b"BPS1": errs.append(f"layout: {where}/{path}: a bps-image source must be a BPS1 delta of at most {BPS_MAX_BYTES} bytes")
+            if not re.fullmatch(r"[0-9a-f]{64}", str((src or {}).get("target_sha256", ""))): errs.append(f"layout: {where}: the bps-image source declares no target_sha256 (a SHA-256)")
         declared.add(path)
     abi = (m.get("abi") or {}).get("native")
     if "native-c11" in kinds and abi != MOD_NATIVE_ABI: errs.append(f"layout: {where}: native-c11 source requires [abi] native = {MOD_NATIVE_ABI} (got {abi!r})")
     if "native-c11" not in kinds and abi is not None: errs.append(f"layout: {where}: [abi] native is declared but no native-c11 source is")
-    for top in ("src", "scripts", "edits"):
+    for top in ("src", "scripts", "edits", "bps"):
         base = d / top
         if not base.exists(): continue
         for f in sorted(base.rglob("*")):
