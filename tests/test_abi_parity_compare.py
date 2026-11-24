@@ -103,6 +103,32 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class Privacy(unittest.TestCase):
+    """--work holds intermediate ROM images, captures and RAM snapshots and --diag the pictures: neither may resolve inside the public repository."""
+    def test_paths_inside_the_repository_are_refused(self):
+        for inside in (ROOT, ROOT / "work", ROOT / "tools" / ".." / "tmp-captures"):
+            with self.assertRaises(SystemExit):
+                tool.require_outside_repo(inside, "--work")
+
+    def test_a_symlink_into_the_repository_is_refused(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            link = pathlib.Path(t) / "link"
+            link.symlink_to(ROOT)
+            with self.assertRaises(SystemExit):
+                tool.require_outside_repo(link / "captures", "--diag")
+
+    def test_a_directory_elsewhere_is_accepted(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            self.assertEqual(tool.require_outside_repo(t, "--work"), pathlib.Path(t).resolve())
+
+    def test_cmp_refuses_a_work_directory_in_the_repository(self):
+        import argparse
+        with self.assertRaises(SystemExit):
+            tool.Cmp(argparse.Namespace(product_root=str(ROOT), work=str(ROOT / "work")))
+
+
 class Evidence(unittest.TestCase):
     """The negative tests of the comparator itself: a truncated, gapped, unhealthy or visually different run, or a checkpoint with the wrong frame identity, must NOT pass."""
     GOOD = {f: (2, 238, 0, 3, 0, 1) for f in range(0, 40)}

@@ -45,6 +45,15 @@ def merge_pad(lines, extra, end):
     return [l for _, l in items] + [f"{end} Q"]
 
 
+def require_outside_repo(path, what):
+    """Real-game material (intermediate images, captures, RAM snapshots, recordings) must never sit in the public repository checkout: `path` is resolved (symlinks included) and refused when it is the repository or inside it. Returns the resolved path."""
+    top = pathlib.Path(__file__).resolve().parent.parent
+    d = pathlib.Path(path).resolve()
+    if d == top or top in d.parents:
+        sys.exit(f"{what} must be a directory OUTSIDE the repository (real-game material is never committed): {d}")
+    return d
+
+
 def bmp_info(data):
     """Geometry and pixel rows of a 24/32-bit BMP as the viewer's capture seam writes it: (width, height, bytes per pixel, rows top to bottom as bytes). Raises ValueError for anything else."""
     if len(data) < 54 or data[:2] != b"BM":
@@ -180,13 +189,13 @@ def compare_checkpoint(ra, rb, want, label, window=3, restore=None):
 
 class Cmp:
     def __init__(self, a):
+        self.work = require_outside_repo(a.work, "--work")   # it holds the intermediate ROM images, captures and RAM snapshots: checked before anything is written
         self.a = a
         self.root = pathlib.Path(a.product_root).resolve()
         sys.path.insert(0, str(self.root / "tests"))
         import viewer_mod_support as vms
         self.vms = vms
         self.segapatch = load(self.root / "tools/segapatch.py", "segapatch")
-        self.work = pathlib.Path(a.work).resolve()
         self.work.mkdir(parents=True, exist_ok=True)
         self.h = vms.Harness(a.cli, a.cc, self.root, a.sdl, self.work)
         self.rom = pathlib.Path(a.rom)
@@ -455,14 +464,11 @@ def main(argv=None):
     ap.add_argument("--json", default="")
     ap.add_argument("--diag", default="", help="a LOCAL directory OUTSIDE this repository for the visual checkpoints (screenshots and difference pictures of the real game: never committed)")
     a = ap.parse_args(argv)
-    c = Cmp(a)
-    if a.diag:
-        d = pathlib.Path(a.diag).resolve()
-        top = pathlib.Path(__file__).resolve().parent.parent
-        if d == top or top in d.parents:
-            sys.exit("--diag must be a directory OUTSIDE the repository (real-game captures are never committed)")
-        d.mkdir(parents=True, exist_ok=True)
-        c.diag = d
+    diag = require_outside_repo(a.diag, "--diag") if a.diag else None
+    c = Cmp(a)   # refuses a --work directory inside the repository too
+    if diag is not None:
+        diag.mkdir(parents=True, exist_ok=True)
+        c.diag = diag
     only = set(x for x in a.only.split(",") if x)
     want = lambda n: not only or n in only  # noqa: E731
     pads = {
