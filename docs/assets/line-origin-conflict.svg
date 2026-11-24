@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" font-family="sans-serif" font-size="12">
+  <title>Two parallax bands asking one plane cell with world origins 512 pixels apart (synthetic schematic)</title>
+  <rect width="720" height="400" fill="#ffffff"/>
+  <text x="20" y="22" font-size="14" font-weight="bold">One plane cell, two answers (synthetic schematic; no game data)</text>
+  <!-- screen -->
+  <text x="20" y="50">screen (320 px picture, margins left and right)</text>
+  <rect x="20" y="58" width="60" height="120" fill="#e8f4fb" stroke="#555"/>
+  <rect x="80" y="58" width="120" height="120" fill="#f3f3f3" stroke="#555"/>
+  <rect x="200" y="58" width="60" height="120" fill="#e8f4fb" stroke="#555"/>
+  <text x="28" y="72">left margin</text><text x="108" y="72">picture</text><text x="206" y="72">right margin</text>
+  <rect x="20" y="98" width="240" height="40" fill="#ffd9a8" fill-opacity="0.7"/>
+  <rect x="20" y="58" width="240" height="40" fill="#a8eaf0" fill-opacity="0.7"/>
+  <rect x="20" y="138" width="240" height="40" fill="#a8eaf0" fill-opacity="0.7"/>
+  <text x="270" y="82">band A: lines 0-39, hscroll 0, world origin 1024</text>
+  <text x="270" y="122">band B: lines 40-79, hscroll 419, world origin 1117</text>
+  <text x="270" y="162">band A again (below)</text>
+  <line x1="20" y1="104" x2="260" y2="104" stroke="#c00" stroke-dasharray="4 3"/>
+  <text x="270" y="108" fill="#c00">one 8-line plane-cell row straddles the boundary of A and B</text>
+  <!-- plane -->
+  <text x="20" y="215">plane x = screen x - hscroll (what the host looks up, unwrapped)</text>
+  <line x1="40" y1="250" x2="680" y2="250" stroke="#333"/>
+  <rect x="300" y="235" width="40" height="30" fill="#ffb347" stroke="#333"/>
+  <text x="248" y="228">line in A: right-margin cell -13..-1</text>
+  <rect x="300" y="268" width="40" height="30" fill="#7fd6df" stroke="#333"/>
+  <text x="248" y="316">line in B: left-margin cell -13..-1 (asked by another line)</text>
+  <text x="20" y="345">The host asks the SAME plane cell (c, r) for both lines.</text>
+  <text x="20" y="364">ABI 1 answered each ask with its own world cell: c + 128 for A and c + 192 for B (64 cells = 512 px apart).</text>
+  <text x="20" y="383">An ABI 2 window holds ONE word per plane cell, so one of the two answers cannot be expressed.</text>
+</svg>
