@@ -14,10 +14,14 @@ import abi_parity_compare as apc
 
 PROBE_GLOBALS = '''
 static const SegaModHost *g_host;
-static unsigned g_nconf, g_rows_hit;
+static unsigned g_nconf, g_rows_hit, g_ntup;
+static uint64_t g_hsum, g_hxor;
+static int g_tup[6][4];
 static struct ConfRow { unsigned n, n_l_l, n_r_r, n_l_r; int la0, la1, lb0, lb1, ka, kb, hsa, hsb, c0, c1, xa0, xa1, xb0, xb1; } g_cr[MAX_WIN_ROWS];
 static int16_t g_ol[MAX_WIN_ROWS][SPAN_MAX];
 static void put(char *b, int *n, int v) { char t[12]; int m = 0; unsigned u; if (v < 0) { b[(*n)++] = '-'; u = (unsigned)(-v); } else u = (unsigned)v; do { t[m++] = (char)('0' + u % 10U); u /= 10U; } while (u); while (m) b[(*n)++] = t[--m]; }
+static uint64_t fnv4(int a, int b, int c, int d) { uint64_t h = 1469598103934665603ULL; const int v[4] = {a, b, c, d}; for (int i = 0; i < 4; ++i) for (int k = 0; k < 4; ++k) { h ^= (uint64_t)(((uint32_t)v[i] >> (8 * k)) & 0xFFU); h *= 1099511628211ULL; } return h; }
+static void put_hex(char *b, int *n, uint64_t v) { for (int i = 15; i >= 0; --i) b[(*n)++] = "0123456789abcdef"[(v >> (4 * i)) & 15U]; }
 static void puts_(char *b, int *n, const char *s) { while (*s) b[(*n)++] = *s++; }
 '''
 
@@ -26,7 +30,7 @@ def probe_edit(text):
     """The instrumented copy: the same window builder, but conflicts are recorded and logged (never answered differently). Pure additions around the unchanged logic."""
     text = text.replace("static uint8_t g_hud_rgba[104U * 224U * 4U];\n", "static uint8_t g_hud_rgba[104U * 224U * 4U];\n" + PROBE_GLOBALS, 1)
     text = text.replace("  for (rr = 0; rr < rows; ++rr)\n    for (c = 0; c < span; ++c) g_cell[rr][c] = -1;\n",
-                        "  for (rr = 0; rr < rows; ++rr)\n    for (c = 0; c < span; ++c) { g_cell[rr][c] = -1; g_ol[rr][c] = -1; }\n  g_nconf = 0U; g_rows_hit = 0U;\n  for (rr = 0; rr < (int)MAX_WIN_ROWS; ++rr) { struct ConfRow z = {0}; g_cr[rr] = z; }\n", 1)
+                        "  for (rr = 0; rr < rows; ++rr)\n    for (c = 0; c < span; ++c) { g_cell[rr][c] = -1; g_ol[rr][c] = -1; }\n  g_nconf = 0U; g_rows_hit = 0U; g_ntup = 0U; g_hsum = 0U; g_hxor = 0U;\n  for (rr = 0; rr < (int)MAX_WIN_ROWS; ++rr) { struct ConfRow z = {0}; g_cr[rr] = z; }\n", 1)
     old = "        if (*o < 0) *o = word;\n        else if (*o != word) return 2;   /* one plane cell asked by two lines that need different words (per-line origins that differ by a multiple of 512) */\n"
     assert old in text
     new = '''        if (*o < 0) { *o = word; g_ol[row][c - cmin] = (int16_t)l; }
@@ -48,6 +52,7 @@ def probe_edit(text):
           if (xb < q->xb0) { q->xb0 = xb; }
           if (xb > q->xb1) { q->xb1 = xb; }
           { const int la_left = xa + 8 <= 0, lb_left = xb + 8 <= 0; if (la_left && lb_left) { ++q->n_l_l; } else if (!la_left && !lb_left) { ++q->n_r_r; } else { ++q->n_l_r; } }
+          { const int rho = rmin + row; const uint64_t hh = fnv4(rho, c, (int)*o, word); g_hsum += hh; g_hxor ^= hh; if (g_ntup < 6U) { g_tup[g_ntup][0] = rho; g_tup[g_ntup][1] = c; g_tup[g_ntup][2] = (int)*o; g_tup[g_ntup][3] = word; ++g_ntup; } }
           ++q->n; ++g_nconf;
         }
 '''
@@ -56,7 +61,10 @@ def probe_edit(text):
     log = '''  if (g_nconf != 0U && g_host != NULL && g_host->log != NULL) {
     char b[240]; int n = 0, shown = 0;
     puts_(b, &n, "S f="); put(b, &n, (int)g_host->frame); puts_(b, &n, " side="); put(b, &n, (int)margin_cells_probe); puts_(b, &n, " plane="); put(b, &n, (int)plane); puts_(b, &n, " n="); put(b, &n, (int)g_nconf);
-    puts_(b, &n, " rows="); put(b, &n, (int)g_rows_hit); puts_(b, &n, " rmin="); put(b, &n, rmin); g_host->log(b, (uint32_t)n);
+    puts_(b, &n, " rows="); put(b, &n, (int)g_rows_hit); puts_(b, &n, " rmin="); put(b, &n, rmin); puts_(b, &n, " h="); put_hex(b, &n, g_hsum); puts_(b, &n, " x="); put_hex(b, &n, g_hxor); g_host->log(b, (uint32_t)n);
+    n = 0; puts_(b, &n, "T f="); put(b, &n, (int)g_host->frame); puts_(b, &n, " t=");
+    for (unsigned i = 0U; i < g_ntup; ++i) { if (i != 0U) b[n++] = ','; put(b, &n, g_tup[i][0]); b[n++] = ':'; put(b, &n, g_tup[i][1]); b[n++] = ':'; put(b, &n, g_tup[i][2]); b[n++] = ':'; put(b, &n, g_tup[i][3]); }
+    g_host->log(b, (uint32_t)n);
     for (rr = 0; rr < rows && shown < 10; ++rr) if (g_cr[rr].n != 0U) {
       struct ConfRow *q = &g_cr[rr]; n = 0; ++shown;
       puts_(b, &n, "R f="); put(b, &n, (int)g_host->frame); puts_(b, &n, " p="); put(b, &n, (int)plane); puts_(b, &n, " r="); put(b, &n, rmin + rr); puts_(b, &n, " A="); put(b, &n, q->la0); puts_(b, &n, "-"); put(b, &n, q->la1);
@@ -115,11 +123,22 @@ def unwrap(v, ref, period):
     return ref + d
 
 
+def fnv4(a, b, c, d):
+    """The same 64-bit FNV-1a digest of one (plane row, column, first word, second word) tuple as the instrumented port (each value as 4 little-endian bytes)."""
+    h = 1469598103934665603
+    for v in (a, b, c, d):
+        for k in range(4):
+            h ^= ((v & 0xFFFFFFFF) >> (8 * k)) & 0xFF
+            h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
 def model_conflicts(r, side, plane=1):
     """Recomputes, from the RAM only, which plane cells the host asks (off-picture pixels only) with which world word per line, and returns the conflicts of one plane:
     {'rows': {plane_row: {...}}, 'cells': n, 'origin_ok': bool}."""
     camy, bgy, bgx, bg2x, split = u16(r, 0xF704), u16(r, 0xF70C), u16(r, 0xF708), u16(r, 0xF710), u16(r, 0xF7F0)
     owner, rows, cells, origin_ok = {}, {}, 0, True
+    tuples, hsum, hxor = set(), 0, 0
     for l in range(224):
         ram = s16(r, 0xCC00 + l * 4 + (0 if plane == 0 else 2))
         hs = s10(ram)
@@ -143,6 +162,9 @@ def model_conflicts(r, side, plane=1):
                 owner[key] = (word, l, k, hs)
             elif owner[key][0] != word:
                 o = owner[key]
+                hh = fnv4(rho, c, o[0], word)
+                hsum, hxor = (hsum + hh) & 0xFFFFFFFFFFFFFFFF, hxor ^ hh
+                tuples.add((rho, c, o[0], word))
                 e = rows.setdefault(rho, {"cells": 0, "lines_a": [o[1], o[1]], "lines_b": [l, l], "ka": o[2], "kb": k, "hsa": o[3], "hsb": hs, "cmin": c, "cmax": c, "example": None})
                 e["cells"] += 1
                 cells += 1
@@ -151,7 +173,43 @@ def model_conflicts(r, side, plane=1):
                 e["cmin"], e["cmax"] = min(e["cmin"], c), max(e["cmax"], c)
                 if e["example"] is None:
                     e["example"] = {"cell": c, "row": rho, "word_a": o[0], "word_b": word, "world_cell_a": c + o[2], "world_cell_b": c + k}
-    return {"rows": rows, "cells": cells, "origin_ok": origin_ok}
+    return {"rows": rows, "cells": cells, "origin_ok": origin_ok, "tuples": tuples, "hsum": "%016x" % hsum, "hxor": "%016x" % hxor}
+
+
+def exact_compare(rec, model):
+    """Every conflict datum of the instrumented port against the independent model, for one frame: `rec` = the parsed log of the frame (None when the port logged no conflict), `model` = model_conflicts(...). Returns the list
+    of disagreements (empty = exact): the number of conflicting cells, the plane rows, the order-independent digest of EVERY (plane row, column, first word, second word) tuple, and each tuple the port printed verbatim (it must be one
+    of the model's, with the same two words)."""
+    bad = []
+    if rec is None or not rec.get("S"):
+        if model["cells"] != 0:
+            bad.append(f"the model finds {model['cells']} conflicting cells where the port logged none")
+        return bad
+    S = rec["S"]
+    if model["cells"] != S["n"]:
+        bad.append(f"cells: port {S['n']}, model {model['cells']}")
+    if sorted(model["rows"]) != sorted(int(r["r"]) for r in rec["R"]) and len(rec["R"]) == S["rows"]:
+        bad.append(f"plane rows: port {sorted(int(r['r']) for r in rec['R'])}, model {sorted(model['rows'])}")
+    if S.get("h") != model["hsum"] or S.get("x") != model["hxor"]:
+        bad.append(f"digest of every conflicting (row, column, word, word) tuple: port {S.get('h')}/{S.get('x')}, model {model['hsum']}/{model['hxor']}")
+    missing = [t for t in rec.get("T", []) if tuple(t) not in model["tuples"]]
+    if missing or not rec.get("T"):
+        bad.append(f"printed tuples not conflicts of the model: {missing[:3]}" if missing else "the port printed no explicit tuples")
+    return bad
+
+
+def manifest_failures(manifest):
+    """What makes the diagnosis fail (hard): a capture whose two runs did not end on the requested guest frame, and a capture whose independent model disagrees with the instrumented port at the previous-onset RAM (lag 1;
+    ADR 0320: the producer sees the work-RAM copy of the previous onset) in ANY datum of exact_compare. Exact 4:3 captures have no model (no margin cell is asked)."""
+    failures = [f"{e['name']} ({e['aspect']}): guest frames differ between the runs or from the request" for e in manifest if not e["same_frame_identity"]]
+    for e in manifest:
+        m = e.get("independent_model")
+        if not m:
+            continue
+        lag1 = next((x for x in m if x["ram_lag"] == 1), None)
+        if lag1 is None or not lag1["equals_instrumented_log"]:
+            failures.append(f"{e['name']} ({e['aspect']}, frame {e['requested_guest_frame']}): the independent model disagrees with the instrumented port at the previous-onset RAM: {(lag1 or {}).get('disagreements')}")
+    return failures
 
 
 def parse_log(lines):
@@ -159,13 +217,15 @@ def parse_log(lines):
     out = {}
     for m in lines:
         t = m.get("line", "")
-        if t[:2] not in ("S ", "R "):
+        if t[:2] not in ("S ", "R ", "T "):
             continue
         kv = {k: v for k, v in (x.split("=", 1) for x in t[2:].split() if "=" in x)}
         f = int(kv["f"])
-        rec = out.setdefault(f, {"S": None, "R": []})
-        if t[0] == "S":
-            rec["S"] = {k: int(v) for k, v in kv.items()}
+        rec = out.setdefault(f, {"S": None, "R": [], "T": []})
+        if t[0] == "T":
+            rec["T"] = [tuple(int(x) for x in q.split(":")) for q in kv.get("t", "").split(",") if q]
+        elif t[0] == "S":
+            rec["S"] = {k: (v if k in ("h", "x") else int(v)) for k, v in kv.items()}
         else:
             rec["R"].append({k: v for k, v in kv.items()})
     return out
@@ -259,9 +319,8 @@ def main(argv=None):
     ap.add_argument("--json", default="")
     a = ap.parse_args(argv)
     top = pathlib.Path(__file__).resolve().parent.parent
-    diag = pathlib.Path(a.diag).resolve()
-    if diag == top or top in diag.parents:
-        sys.exit("--diag must be a directory OUTSIDE the repository (real-game captures are never committed)")
+    diag = apc.require_outside_repo(a.diag, "--diag")
+    apc.require_outside_repo(a.work, "--work")   # intermediate ROM images, captures, RAM snapshots and recordings of the real game
     diag.mkdir(parents=True, exist_ok=True)
     a.abi1, a.abi2 = str(top / a.abi1), str(top / a.abi2)
     c = apc.Cmp(a)
@@ -415,14 +474,13 @@ def select_and_capture(a, c, pad, diag):
             matches = []
             for k, rk in enumerate(ras):
                 m = model_conflicts(rk["ram"], side)
-                rows_m = sorted(m["rows"])
-                rows_l = sorted(int(r["plane_row"]) for r in rows_hit)
-                matches.append({"ram_lag": k, "cells": m["cells"], "plane_rows": rows_m, "origin_multiple_of_512": m["origin_ok"], "equals_instrumented_log": m["cells"] == entry["conflict_cells"] and rows_m == rows_l,
+                problems = exact_compare(lg, m)
+                matches.append({"ram_lag": k, "cells": m["cells"], "plane_rows": sorted(m["rows"]), "origin_multiple_of_512": m["origin_ok"], "equals_instrumented_log": not problems, "disagreements": problems,
                                 "example": next((v["example"] for v in m["rows"].values() if v["example"]), None)})
             entry["independent_model"] = matches
         else:
             m = model_conflicts(ras[0]["ram"], side) if mode != "43" else None   # exact 4:3 presents no extension: the host asks no margin cell, there is nothing to model
-            entry["independent_model"] = [{"ram_lag": 0, "cells": m["cells"], "equals_instrumented_log": m["cells"] == 0}] if m else None
+            entry["independent_model"] = [{"ram_lag": k, "cells": mk["cells"], "equals_instrumented_log": not exact_compare(None, mk), "disagreements": exact_compare(None, mk)} for k, mk in ((k, model_conflicts(rk["ram"], side)) for k, rk in enumerate(ras))] if m else None
         manifest.append(entry)
     (diag / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True))
     lines = ["# Sonic 1 ABI 1 / ABI 2 scenery conflict: local diagnostics (real-game pictures: NEVER commit or upload)", "",
@@ -439,11 +497,14 @@ def select_and_capture(a, c, pad, diag):
         lines.append("")
     (diag / "README.md").write_text("\n".join(lines))
     ok = all(e["same_frame_identity"] for e in manifest)
+    failures = manifest_failures(manifest)
+    ok = ok and not failures
     agg = {"frames_captured": len(manifest), "all_frame_identities_equal": ok,
            "model_agrees": sum(1 for e in manifest if e.get("independent_model") and any(x["equals_instrumented_log"] for x in e["independent_model"])),
            "model_checked": sum(1 for e in manifest if e.get("independent_model")),
            "matching_ram_lags": sorted({x["ram_lag"] for e in manifest for x in (e.get("independent_model") or []) if x["equals_instrumented_log"] and e.get("conflict_cells")}),
            "refused": sum(1 for e in manifest if e["refused"])}
+    agg["failures"] = failures
     print(json.dumps(agg, indent=1))
     if a.json:
         pathlib.Path(a.json).write_text(json.dumps({"aggregate": agg}, indent=1))
