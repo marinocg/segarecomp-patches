@@ -278,65 +278,170 @@ def coverage_manifest(m):
     return m.replace("required = [", 'required = ["host.log", ', 1) if '"host.log"' not in m else m
 
 
-_OVERFLOW_RASTER = r'''
-/* EXPERIMENT (test-only): a piece as an RGBA overlay bitmap, rasterised from the frame's VRAM/CRAM exactly as a hardware sprite is drawn (column-major tiles, flips, palette line, colour 0 transparent). */
-static uint8_t g_ovr[32 * 32 * 4];
-/* `lo`/`hi`: the presented extent in picture pixels (-left margin .. 320 + right margin); the bitmap is cropped to it because the host clamps (shifts) a layer that sticks out instead of clipping it. */
-static int ss_overlay_piece(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, const GenesisVirtualSprite *sp, unsigned layer, int lo, int hi) {
-  const unsigned w = (unsigned)sp->width_cells * 8U, h = (unsigned)sp->height_cells * 8U;
-  int x0 = 0, x1 = (int)w, y0 = 0, y1 = (int)h;
-  unsigned cw, ch;
-  if (sp->x < lo) x0 = lo - sp->x;
-  if (sp->x + (int)w > hi) x1 = hi - sp->x;
-  if (sp->y < 0) y0 = -sp->y;
-  if (sp->y + (int)h > (int)v->height) y1 = (int)v->height - sp->y;
-  if (x1 <= x0 || y1 <= y0) return 0;
-  cw = (unsigned)(x1 - x0);
-  ch = (unsigned)(y1 - y0);
-  for (int cy = y0; cy < y1; ++cy)
-    for (int cx = x0; cx < x1; ++cx) {
-      const unsigned px = (unsigned)cx, py = (unsigned)cy;
-      const unsigned sx = sp->h_flip != 0U ? w - 1U - px : px, sy = sp->v_flip != 0U ? h - 1U - py : py;
-      const unsigned tile = ((unsigned)sp->tile_index + (sx >> 3) * (unsigned)sp->height_cells + (sy >> 3)) & 0x7FFU;
-      const uint8_t b = v->vram[(tile * 32U + (sy & 7U) * 4U + ((sx & 7U) >> 1)) & 0xFFFFU];
-      const unsigned idx = (sx & 1U) == 0U ? (unsigned)(b >> 4) : (unsigned)(b & 15U);
-      uint8_t *o = &g_ovr[((unsigned)(cy - y0) * cw + (unsigned)(cx - x0)) * 4U];
-      const int gx = sp->x + cx, gy = sp->y + cy;
-      int visible = idx != 0U;
-      if (sp->has_clip != 0U && (gx < sp->clip_x || gx >= sp->clip_x + (int)sp->clip_w || gy < sp->clip_y || gy >= sp->clip_y + (int)sp->clip_h)) visible = 0;
-      if (visible != 0) {
-        const unsigned c = (unsigned)sp->palette * 16U + idx, word = ((unsigned)v->lines[0].cram[c * 2U] << 8) | v->lines[0].cram[c * 2U + 1U];
-        o[0] = (uint8_t)(((word >> 1) & 7U) * 255U / 7U); o[1] = (uint8_t)(((word >> 5) & 7U) * 255U / 7U); o[2] = (uint8_t)(((word >> 9) & 7U) * 255U / 7U); o[3] = 255U;
-      } else { o[0] = o[1] = o[2] = o[3] = 0U; }
-    }
-  if (r->overlay_layer_bitmap(layer, 0U, 1U, sp->x + x0 - lo, sp->y + y0, cw, ch, 0U) != 0) return 1;   /* presentation coordinates: picture x - lo */
-  if (r->overlay_target(layer) != 0) return 1;
-  return r->overlay_bitmap(0, 0, cw, ch, g_ovr, cw * 4U);
+_INVENTORY_STATS = r'''
+static const SegaModHost *g_host;
+static void iv_put(char *b, int *n, int v) { char t[12]; int m = 0; unsigned u; if (v < 0) { b[(*n)++] = '-'; u = (unsigned)(-v); } else u = (unsigned)v; do { t[m++] = (char)('0' + u % 10U); u /= 10U; } while (u); while (m) b[(*n)++] = t[--m]; b[(*n)++] = ' '; }
+static void iv_dump(unsigned ncand, int lpx, int rpx) {
+  char b[250]; int n = 0; unsigned q, per = 0U;
+  b[n++] = 'I'; b[n++] = ' '; iv_put(b, &n, (int)g_host->frame); iv_put(b, &n, (int)ncand); iv_put(b, &n, lpx); iv_put(b, &n, rpx); g_host->log(b, (uint32_t)n);
+  n = 0; b[n++] = 'J'; b[n++] = ' ';
+  for (q = 0U; q < ncand; ++q) {
+    const GenesisVirtualSprite *s = &g_cand[q].s;
+    const int word = (s->layer == GENESIS_VSPRITE_LAYER_ABOVE_ALL ? 0x8000 : 0) | (s->palette << 13) | (s->v_flip << 12) | (s->h_flip << 11) | s->tile_index;
+    iv_put(b, &n, s->x); iv_put(b, &n, s->y); iv_put(b, &n, s->width_cells * 10 + s->height_cells); iv_put(b, &n, word); iv_put(b, &n, (s->has_clip != 0U ? (s->clip_x < 0 ? 1 : 2) : 0) + 10 * (int)s->flags); b[n++] = ';';
+    if (++per == 8U) { g_host->log(b, (uint32_t)n); n = 0; b[n++] = 'J'; b[n++] = ' '; per = 0U; }
+  }
+  if (per != 0U) g_host->log(b, (uint32_t)n);
 }
 '''
 
 
-def overflow_edit(text, force=0):
-    """EXPERIMENT (never shipped): the pieces over the host's 64-command limit (or, with `force`, the first `force` pieces regardless) are drawn as RGBA overlay bitmaps instead of being dropped. The first pieces in cell order are the
-    topmost ones, so everything drawn above the sprites is exactly what the game stacks above them."""
+def inventory_edit(text):
+    """The test-only logging variant behind `overflow_investigation` (never shipped): one `I` line and `J` lines per frame with the COMPLETE ordered piece inventory before the command limit is applied."""
+    for a, b in (("static int ss_fit(", _INVENTORY_STATS + "\nstatic int ss_fit("), ("  Sonic1Frame *f = &g_frame;\n", "  Sonic1Frame *f = &g_frame;\n  g_host = host;\n"),
+                 ("  if (ncand == 0U) return;\n", "  if (ncand > 0U) iv_dump(ncand, lpx, right_px);\n  if (ncand == 0U) return;\n")):
+        if a not in text:
+            raise ValueError("inventory edit target missing: " + a)
+        text = text.replace(a, b, 1)
+    return text
+
+
+def parse_inventories(run):
+    """The complete ordered piece inventories a logging run recorded: [{frame, n, lpx, rpx, pieces: [(x, y, w_cells, h_cells, tile_word, clip_code + 10 * hardware_flag)]}]."""
+    out, cur = [], None
+    for m in run["lines"].get("MOD_LOG", []):
+        line = m.get("line", "")
+        if line.startswith("I "):
+            v = [int(x) for x in line[2:].split()]
+            cur = {"frame": v[0], "n": v[1], "lpx": v[2], "rpx": v[3], "pieces": []}
+            out.append(cur)
+        elif line.startswith("J ") and cur is not None:
+            for e in line[2:].split(";"):
+                if e.strip():
+                    x, y, sz, word, clip = [int(t) for t in e.split()]
+                    cur["pieces"].append((x, y, sz // 10, sz % 10, word, clip))
+    return [c for c in out if len(c["pieces"]) == c["n"]]
+
+
+def compose_expected(base_bmp, pieces, vram, cram, lpx, rpx, skip_flagged=False, height=224):
+    """The INDEPENDENT expected picture of a complete piece inventory: the maze-free picture with every piece composited from the frame's VRAM/CRAM exactly as a hardware sprite is drawn (column-major tiles, flips, palette line,
+    colour 0 transparent, the clip of a straddling piece), in the game's order (first wins; a priority-bit piece above the others), margins only. With `skip_flagged` the pieces the host draws itself (HARDWARE_PIECE) are left to the base
+    picture, which is how the production stacking works. Returns (rows, rect, bytes per pixel)."""
+    _, _, st, rows = bmp_info(base_bmp)
+    r0, r1, r2, r3 = content_rect(base_bmp)
+    out = [bytearray(r) for r in rows]
+    conv = lambda v: v * 255 // 7   # noqa: E731
+
+    def pixel(piece, gx, gy):
+        x, y, wc, hc, word, clipf = piece
+        clip, cx, cy = clipf % 10, gx - x, gy - y
+        if not (0 <= cx < wc * 8 and 0 <= cy < hc * 8) or (clip == 1 and not -lpx <= gx < 0) or (clip == 2 and not 320 <= gx < 320 + rpx):
+            return None
+        sx = wc * 8 - 1 - cx if (word >> 11) & 1 else cx
+        sy = hc * 8 - 1 - cy if (word >> 12) & 1 else cy
+        b = vram[(((word & 0x7FF) + (sx >> 3) * hc + (sy >> 3)) & 0x7FF) * 32 + (sy & 7) * 4 + ((sx & 7) >> 1)]
+        idx = (b >> 4) if (sx & 1) == 0 else b & 15
+        if idx == 0:
+            return None
+        c = ((word >> 13) & 3) * 16 + idx
+        w = (cram[c * 2] << 8) | cram[c * 2 + 1]
+        return conv((w >> 1) & 7), conv((w >> 5) & 7), conv((w >> 9) & 7)
+    ps = [p for p in pieces if not (skip_flagged and p[5] // 10)]
+    order = [p for p in ps if p[4] & 0x8000] + [p for p in ps if not p[4] & 0x8000]
+    for line in range(height):
+        for g in range(-lpx, 320 + rpx):
+            for p in order:
+                col = pixel(p, g, line)
+                if col is not None:
+                    X, Y = r0 + g + lpx, r1 + line
+                    out[Y][X * st + 2], out[Y][X * st + 1], out[Y][X * st] = col
+                    break
+    return [bytes(r) for r in out], (r0, r1, r2, r3), st
+
+
+def rows_diff(a, b, st, rect):
+    """The set of presented pixels (x, y) at which two pictures (lists of rows) differ inside `rect`."""
+    r0, r1, r2, r3 = rect
+    return {(x, y) for y in range(r1, r3) if a[y] != b[y] for x in range(r0, r2) if a[y][x * st:(x + 1) * st] != b[y][x * st:(x + 1) * st]}
+
+
+_OVERFLOW_RASTER = r'''
+/* EXPERIMENT (test-only): the pixel of a piece exactly as a hardware sprite shows it (column-major tiles, flips, palette line, colour 0 transparent, clip). Returns 1 and the RGBA when opaque. */
+static int ss_px(const SegaGenesisFrameView *v, const GenesisVirtualSprite *sp, int cx, int cy, uint8_t o[4]) {
+  const unsigned w = (unsigned)sp->width_cells * 8U, h = (unsigned)sp->height_cells * 8U;
+  const unsigned px = (unsigned)cx, py = (unsigned)cy;
+  const unsigned sx = sp->h_flip != 0U ? w - 1U - px : px, sy = sp->v_flip != 0U ? h - 1U - py : py;
+  const unsigned tile = ((unsigned)sp->tile_index + (sx >> 3) * (unsigned)sp->height_cells + (sy >> 3)) & 0x7FFU;
+  const uint8_t b = v->vram[(tile * 32U + (sy & 7U) * 4U + ((sx & 7U) >> 1)) & 0xFFFFU];
+  const unsigned idx = (sx & 1U) == 0U ? (unsigned)(b >> 4) : (unsigned)(b & 15U);
+  const int gx = sp->x + cx, gy = sp->y + cy;
+  if (idx == 0U) return 0;
+  if (sp->has_clip != 0U && (gx < sp->clip_x || gx >= sp->clip_x + (int)sp->clip_w || gy < sp->clip_y || gy >= sp->clip_y + (int)sp->clip_h)) return 0;
+  { const unsigned c = (unsigned)sp->palette * 16U + idx, word = ((unsigned)v->lines[0].cram[c * 2U] << 8) | v->lines[0].cram[c * 2U + 1U];
+    o[0] = (uint8_t)(((word >> 1) & 7U) * 255U / 7U); o[1] = (uint8_t)(((word >> 5) & 7U) * 255U / 7U); o[2] = (uint8_t)(((word >> 9) & 7U) * 255U / 7U); o[3] = 255U; }
+  return 1;
+}
+/* the listed pieces composited into ONE RGBA layer (the lowest piece first, so the first command wins as in the game), cropped to the presented extent [lo, hi) x [0, height): the host rejects a layer that is not wholly inside */
+static uint8_t g_ovr[256 * 256 * 4];
+static int ss_layer_group(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, const unsigned *list, unsigned cnt, unsigned layer, int lo, int hi) {
+  unsigned k;
+  int bx0 = 1 << 20, by0 = 1 << 20, bx1 = -(1 << 20), by1 = -(1 << 20);
+  for (k = 0U; k < cnt; ++k) {
+    const GenesisVirtualSprite *sp = &g_cand[list[k]].s;
+    int x0 = sp->x, y0 = sp->y, x1 = sp->x + sp->width_cells * 8, y1 = sp->y + sp->height_cells * 8;
+    if (x0 < lo) x0 = lo;
+    if (x1 > hi) x1 = hi;
+    if (y0 < 0) y0 = 0;
+    if (y1 > (int)v->height) y1 = (int)v->height;
+    if (x1 <= x0 || y1 <= y0) continue;
+    if (x0 < bx0) bx0 = x0;
+    if (y0 < by0) by0 = y0;
+    if (x1 > bx1) bx1 = x1;
+    if (y1 > by1) by1 = y1;
+  }
+  if (bx1 > bx0 && by1 > by0) {
+    const unsigned cw = (unsigned)(bx1 - bx0), ch = (unsigned)(by1 - by0);
+    if (cw > 256U || ch > 256U) return 1;   /* fail closed: one layer holds at most 256 x 256 */
+    for (unsigned z = 0U; z < cw * ch * 4U; ++z) g_ovr[z] = 0U;
+    for (k = cnt; k > 0U; --k) {
+      const GenesisVirtualSprite *sp = &g_cand[list[k - 1U]].s;
+      for (int cy = by0; cy < by1; ++cy) for (int cx = bx0; cx < bx1; ++cx) {
+        uint8_t o[4];
+        if (cx < sp->x || cx >= sp->x + sp->width_cells * 8 || cy < sp->y || cy >= sp->y + sp->height_cells * 8 || cx < lo || cx >= hi) continue;
+        if (ss_px(v, sp, cx - sp->x, cy - sp->y, o)) { uint8_t *d = &g_ovr[((unsigned)(cy - by0) * cw + (unsigned)(cx - bx0)) * 4U]; d[0] = o[0]; d[1] = o[1]; d[2] = o[2]; d[3] = o[3]; }
+      }
+    }
+    if (r->overlay_layer_bitmap(layer, 0U, 1U, bx0 - lo, by0, cw, ch, 0U) != 0) return 1;   /* presentation coordinates: picture x - lo */
+    if (r->overlay_target(layer) != 0) return 1;
+    if (r->overlay_bitmap(0, 0, cw, ch, g_ovr, cw * 4U) != 0) return 1;
+  }
+  return 0;
+}
+'''
+
+
+def overflow_edit(text, mode="one-layer"):
+    """EXPERIMENT (never shipped): the pieces the production rule drops over the host's 64-command limit are composited into RGBA overlay layers instead (`one-layer`: one layer for all of them; `per-side`: one layer for the left and one
+    for the right margin) and the remaining pieces stay sprites in the game's order. A layer that would exceed 256 x 256 fails closed (the maze is then not submitted for that frame)."""
     start = "  /* at most GENESIS_VSPRITE_MAX commands"
     end = "  for (n = 0U; n < ncand; ++n) g_vset.sprites[n] = g_cand[n].s;\n"
-    if start not in text or end not in text or "/* Submits the maze blocks that reach into the margins" not in text:
+    marker = "/* Submits the maze blocks that reach into the margins"
+    if start not in text or end not in text or marker not in text or mode not in ("one-layer", "per-side"):
         raise ValueError("overflow edit targets missing")
-    a = text.index(start)
-    b = text.index(end) + len(end)
-    over = f"(ncand >= {force}U ? {force}U : ncand)" if force else "(ncand > GENESIS_VSPRITE_MAX ? ncand - GENESIS_VSPRITE_MAX : 0U)"
-    new = f"""  {{
-    const unsigned over = {over};
-    unsigned qo;
-    if (over > 4U) return;   /* fail closed: more than the four overlay layers can hold */
-    for (qo = 0U; qo < over; ++qo) if (ss_overlay_piece(r, v, &g_cand[qo].s, qo + 1U, -lpx, 320 + right_px) != 0) return;
-    for (n = 0U; n + over < ncand; ++n) g_vset.sprites[n] = g_cand[n + over].s;
-    ncand -= over;
-  }}
-"""
+    a, b = text.index(start), text.index(end) + len(end)
+    if mode == "one-layer":
+        call = "    if (nd != 0U && ss_layer_group(r, v, dropped, nd, 1U, -lpx, 320 + right_px) != 0) return;   /* fail closed */\n"
+    else:
+        call = ("    { static unsigned dl[512], dr[512]; unsigned nl = 0U, nr = 0U, kk;\n"
+                "      for (kk = 0U; kk < nd; ++kk) { const GenesisVirtualSprite *dp = &g_cand[dropped[kk]].s; if (dp->x + dp->width_cells * 4 < 160) dl[nl++] = dropped[kk]; else dr[nr++] = dropped[kk]; }\n"
+                "      if (nl != 0U && ss_layer_group(r, v, dl, nl, 1U, -lpx, 320 + right_px) != 0) return;\n"
+                "      if (nr != 0U && ss_layer_group(r, v, dr, nr, 2U, -lpx, 320 + right_px) != 0) return; }\n")
+    new = ("  {\n    static unsigned alive[512], dropped[512];\n    unsigned na = ncand, nd = 0U, qq;\n    for (qq = 0U; qq < ncand; ++qq) alive[qq] = 1U;\n"
+           "    while (na > GENESIS_VSPRITE_MAX) { unsigned far = 0U; int have = 0; for (qq = 0U; qq < ncand; ++qq) if (alive[qq] != 0U) { if (have == 0 || g_cand[qq].dist >= g_cand[far].dist) { far = qq; have = 1; } } alive[far] = 0U; --na; }\n"
+           "    for (qq = 0U; qq < ncand; ++qq) if (alive[qq] == 0U) dropped[nd++] = qq;\n" + call +
+           "    for (n = 0U, qq = 0U; qq < ncand; ++qq) if (alive[qq] != 0U) g_vset.sprites[n++] = g_cand[qq].s;\n  }\n")
     text = text[:a] + new + text[b:]
-    return text.replace("/* Submits the maze blocks that reach into the margins", _OVERFLOW_RASTER + "\n/* Submits the maze blocks that reach into the margins", 1)
+    return text.replace(marker, _OVERFLOW_RASTER + "\n" + marker, 1)
 
 
 def scene_totals(scenes):
@@ -914,20 +1019,58 @@ class Cmp:
             self.check(ok, f"coverage {mode}: {agg[mode]['classes']}")
 
 
-    def overflow_experiment(self, sp, polls):
-        """SEG-152-T009 (EXPERIMENT, reports; it gates nothing): can the RGBA overlay (an existing output, up to four bitmap layers) carry the pieces over the 64-command limit exactly? The topmost four pieces (cell order) are drawn
-        as overlay bitmaps cropped to the presented area and the rest as sprites, on real paused frames, and the WHOLE picture is compared with the all-sprites output. The result is recorded per frame."""
-        agg = self.report.setdefault("overflow_experiment", {})
-        for poll in polls:
-            pad = merge_pad(sp, [f"{poll} S", f"{poll + 2} -"], poll + 50)
-            ref = self.play("abi2", f"ovf-ref-{poll}", "wide", pad)
-            run = self.play("ovf", f"ovf-var-{poll}", "wide", pad)
-            d = bmp_diff(run["bmp"], ref["bmp"])
-            self.check(d["geometry"] and run["summary"].get("faulted") is False, f"overflow experiment {poll}: the variant runs without a fault and presents the same geometry")
-            agg[str(poll)] = {"differing_pixels": d["differing"], "faulted": run["summary"].get("faulted")}
-        n = len(agg)
-        agg["frames"] = n
-        agg["exact_frames"] = sum(1 for k, v in agg.items() if isinstance(v, dict) and v["differing_pixels"] == 0)
+    def overflow_investigation(self, sp):
+        """SEG-152-T009: can the RGBA overlay (an existing output) carry the pieces over the host's 64-command limit EXACTLY? For every frame of the recorded special stage whose complete inventory exceeds the limit: (1) the complete
+        ordered inventory is recorded before truncation; (2) an INDEPENDENT expected picture is composed from the frame's own VRAM/CRAM (the model is first validated on frames within the limit, where production's output is
+        known: it must reproduce production's stacking pixel for pixel); (3) the pieces production drops are composited into overlay layers and the picture compared with the expected one. Differences are classified: `restored` =
+        pixels production got wrong because it dropped pieces and the composition got right; `errors` = pixels where the composition differs from the expected picture. The frames are paused (the game's pause makes the picture
+        static, a quicksave describes it), reached by the same input; the paused frame is checked to be the frame it is meant to be (equal inventory). Test-only variants; the provider is not changed."""
+        agg = self.report.setdefault("overflow_investigation", {})
+        run_a = self.play("inv", "oiv-all", "wide", merge_pad(sp, [], 1480))
+        invs = {i["frame"]: i for i in parse_inventories(run_a)}
+        over = sorted(f for f, i in invs.items() if i["n"] > 64)
+        ok = self.check(len(over) > 0, f"overflow investigation: the recorded stage has frames over the command limit ({len(over)})")
+        quiet = sorted(f for f, i in invs.items() if 20 <= i["n"] <= 64)
+        targets = [("validation", f) for f in (quiet[len(quiet) // 6], quiet[len(quiet) // 2], quiet[5 * len(quiet) // 6])] + [("over", f) for f in over]
+        for kind, frame in targets:
+            sd = self.work / f"save-oiv-{frame}"
+            near = None
+            exact = False
+            for delta in (3, 2, 4, 1, 5):   # a pause at poll P freezes the picture of guest frame P + delta (3 usually, the input timing moves it by one)
+                poll = frame - delta
+                shutil.rmtree(sd, ignore_errors=True)
+                run_i = self.play("inv", f"oiv-inv-{frame}", "wide", merge_pad(sp, [f"{poll} S", f"{poll + 2} -", f"{poll + 30} K", f"{poll + 31} -"], poll + 50), save=sd)
+                inv = parse_inventories(run_i)[-1]
+                if inv["pieces"] == invs[frame]["pieces"]:
+                    exact = True
+                    break
+                if near is None and inv["n"] == invs[frame]["n"] and all(abs(p[0] - q[0]) <= 4 and abs(p[1] - q[1]) <= 4 and p[2:5] == q[2:5] and p[5] % 10 == q[5] % 10 for p, q in zip(inv["pieces"], invs[frame]["pieces"])):
+                    near = (poll, delta, shutil.copytree(sd, self.work / f"save-oiv-{frame}-near", dirs_exist_ok=True), run_i, inv)
+            if not exact and near is not None:   # no pause timing freezes exactly this frame: the nearest reproducible state (same pieces and clips, every one within four pixels)
+                poll, delta, _, run_i, inv = near
+                shutil.rmtree(sd, ignore_errors=True)
+                shutil.copytree(self.work / f"save-oiv-{frame}-near", sd)
+            run_b = self.play("nomaze", f"oiv-base-{frame}", "wide", merge_pad(sp, [f"{poll} S", f"{poll + 2} -"], poll + 50))
+            ok = self.check(exact or near is not None, f"overflow investigation {frame}: the paused frame is the frame under test ({inv['n']} pieces, pause offset {delta}; {'identical complete inventory' if exact else 'nearest reproducible state: same pieces and clips, every one within four pixels'})") and ok
+            _, vram, cram, _ = sgstate_vdp((sd / "states/quick.sgstate").read_bytes())
+            exp, rect, st = compose_expected(run_b["bmp"], inv["pieces"], vram, cram, inv["lpx"], inv["rpx"])
+            prod = bmp_info(run_i["bmp"])[3]
+            if kind == "validation":
+                expp, _, _ = compose_expected(run_b["bmp"], inv["pieces"], vram, cram, inv["lpx"], inv["rpx"], skip_flagged=True)
+                d = len(rows_diff(prod, expp, st, rect))
+                ok = self.check(d == 0, f"overflow investigation {frame}: the independent model reproduces production's output pixel for pixel on a frame within the limit ({inv['n']} pieces, {d} pixels differ)") and ok
+                agg[f"validation-{frame}"] = {"pieces": inv["n"], "model_vs_production": d, "game_cell_order_vs_production": len(rows_diff(prod, exp, st, rect))}
+                continue
+            restored = rows_diff(prod, exp, st, rect)
+            entry = {"pieces": inv["n"], "excess": inv["n"] - 64, "restored_pixels_needed": len(restored), "reproduced_exactly": exact, "max_shift_px": 0 if exact else max(max(abs(p[0] - q[0]), abs(p[1] - q[1])) for p, q in zip(inv["pieces"], invs[frame]["pieces"]))}
+            for mode, key in (("one-layer", "ovf-one"), ("per-side", "ovf-side")):
+                run_v = self.play(key, f"oiv-{key}-{frame}", "wide", merge_pad(sp, [f"{poll} S", f"{poll + 2} -"], poll + 50))
+                d = rows_diff(bmp_info(run_v["bmp"])[3], exp, st, rect)
+                entry[mode] = {"errors": len(d), "restored_correctly": len(restored - d), "new_errors": len(d - restored), "faulted": run_v["summary"].get("faulted")}
+            ok = self.check(entry["one-layer"]["errors"] == 0 and entry["one-layer"]["restored_correctly"] == len(restored) and entry["one-layer"]["faulted"] is False,
+                            f"overflow investigation {frame}: the dropped pieces carried by ONE overlay layer reproduce the complete expected picture exactly ({entry['one-layer']}, {entry['restored_pixels_needed']} pixels restored)") and ok
+            agg[str(frame)] = entry
+        agg["over_limit_frames"] = over
 
     # ------------------------------------------------------------------ scenarios
     def run_pairs(self, jobs):
@@ -983,7 +1126,8 @@ def main(argv=None):
         if want("coverage"):
             futs.append(pool.submit(c.abi2_program, "audit", coverage_edit, coverage_manifest))
         if want("overflow"):
-            futs.append(pool.submit(c.abi2_program, "ovf", lambda t: overflow_edit(t, 4)))
+            futs += [pool.submit(c.abi2_program, "inv", inventory_edit, coverage_manifest), pool.submit(c.abi2_program, "nomaze", lambda t: t.replace("if (v->side != 0U) ss_margin_maze(", "if (v->side == 99U) ss_margin_maze(")),
+                     pool.submit(c.abi2_program, "ovf-one", lambda t: overflow_edit(t, "one-layer")), pool.submit(c.abi2_program, "ovf-side", lambda t: overflow_edit(t, "per-side"))]
         if want("planes"):
             futs += [pool.submit(c.abi2_program, "nomaze", lambda t: t.replace("if (v->side != 0U) ss_margin_maze(", "if (v->side == 99U) ss_margin_maze(")),
                      pool.submit(c.abi2_program, "selfmaze", selfmaze_edit), pool.submit(c.abi2_program, "selfbad", selfbad_edit),
@@ -1027,10 +1171,7 @@ def main(argv=None):
             continue
         c.equal(key, x, y, minimum=100, need=("scenery",) if key.startswith("demos") and a.scenario_set == "s1" else ("scenery", "hud"))   # the Sonic 1 attract demo runs outside the verified HUD scope (both packages present no HUD there; the HUD accounting is still compared)
     if want("overflow") and a.scenario_set == "s1":
-        sp_o = act_pad(1, 100, until=2400, downs=SPECIAL_STAGE_DOWNS)
-        o1, o2 = c.run_pairs([("overflow-probe", dict(mode="wide", pad=sp_o, replay=c.record("special", sp_o)))])["overflow-probe"]
-        ext_o, _ = c.maze_frames(o1, o2)
-        c.overflow_experiment(sp_o, [ext_o[len(ext_o) * n // 10] for n in range(1, 10)])
+        c.overflow_investigation(act_pad(1, 100, until=2400, downs=SPECIAL_STAGE_DOWNS))
     if want("coverage") and a.scenario_set == "s1":
         c.special_coverage(act_pad(1, 100, until=2400, downs=SPECIAL_STAGE_DOWNS))
     if want("planes") and a.scenario_set == "s1":   # the mandatory special-stage extension on real special-stage frames

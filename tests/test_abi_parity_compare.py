@@ -154,7 +154,7 @@ class ProviderVariants(unittest.TestCase):
     SRC = (ROOT / "patches/genesis/sonic-1/native-widescreen-abi2/src/provider.c").read_text()
 
     def test_every_variant_applies_to_the_real_provider(self):
-        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit), ("overflow", lambda x: tool.overflow_edit(x, 4)), ("overflow-limit", tool.overflow_edit)):
+        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit), ("overflow-one", lambda x: tool.overflow_edit(x, "one-layer")), ("overflow-side", lambda x: tool.overflow_edit(x, "per-side")), ("inventory", tool.inventory_edit)):
             out = edit(self.SRC)
             self.assertNotEqual(out, self.SRC, name)
         self.assertIn("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;", tool.selfmaze_edit(self.SRC))
@@ -168,9 +168,63 @@ class ProviderVariants(unittest.TestCase):
         self.assertIn("  r = feat->render;\n", self.SRC)   # fault variant
 
     def test_a_variant_refuses_a_provider_it_does_not_fit(self):
-        for edit in (tool.selfmaze_edit, tool.coverage_edit):
+        for edit in (tool.selfmaze_edit, tool.coverage_edit, tool.inventory_edit, tool.overflow_edit):
             with self.assertRaises(ValueError):
                 edit("int main(void) { return 0; }\n")
+
+
+class ComposeExpected(unittest.TestCase):
+    """The independent compositor that the overlay investigation's expected pictures come from (synthetic tiles and palettes only)."""
+    LPX = RPX = 8
+
+    def fixture(self):
+        vram = bytearray(65536)
+        for t, idx in ((1, 1), (2, 2)):   # tile t: every pixel has colour index `idx`
+            vram[t * 32:t * 32 + 32] = bytes([(idx << 4) | idx]) * 32
+        vram[3 * 32:3 * 32 + 4] = bytes([0x10, 0x00, 0x00, 0x00])   # tile 3: only pixel (0, 0) opaque (index 1)
+        cram = bytearray(128)
+        cram[2:4] = (0x000E).to_bytes(2, "big")          # colour 1 = red 7
+        cram[4:6] = (0x00E0).to_bytes(2, "big")          # colour 2 = green 7
+        base = make_bmp(336, 224, {(x, y): (9, 9, 9) for x in range(336) for y in range(224)})
+        return base, bytes(vram), bytes(cram)
+
+    def px(self, rows, st, x, y):
+        r = rows[y]
+        return (r[x * st + 2], r[x * st + 1], r[x * st])
+
+    def test_a_piece_is_drawn_with_its_palette_and_only_inside_the_margin(self):
+        base, vram, cram = self.fixture()
+        rows, rect, st = tool.compose_expected(base, [(-8, 0, 1, 1, 1, 0)], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 0, 0), (255, 0, 0))         # picture column -8 is presented column 0
+        self.assertEqual(self.px(rows, st, 8, 0), (9, 9, 9))           # nothing is drawn in the picture
+        self.assertEqual(self.px(rows, st, 7, 7), (255, 0, 0))
+
+    def test_the_first_piece_wins_and_a_priority_piece_goes_above(self):
+        base, vram, cram = self.fixture()
+        a, b = (-8, 0, 1, 1, 1, 0), (-8, 0, 1, 1, 2, 0)
+        rows, _, st = tool.compose_expected(base, [a, b], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 0, 0), (255, 0, 0))          # the first piece wins
+        rows, _, st = tool.compose_expected(base, [a, (-8, 0, 1, 1, 2 | 0x8000, 0)], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 0, 0), (0, 255, 0))          # the priority-bit piece is above the earlier one
+
+    def test_clip_codes_flips_and_hardware_pieces(self):
+        base, vram, cram = self.fixture()
+        straddler = (-4, 0, 1, 1, 1, 1)                                  # clip code 1: only the part left of the picture
+        rows, _, st = tool.compose_expected(base, [straddler], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 4, 0), (255, 0, 0))          # picture column -4 is presented column 4
+        self.assertEqual(self.px(rows, st, 8, 0), (9, 9, 9))            # picture column 0 is left to the native picture
+        flipped = (-8, 0, 1, 1, 3 | 0x800, 0)                            # tile 3 has only its top-left pixel: h-flipped it is the top-right one
+        rows, _, st = tool.compose_expected(base, [flipped], vram, cram, self.LPX, self.RPX)
+        self.assertEqual((self.px(rows, st, 0, 0), self.px(rows, st, 7, 0)), ((9, 9, 9), (255, 0, 0)))
+        hardware = (-8, 0, 1, 1, 1, 10)                                  # a piece the host draws itself: skipped under production stacking
+        rows, _, st = tool.compose_expected(base, [hardware], vram, cram, self.LPX, self.RPX, skip_flagged=True)
+        self.assertEqual(self.px(rows, st, 0, 0), (9, 9, 9))
+
+    def test_rows_diff_reports_exactly_the_differing_pixels(self):
+        base, vram, cram = self.fixture()
+        a, rect, st = tool.compose_expected(base, [], vram, cram, self.LPX, self.RPX)
+        b, _, _ = tool.compose_expected(base, [(-8, 0, 1, 1, 1, 0)], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(len(tool.rows_diff(a, b, st, rect)), 64)
 
 
 class Privacy(unittest.TestCase):
