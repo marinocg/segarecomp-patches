@@ -103,6 +103,132 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class MarginMaze(unittest.TestCase):
+    """The operator-approved special-stage difference (SEG-152-T009): ONLY the accepted mask gains a bit, in the frames that deliver the margin maze."""
+    SS = {f: (2, 238, 0, 2, 0, 1) for f in range(1, 40)}
+
+    def comparer(self):
+        c = object.__new__(tool.Cmp)
+        c.failures, c.report = [], {}
+        return c
+
+    def with_maze(self, frames, field=3, value=3):
+        v = dict(self.SS)
+        for f in frames:
+            row = list(v[f]); row[field] = value; v[f] = tuple(row)
+        return v
+
+    def test_the_extra_mask_bit_in_some_frames_is_the_approved_difference(self):
+        a, b = run(self.SS), run(self.with_maze(range(10, 20)))
+        extra, bad = self.comparer().maze_frames(a, b)
+        self.assertEqual((extra, bad), (list(range(10, 20)), []))
+        self.assertTrue(self.comparer().equal_maze("special-wide", a, b, "wide", minimum=30))
+
+    def test_any_other_difference_is_not_approved(self):
+        a = run(self.SS)
+        for field, value in ((0, 3), (1, 300), (2, 5), (4, 7), (5, 0)):   # status, side, shift, reason, authored
+            extra, bad = self.comparer().maze_frames(a, run(self.with_maze([12], field, value)))
+            self.assertEqual((extra, bad), ([], [12]), field)
+        extra, bad = self.comparer().maze_frames(a, run(self.with_maze([12], 3, 6)))   # a different mask, not "one more bit"
+        self.assertEqual(bad, [12])
+        c = self.comparer()
+        self.assertFalse(c.equal_maze("special-wide", a, run(self.with_maze([12], 4, 7)), "wide", minimum=30))
+
+    def test_without_a_presented_margin_nothing_may_differ(self):
+        a = run(self.SS)
+        self.assertTrue(self.comparer().equal_maze("special-orig", a, run(self.SS), "orig", minimum=30))
+        self.assertFalse(self.comparer().equal_maze("special-orig", a, run(self.with_maze([12])), "orig", minimum=30))
+        self.assertFalse(self.comparer().equal_maze("special-wide", a, run(self.SS), "wide", minimum=30))   # a margin mode that never delivers the maze proves nothing
+
+    def test_content_rect_finds_the_presented_picture(self):
+        w, h = 40, 30
+        paint = {(x, y): (9, 9, 9) for x in range(10, 30) for y in range(5, 25)}
+        black = {(x, y): (0, 0, 0) for x in range(w) for y in range(h)}
+        black.update(paint)
+        self.assertEqual(tool.content_rect(make_bmp(w, h, black)), (10, 5, 30, 25))
+
+
+class ProviderVariants(unittest.TestCase):
+    """The test-only provider variants the local comparator builds (maze-free, no per-row answer, redraw self-test and its deliberate mutant, coverage logging) are text edits of the real Sonic 1 provider: each must still apply to it, so
+    a provider change that breaks a variant fails here (no product CLI needed) instead of silently invalidating the local evidence."""
+    SRC = (ROOT / "patches/genesis/sonic-1/native-widescreen-abi2/src/provider.c").read_text()
+
+    def test_every_variant_applies_to_the_real_provider(self):
+        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit), ("inventory", tool.inventory_edit)):
+            out = edit(self.SRC)
+            self.assertNotEqual(out, self.SRC, name)
+        self.assertIn("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;", tool.selfmaze_edit(self.SRC))
+        self.assertNotIn("+ art)", tool.selfbad_edit(self.SRC))   # the mutant really drops the art-tile base adjustment
+        self.assertNotIn("ss_witness(host, ram, nsat, ncell) != 0", tool.selfbad_edit(self.SRC))   # and bypasses the witness that would refuse the contradicting frame
+        self.assertIn("if (0 && ss_overflow_overlay(", tool.selfmaze_edit(self.SRC))   # the redraw is sprites only
+        self.assertIn("host.log", tool.coverage_manifest('[capabilities]\nrequired = ["frame.vdp"]\n'))
+        self.assertEqual(tool.coverage_manifest('required = ["host.log"]'), 'required = ["host.log"]')
+
+    def test_the_inline_variant_targets_exist(self):
+        self.assertIn("if (v->side != 0U) ss_margin_maze(", self.SRC)   # maze-free variant
+        self.assertIn("if (r->scenery_generic_rows(0U, mask, 224U, 28U) != 0 || r->scenery_generic_rows(1U, mask, 224U, 28U) != 0) return;", self.SRC)   # no-per-row-answer variant
+        self.assertIn("  r = feat->render;\n", self.SRC)   # fault variant
+
+    def test_a_variant_refuses_a_provider_it_does_not_fit(self):
+        for edit in (tool.selfmaze_edit, tool.coverage_edit, tool.inventory_edit):
+            with self.assertRaises(ValueError):
+                edit("int main(void) { return 0; }\n")
+
+
+class ComposeExpected(unittest.TestCase):
+    """The independent compositor that the overlay investigation's expected pictures come from (synthetic tiles and palettes only)."""
+    LPX = RPX = 8
+
+    def fixture(self):
+        vram = bytearray(65536)
+        for t, idx in ((1, 1), (2, 2)):   # tile t: every pixel has colour index `idx`
+            vram[t * 32:t * 32 + 32] = bytes([(idx << 4) | idx]) * 32
+        vram[3 * 32:3 * 32 + 4] = bytes([0x10, 0x00, 0x00, 0x00])   # tile 3: only pixel (0, 0) opaque (index 1)
+        cram = bytearray(128)
+        cram[2:4] = (0x000E).to_bytes(2, "big")          # colour 1 = red 7
+        cram[4:6] = (0x00E0).to_bytes(2, "big")          # colour 2 = green 7
+        base = make_bmp(336, 224, {(x, y): (9, 9, 9) for x in range(336) for y in range(224)})
+        return base, bytes(vram), bytes(cram)
+
+    def px(self, rows, st, x, y):
+        r = rows[y]
+        return (r[x * st + 2], r[x * st + 1], r[x * st])
+
+    def test_a_piece_is_drawn_with_its_palette_and_only_inside_the_margin(self):
+        base, vram, cram = self.fixture()
+        rows, rect, st = tool.compose_expected(base, [(-8, 0, 1, 1, 1, 0)], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 0, 0), (255, 0, 0))         # picture column -8 is presented column 0
+        self.assertEqual(self.px(rows, st, 8, 0), (9, 9, 9))           # nothing is drawn in the picture
+        self.assertEqual(self.px(rows, st, 7, 7), (255, 0, 0))
+
+    def test_the_first_piece_wins_and_a_priority_piece_goes_above(self):
+        base, vram, cram = self.fixture()
+        a, b = (-8, 0, 1, 1, 1, 0), (-8, 0, 1, 1, 2, 0)
+        rows, _, st = tool.compose_expected(base, [a, b], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 0, 0), (255, 0, 0))          # the first piece wins
+        rows, _, st = tool.compose_expected(base, [a, (-8, 0, 1, 1, 2 | 0x8000, 0)], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 0, 0), (0, 255, 0))          # the priority-bit piece is above the earlier one
+
+    def test_clip_codes_flips_and_hardware_pieces(self):
+        base, vram, cram = self.fixture()
+        straddler = (-4, 0, 1, 1, 1, 1)                                  # clip code 1: only the part left of the picture
+        rows, _, st = tool.compose_expected(base, [straddler], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(self.px(rows, st, 4, 0), (255, 0, 0))          # picture column -4 is presented column 4
+        self.assertEqual(self.px(rows, st, 8, 0), (9, 9, 9))            # picture column 0 is left to the native picture
+        flipped = (-8, 0, 1, 1, 3 | 0x800, 0)                            # tile 3 has only its top-left pixel: h-flipped it is the top-right one
+        rows, _, st = tool.compose_expected(base, [flipped], vram, cram, self.LPX, self.RPX)
+        self.assertEqual((self.px(rows, st, 0, 0), self.px(rows, st, 7, 0)), ((9, 9, 9), (255, 0, 0)))
+        hardware = (-8, 0, 1, 1, 1, 10)                                  # a piece the host draws itself: skipped under production stacking
+        rows, _, st = tool.compose_expected(base, [hardware], vram, cram, self.LPX, self.RPX, skip_flagged=True)
+        self.assertEqual(self.px(rows, st, 0, 0), (9, 9, 9))
+
+    def test_rows_diff_reports_exactly_the_differing_pixels(self):
+        base, vram, cram = self.fixture()
+        a, rect, st = tool.compose_expected(base, [], vram, cram, self.LPX, self.RPX)
+        b, _, _ = tool.compose_expected(base, [(-8, 0, 1, 1, 1, 0)], vram, cram, self.LPX, self.RPX)
+        self.assertEqual(len(tool.rows_diff(a, b, st, rect)), 64)
+
+
 class Privacy(unittest.TestCase):
     """--work holds intermediate ROM images, captures and RAM snapshots and --diag the pictures: neither may resolve inside the public repository."""
     def test_paths_inside_the_repository_are_refused(self):
