@@ -968,7 +968,8 @@ class Cmp:
         invs = {i["frame"]: i for i in parse_inventories(run_a)}
         over = sorted(f for f, i in invs.items() if i["n"] > 64)
         ok = self.check(len(over) > 0 or seed is not None, f"overflow investigation{tag}: the recorded stage has frames over the command limit ({len(over)})")
-        quiet = sorted(f for f, i in invs.items() if 20 <= i["n"] <= 64)
+        floor = min(20, max([i["n"] for i in invs.values()] or [0]) // 2)   # "ordinary" frames: busy enough to matter (at a narrow ratio a whole stage may never reach 20 pieces)
+        quiet = sorted(f for f, i in invs.items() if max(1, floor) <= i["n"] <= 64)
         if max_over and len(over) > max_over:
             big = sorted(over, key=lambda f: (-invs[f]["n"], f))[:max_over // 2]
             rest = [f for f in over if f not in big]
@@ -1007,7 +1008,7 @@ class Cmp:
                 if hit == frame:
                     exact = True
                     break
-                if alt is None and ((kind == "over" and inv["n"] > 64) or (kind == "validation" and 20 <= inv["n"] <= 64)):   # a frozen frame of the same class stands in when the target itself cannot be frozen
+                if alt is None and ((kind == "over" and inv["n"] > 64) or (kind == "validation" and max(1, floor) <= inv["n"] <= 64)):   # a frozen frame of the same class stands in when the target itself cannot be frozen
                     alt = (poll, hit, shutil.copytree(sd, self.work / f"save-oiv{tag}-{frame}-alt", dirs_exist_ok=True), run_i, inv)
                 poll += frame - hit
             if not exact and alt is not None:
