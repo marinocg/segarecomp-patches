@@ -278,6 +278,67 @@ def coverage_manifest(m):
     return m.replace("required = [", 'required = ["host.log", ', 1) if '"host.log"' not in m else m
 
 
+_OVERFLOW_RASTER = r'''
+/* EXPERIMENT (test-only): a piece as an RGBA overlay bitmap, rasterised from the frame's VRAM/CRAM exactly as a hardware sprite is drawn (column-major tiles, flips, palette line, colour 0 transparent). */
+static uint8_t g_ovr[32 * 32 * 4];
+/* `lo`/`hi`: the presented extent in picture pixels (-left margin .. 320 + right margin); the bitmap is cropped to it because the host clamps (shifts) a layer that sticks out instead of clipping it. */
+static int ss_overlay_piece(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, const GenesisVirtualSprite *sp, unsigned layer, int lo, int hi) {
+  const unsigned w = (unsigned)sp->width_cells * 8U, h = (unsigned)sp->height_cells * 8U;
+  int x0 = 0, x1 = (int)w, y0 = 0, y1 = (int)h;
+  unsigned cw, ch;
+  if (sp->x < lo) x0 = lo - sp->x;
+  if (sp->x + (int)w > hi) x1 = hi - sp->x;
+  if (sp->y < 0) y0 = -sp->y;
+  if (sp->y + (int)h > (int)v->height) y1 = (int)v->height - sp->y;
+  if (x1 <= x0 || y1 <= y0) return 0;
+  cw = (unsigned)(x1 - x0);
+  ch = (unsigned)(y1 - y0);
+  for (int cy = y0; cy < y1; ++cy)
+    for (int cx = x0; cx < x1; ++cx) {
+      const unsigned px = (unsigned)cx, py = (unsigned)cy;
+      const unsigned sx = sp->h_flip != 0U ? w - 1U - px : px, sy = sp->v_flip != 0U ? h - 1U - py : py;
+      const unsigned tile = ((unsigned)sp->tile_index + (sx >> 3) * (unsigned)sp->height_cells + (sy >> 3)) & 0x7FFU;
+      const uint8_t b = v->vram[(tile * 32U + (sy & 7U) * 4U + ((sx & 7U) >> 1)) & 0xFFFFU];
+      const unsigned idx = (sx & 1U) == 0U ? (unsigned)(b >> 4) : (unsigned)(b & 15U);
+      uint8_t *o = &g_ovr[((unsigned)(cy - y0) * cw + (unsigned)(cx - x0)) * 4U];
+      const int gx = sp->x + cx, gy = sp->y + cy;
+      int visible = idx != 0U;
+      if (sp->has_clip != 0U && (gx < sp->clip_x || gx >= sp->clip_x + (int)sp->clip_w || gy < sp->clip_y || gy >= sp->clip_y + (int)sp->clip_h)) visible = 0;
+      if (visible != 0) {
+        const unsigned c = (unsigned)sp->palette * 16U + idx, word = ((unsigned)v->lines[0].cram[c * 2U] << 8) | v->lines[0].cram[c * 2U + 1U];
+        o[0] = (uint8_t)(((word >> 1) & 7U) * 255U / 7U); o[1] = (uint8_t)(((word >> 5) & 7U) * 255U / 7U); o[2] = (uint8_t)(((word >> 9) & 7U) * 255U / 7U); o[3] = 255U;
+      } else { o[0] = o[1] = o[2] = o[3] = 0U; }
+    }
+  if (r->overlay_layer_bitmap(layer, 0U, 1U, sp->x + x0 - lo, sp->y + y0, cw, ch, 0U) != 0) return 1;   /* presentation coordinates: picture x - lo */
+  if (r->overlay_target(layer) != 0) return 1;
+  return r->overlay_bitmap(0, 0, cw, ch, g_ovr, cw * 4U);
+}
+'''
+
+
+def overflow_edit(text, force=0):
+    """EXPERIMENT (never shipped): the pieces over the host's 64-command limit (or, with `force`, the first `force` pieces regardless) are drawn as RGBA overlay bitmaps instead of being dropped. The first pieces in cell order are the
+    topmost ones, so everything drawn above the sprites is exactly what the game stacks above them."""
+    start = "  /* at most GENESIS_VSPRITE_MAX commands"
+    end = "  for (n = 0U; n < ncand; ++n) g_vset.sprites[n] = g_cand[n].s;\n"
+    if start not in text or end not in text or "/* Submits the maze blocks that reach into the margins" not in text:
+        raise ValueError("overflow edit targets missing")
+    a = text.index(start)
+    b = text.index(end) + len(end)
+    over = f"(ncand >= {force}U ? {force}U : ncand)" if force else "(ncand > GENESIS_VSPRITE_MAX ? ncand - GENESIS_VSPRITE_MAX : 0U)"
+    new = f"""  {{
+    const unsigned over = {over};
+    unsigned qo;
+    if (over > 4U) return;   /* fail closed: more than the four overlay layers can hold */
+    for (qo = 0U; qo < over; ++qo) if (ss_overlay_piece(r, v, &g_cand[qo].s, qo + 1U, -lpx, 320 + right_px) != 0) return;
+    for (n = 0U; n + over < ncand; ++n) g_vset.sprites[n] = g_cand[n + over].s;
+    ncand -= over;
+  }}
+"""
+    text = text[:a] + new + text[b:]
+    return text.replace("/* Submits the maze blocks that reach into the margins", _OVERFLOW_RASTER + "\n/* Submits the maze blocks that reach into the margins", 1)
+
+
 def scene_totals(scenes):
     """The coverage accounting of a run as per-component totals over EVERY scene of the report. A schema 2 package has one unnamed scene ('*'); a schema 3 package attributes frames to its declared scenes
     ('level', 'special-stage') and to '*' for the frames outside them (an attract demo), so a positional read of one scene would compare different frames. Summing every scene is strictly stronger than
@@ -852,6 +913,22 @@ class Cmp:
                          "window_edge_hits": sum(r["edge"] for r in rows)}
             self.check(ok, f"coverage {mode}: {agg[mode]['classes']}")
 
+
+    def overflow_experiment(self, sp, polls):
+        """SEG-152-T009 (EXPERIMENT, reports; it gates nothing): can the RGBA overlay (an existing output, up to four bitmap layers) carry the pieces over the 64-command limit exactly? The topmost four pieces (cell order) are drawn
+        as overlay bitmaps cropped to the presented area and the rest as sprites, on real paused frames, and the WHOLE picture is compared with the all-sprites output. The result is recorded per frame."""
+        agg = self.report.setdefault("overflow_experiment", {})
+        for poll in polls:
+            pad = merge_pad(sp, [f"{poll} S", f"{poll + 2} -"], poll + 50)
+            ref = self.play("abi2", f"ovf-ref-{poll}", "wide", pad)
+            run = self.play("ovf", f"ovf-var-{poll}", "wide", pad)
+            d = bmp_diff(run["bmp"], ref["bmp"])
+            self.check(d["geometry"] and run["summary"].get("faulted") is False, f"overflow experiment {poll}: the variant runs without a fault and presents the same geometry")
+            agg[str(poll)] = {"differing_pixels": d["differing"], "faulted": run["summary"].get("faulted")}
+        n = len(agg)
+        agg["frames"] = n
+        agg["exact_frames"] = sum(1 for k, v in agg.items() if isinstance(v, dict) and v["differing_pixels"] == 0)
+
     # ------------------------------------------------------------------ scenarios
     def run_pairs(self, jobs):
         """jobs: [(key, name_a1_args, name_a2_args)] run in parallel; returns {key: (a1, a2)}."""
@@ -905,6 +982,8 @@ def main(argv=None):
             futs.append(pool.submit(c.abi2_program, "mut-fault", lambda t: t.replace("  r = feat->render;\n", "  r = feat->render;\n  (void)r->overlay_layer_bitmap(2U, 2U, 0U, 0, 0, 257U, 16U, 1U);\n", 1)))
         if want("coverage"):
             futs.append(pool.submit(c.abi2_program, "audit", coverage_edit, coverage_manifest))
+        if want("overflow"):
+            futs.append(pool.submit(c.abi2_program, "ovf", lambda t: overflow_edit(t, 4)))
         if want("planes"):
             futs += [pool.submit(c.abi2_program, "nomaze", lambda t: t.replace("if (v->side != 0U) ss_margin_maze(", "if (v->side == 99U) ss_margin_maze(")),
                      pool.submit(c.abi2_program, "selfmaze", selfmaze_edit), pool.submit(c.abi2_program, "selfbad", selfbad_edit),
@@ -947,6 +1026,11 @@ def main(argv=None):
             c.equal_maze(key, x, y, key.split("-", 1)[1])
             continue
         c.equal(key, x, y, minimum=100, need=("scenery",) if key.startswith("demos") and a.scenario_set == "s1" else ("scenery", "hud"))   # the Sonic 1 attract demo runs outside the verified HUD scope (both packages present no HUD there; the HUD accounting is still compared)
+    if want("overflow") and a.scenario_set == "s1":
+        sp_o = act_pad(1, 100, until=2400, downs=SPECIAL_STAGE_DOWNS)
+        o1, o2 = c.run_pairs([("overflow-probe", dict(mode="wide", pad=sp_o, replay=c.record("special", sp_o)))])["overflow-probe"]
+        ext_o, _ = c.maze_frames(o1, o2)
+        c.overflow_experiment(sp_o, [ext_o[len(ext_o) * n // 10] for n in range(1, 10)])
     if want("coverage") and a.scenario_set == "s1":
         c.special_coverage(act_pad(1, 100, until=2400, downs=SPECIAL_STAGE_DOWNS))
     if want("planes") and a.scenario_set == "s1":   # the mandatory special-stage extension on real special-stage frames

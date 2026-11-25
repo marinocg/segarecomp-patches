@@ -154,7 +154,7 @@ class ProviderVariants(unittest.TestCase):
     SRC = (ROOT / "patches/genesis/sonic-1/native-widescreen-abi2/src/provider.c").read_text()
 
     def test_every_variant_applies_to_the_real_provider(self):
-        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit)):
+        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit), ("overflow", lambda x: tool.overflow_edit(x, 4)), ("overflow-limit", tool.overflow_edit)):
             out = edit(self.SRC)
             self.assertNotEqual(out, self.SRC, name)
         self.assertIn("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;", tool.selfmaze_edit(self.SRC))
