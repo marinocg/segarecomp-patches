@@ -224,8 +224,7 @@ def selfbad_edit(text):
 
 def selfmaze_edit(text):
     """The test-only variant behind `maze_selftest` (never shipped): redraw every reconstructed piece of the blocks the GAME itself drew (its own window and cull), whole and unclipped, over the picture, and force the derivation path."""
-    rep = [("if ((x >= 0 && x + w <= 320) || x + w <= -lpx || x >= 320 + right_px) continue;", "if (kept == 0 || x + w <= -lpx || x >= 320 + right_px) continue;"),
-           ("        if (kept) sp->flags = GENESIS_VSPRITE_FLAG_HARDWARE_PIECE;", "        (void)kept;"),
+    rep = [("if ((x >= 0 && x + w <= 320) || x + w <= -lpx || x >= 320 + right_px) continue;", "if (!(i >= 0 && i < 16 && j >= 0 && j < 16 && cx >= -16 && cx < 336 && cy >= -16 && cy < 240) || x + w <= -lpx || x >= 320 + right_px) continue;"),
            ("if (x < 0 && x + w > 0) {", "if (0) {"), ("else if (x < 320 && x + w > 320) {", "else if (0) {"),
            ("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_EXTENDED;", "g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;"),   # the hardware's per-line sprite budget applies to the redraw too, as it did to the game's own sprites
            ("  ss_derive(ram);\n", "  for (unsigned st = 1U; st <= SS_TYPE_MAX; ++st) for (unsigned su = 1U; su < st; ++su) if (g_sstype[su].n != 0U && g_sstype[st].n != 0U && u16(ram, SS_ITEMS + su * 8U) == u16(ram, SS_ITEMS + st * 8U) && u16(ram, SS_ITEMS + su * 8U + 2U) == u16(ram, SS_ITEMS + st * 8U + 2U) && u16(ram, SS_ITEMS + su * 8U + 4U) == u16(ram, SS_ITEMS + st * 8U + 4U)) { g_sstype[st].n = 0U; break; }\n  ss_derive(ram);\n")]
@@ -1056,10 +1055,10 @@ class Cmp:
             exp, rect, st = compose_expected(run_b["bmp"], inv["pieces"], vram, cram, inv["lpx"], inv["rpx"])
             prod = bmp_info(run_i["bmp"])[3]
             if kind == "validation":
-                expp, _, _ = compose_expected(run_b["bmp"], inv["pieces"], vram, cram, inv["lpx"], inv["rpx"], skip_flagged=True)
-                d = len(rows_diff(prod, expp, st, rect))
-                ok = self.check(d == 0, f"overflow investigation {frame}: the independent model reproduces production's output pixel for pixel on a frame within the limit ({inv['n']} pieces, {d} pixels differ)") and ok
-                agg[f"validation-{frame}"] = {"pieces": inv["n"], "model_vs_production": d, "game_cell_order_vs_production": len(rows_diff(prod, exp, st, rect))}
+                d = len(rows_diff(prod, exp, st, rect))
+                ok = self.check(all(p[5] // 10 == 0 for p in inv["pieces"]), f"overflow investigation {frame}: no piece is marked as drawn by the host (a marked piece would be stacked beneath the virtual pieces, not in the game's order)") and ok
+                ok = self.check(d == 0, f"overflow investigation {frame}: production's margin maze equals the independent model in the GAME's cell order, pixel for pixel, on a frame within the limit ({inv['n']} pieces, {d} pixels differ)") and ok
+                agg[f"validation-{frame}"] = {"pieces": inv["n"], "production_vs_game_cell_order": d}
                 continue
             restored = rows_diff(prod, exp, st, rect)
             entry = {"pieces": inv["n"], "excess": inv["n"] - 64, "restored_pixels_needed": len(restored), "reproduced_exactly": exact, "max_shift_px": 0 if exact else max(max(abs(p[0] - q[0]), abs(p[1] - q[1])) for p, q in zip(inv["pieces"], invs[frame]["pieces"]))}

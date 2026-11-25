@@ -446,7 +446,6 @@ static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrame
       const int row = scry / SS_BLOCK + i, col = scrx / SS_BLOCK + j;
       const int cx = ss_x(c, s, dx0, dy0 + SS_BLOCK * i, j) + 160, cy = ss_y(c, s, dx0, dy0 + SS_BLOCK * i, j) + 112;
       unsigned t;
-      const int kept = i >= 0 && i < 16 && j >= 0 && j < 16 && cx >= -16 && cx < 336 && cy >= -16 && cy < 240;
       if (row < 0 || row >= 128 || col < 0 || col >= 128 || cy < -16 || cy >= 240 || cx < -16 - lpx || cx >= 336 + right_px) continue;
       t = ram[(unsigned)row * SS_LAYOUT_STRIDE + (unsigned)col];
       if (t == 0U || t > SS_TYPE_MAX || g_sstype[t].n == 0U) continue;
@@ -465,7 +464,6 @@ static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrame
         sp->tile_index = (uint16_t)(g_sstype[t].tile[q] & 0x7FFU);
         sp->x = (int16_t)x;
         sp->y = (int16_t)y;
-        if (kept) sp->flags = GENESIS_VSPRITE_FLAG_HARDWARE_PIECE;   /* the game's own sprite table holds this piece: the host does not draw it twice where it draws that layer */
         if (x < 0 && x + w > 0) { sp->has_clip = 1U; sp->clip_x = (int16_t)(-lpx); sp->clip_y = 0; sp->clip_w = (uint16_t)(lpx > 320 ? 320 : lpx); sp->clip_h = (uint16_t)v->height; if (lpx > 320) sp->clip_x = -320; }   /* only the margin part: the picture keeps its native pixels */
         else if (x < 320 && x + w > 320) { sp->has_clip = 1U; sp->clip_x = 320; sp->clip_y = 0; sp->clip_w = (uint16_t)(right_px > 320 ? 320 : right_px); sp->clip_h = (uint16_t)v->height; }
         g_cand[ncand].dist = x < 0 ? -x : x + w - 320;
