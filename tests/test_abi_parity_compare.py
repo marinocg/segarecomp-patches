@@ -148,6 +148,31 @@ class MarginMaze(unittest.TestCase):
         self.assertEqual(tool.content_rect(make_bmp(w, h, black)), (10, 5, 30, 25))
 
 
+class ProviderVariants(unittest.TestCase):
+    """The test-only provider variants the local comparator builds (maze-free, no per-row answer, redraw self-test and its deliberate mutant, coverage logging) are text edits of the real Sonic 1 provider: each must still apply to it, so
+    a provider change that breaks a variant fails here (no product CLI needed) instead of silently invalidating the local evidence."""
+    SRC = (ROOT / "patches/genesis/sonic-1/native-widescreen-abi2/src/provider.c").read_text()
+
+    def test_every_variant_applies_to_the_real_provider(self):
+        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit)):
+            out = edit(self.SRC)
+            self.assertNotEqual(out, self.SRC, name)
+        self.assertIn("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;", tool.selfmaze_edit(self.SRC))
+        self.assertNotIn("u16(ram, ot + 6U) - u16(ram, ou + 6U)", tool.selfbad_edit(self.SRC))   # the mutant really drops the art-tile base adjustment
+        self.assertIn("host.log", tool.coverage_manifest('[capabilities]\nrequired = ["frame.vdp"]\n'))
+        self.assertEqual(tool.coverage_manifest('required = ["host.log"]'), 'required = ["host.log"]')
+
+    def test_the_inline_variant_targets_exist(self):
+        self.assertIn("if (v->side != 0U) ss_margin_maze(", self.SRC)   # maze-free variant
+        self.assertIn("if (r->scenery_generic_rows(0U, mask, 224U, 28U) != 0 || r->scenery_generic_rows(1U, mask, 224U, 28U) != 0) return;", self.SRC)   # no-per-row-answer variant
+        self.assertIn("  r = feat->render;\n", self.SRC)   # fault variant
+
+    def test_a_variant_refuses_a_provider_it_does_not_fit(self):
+        for edit in (tool.selfmaze_edit, tool.coverage_edit):
+            with self.assertRaises(ValueError):
+                edit("int main(void) { return 0; }\n")
+
+
 class Privacy(unittest.TestCase):
     """--work holds intermediate ROM images, captures and RAM snapshots and --diag the pictures: neither may resolve inside the public repository."""
     def test_paths_inside_the_repository_are_refused(self):

@@ -272,6 +272,7 @@ static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic1Frame 
 #define SS_POSBUF 0x8000U       /* 16 x 16 x (x word, y word): the screen position of every block of the window, relative to the picture centre */
 #define SS_LAYOUT_STRIDE 128U   /* the maze layout (one byte per block, 128 x 128) starts at work RAM 0 */
 #define SS_TYPE_MAX 0x4EU       /* block types above this are not drawn */
+#define SS_ITEMS 0x4000U        /* the game's item table: per block type 8 bytes, the mapping pointer (long), the mapping frame (word) and the art-tile base (word) */
 #define SS_BLOCK 24
 #define SS_MAX_PIECES 4U
 #define SS_SAT_MAX 80U
@@ -279,6 +280,7 @@ typedef struct { int x, y; unsigned w, h, tile; } SsSprite;              /* scre
 typedef struct { uint8_t n; int16_t x[SS_MAX_PIECES], y[SS_MAX_PIECES]; uint8_t wc[SS_MAX_PIECES], hc[SS_MAX_PIECES]; uint16_t tile[SS_MAX_PIECES]; } SsType;   /* pieces relative to the block centre */
 typedef struct { uint8_t type; int cx, cy; } SsCell;
 static SsType g_sstype[SS_TYPE_MAX + 1U];
+static uint8_t g_ssblank[SS_TYPE_MAX + 1U];   /* 1: this type drew no sprite in this frame (it is learned as having no pieces) */
 static SsSprite g_sat[SS_SAT_MAX];
 static SsCell g_sscell[256];
 static GenesisVirtualSpriteSet g_vset;
@@ -326,26 +328,44 @@ static unsigned ss_read_sat(const SegaGenesisFrameView *v) {
   return n;
 }
 
-/* Learns the pieces of every block type that the game drew this frame; 0 on success (every drawn block is accounted for, in order). */
+/* The number of sprites (1..SS_MAX_PIECES) starting at `p` whose bounding box is centred on block `k`, or 0 when no such group exists. */
+static unsigned ss_group(unsigned p, unsigned nsat, unsigned k) {
+  int xmin = 0, xmax = 0, ymin = 0, ymax = 0;
+  for (unsigned g = 0U; p + g < nsat && g < SS_MAX_PIECES; ++g) {
+    const SsSprite *q = &g_sat[p + g];
+    if (g == 0U || q->x < xmin) xmin = q->x;
+    if (g == 0U || q->y < ymin) ymin = q->y;
+    if (g == 0U || q->x + (int)q->w > xmax) xmax = q->x + (int)q->w;
+    if (g == 0U || q->y + (int)q->h > ymax) ymax = q->y + (int)q->h;
+    if (xmin + xmax == 2 * g_sscell[k].cx && ymin + ymax == 2 * g_sscell[k].cy) return g + 1U;
+  }
+  return 0U;
+}
+
+/* Learns the pieces of every block type that the game drew this frame; 0 on success. The game emits the blocks' sprites in cell order. A block's pieces are normally centred on the block. A block with no sprite at
+ * all (a type whose mapping has no pieces) is recognised by the NEXT block matching the current sprite; otherwise a block whose single piece is not centred takes the next sprite (at most a quarter of the blocks may
+ * need this, otherwise the sequence is misaligned and the frame is refused). Every later instance of a type must agree with the first (same pieces, offsets, sizes and tiles, or blank again): any contradiction
+ * refuses the frame, so nothing is ever drawn from a type the frame itself contradicts. */
 static int ss_learn(unsigned nsat, unsigned ncell) {
-  for (unsigned p0 = 0U; p0 < 4U && p0 < nsat; ++p0) {
-    unsigned p = p0, k, t, ok = 1U;
-    for (t = 0U; t <= SS_TYPE_MAX; ++t) g_sstype[t].n = 0U;
-    for (k = 0U; k < ncell; ++k) {
-      int xmin = 0, xmax = 0, ymin = 0, ymax = 0;
-      unsigned g = 0U, matched = 0U;
+  for (unsigned p0 = 0U; p0 < 8U && p0 < nsat; ++p0) {
+    unsigned p = p0, k, t, ok = 1U, off = 0U;
+    for (t = 0U; t <= SS_TYPE_MAX; ++t) { g_sstype[t].n = 0U; g_ssblank[t] = 0U; }
+    for (k = 0U; k < ncell && ok != 0U; ++k) {
+      unsigned g;
       if (p >= nsat) break;   /* the game ran out of sprites: the remaining blocks have none */
-      while (p + g < nsat && g < SS_MAX_PIECES) {
-        const SsSprite *q = &g_sat[p + g];
-        if (g == 0U || q->x < xmin) xmin = q->x;
-        if (g == 0U || q->y < ymin) ymin = q->y;
-        if (g == 0U || q->x + (int)q->w > xmax) xmax = q->x + (int)q->w;
-        if (g == 0U || q->y + (int)q->h > ymax) ymax = q->y + (int)q->h;
-        ++g;
-        if (xmin + xmax == 2 * g_sscell[k].cx && ymin + ymax == 2 * g_sscell[k].cy) { matched = 1U; break; }
-      }
-      if (!matched) { ok = 0U; break; }
+      g = ss_group(p, nsat, k);
       t = g_sscell[k].type;
+      if (g == 0U && k + 1U < ncell && ss_group(p, nsat, k + 1U) != 0U) {   /* this block drew nothing */
+        if (g_ssblank[t] == 0U && g_sstype[t].n != 0U) ok = 0U;
+        g_ssblank[t] = 1U;
+        continue;
+      }
+      if (g == 0U) {
+        g = 1U;   /* a single piece that is not centred on its block */
+        ++off;
+        if (off * 4U > ncell + 3U) { ok = 0U; break; }
+      }
+      if (g_ssblank[t] != 0U) { ok = 0U; break; }
       if (g_sstype[t].n == 0U) {
         g_sstype[t].n = (uint8_t)g;
         for (unsigned q = 0U; q < g; ++q) {
@@ -356,12 +376,46 @@ static int ss_learn(unsigned nsat, unsigned ncell) {
           g_sstype[t].hc[q] = (uint8_t)(sp->h / 8U);
           g_sstype[t].tile[q] = (uint16_t)sp->tile;
         }
-      } else if (g_sstype[t].n != g) { ok = 0U; break; }   /* the same type drew a different number of pieces: not the grouping this relies on */
+      } else if (g_sstype[t].n != g) {
+        ok = 0U;
+      } else {
+        for (unsigned q = 0U; q < g; ++q) {
+          const SsSprite *sp = &g_sat[p + q];
+          if (g_sstype[t].x[q] != (int16_t)(sp->x - g_sscell[k].cx) || g_sstype[t].y[q] != (int16_t)(sp->y - g_sscell[k].cy) || g_sstype[t].wc[q] != (uint8_t)(sp->w / 8U) ||
+              g_sstype[t].hc[q] != (uint8_t)(sp->h / 8U) || g_sstype[t].tile[q] != (uint16_t)sp->tile) ok = 0U;
+        }
+      }
       p += g;
     }
     if (ok != 0U && k > 0U) return 0;
   }
   return 1;
+}
+
+/* A block type with no instance in the picture shares its mapping, and therefore its pieces, with every type that has the same mapping pointer and frame in the game's item table (verified on every group of
+ * the real stage: identical geometry, and each piece's tile is the type's art-tile base plus the same offset), so only the base differs. The pieces are derived from a type that was seen, never invented. */
+static void ss_derive(const uint8_t *ram) {
+  uint8_t seen[SS_TYPE_MAX + 1U];
+  unsigned t, u, q;
+  for (t = 0U; t <= SS_TYPE_MAX; ++t) seen[t] = g_sstype[t].n != 0U || g_ssblank[t] != 0U;
+  for (t = 1U; t <= SS_TYPE_MAX; ++t) {
+    const unsigned ot = SS_ITEMS + t * 8U;
+    if (seen[t] != 0U || (u16(ram, ot) | u16(ram, ot + 2U)) == 0U) continue;   /* (a blank type is a learned type too) */
+    for (u = 1U; u <= SS_TYPE_MAX; ++u) {
+      const unsigned ou = SS_ITEMS + u * 8U;
+      if (seen[u] == 0U || u16(ram, ou) != u16(ram, ot) || u16(ram, ou + 2U) != u16(ram, ot + 2U) || u16(ram, ou + 4U) != u16(ram, ot + 4U)) continue;
+      if (g_ssblank[u] != 0U) { g_ssblank[t] = 1U; break; }
+      g_sstype[t].n = g_sstype[u].n;
+      for (q = 0U; q < g_sstype[u].n; ++q) {
+        g_sstype[t].x[q] = g_sstype[u].x[q];
+        g_sstype[t].y[q] = g_sstype[u].y[q];
+        g_sstype[t].wc[q] = g_sstype[u].wc[q];
+        g_sstype[t].hc[q] = g_sstype[u].hc[q];
+        g_sstype[t].tile[q] = (uint16_t)(g_sstype[u].tile[q] + u16(ram, ot + 6U) - u16(ram, ou + 6U));
+      }
+      break;
+    }
+  }
 }
 
 /* Submits the maze blocks that reach into the margins as virtual sprites (presentation space). Silent on any doubt: the frame then simply has no maze in its margins, as before. */
@@ -386,6 +440,7 @@ static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrame
     }
   nsat = ss_read_sat(v);
   if (ss_learn(nsat, ncell) != 0) return;
+  ss_derive(ram);
   for (i = -24; i < 40; ++i)
     for (j = -24; j < 40; ++j) {
       const int row = scry / SS_BLOCK + i, col = scrx / SS_BLOCK + j;
@@ -418,15 +473,15 @@ static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrame
       }
     }
   if (ncand == 0U) return;
-  /* at most GENESIS_VSPRITE_MAX commands: the pieces nearest to the picture first (a stable, deterministic choice) */
-  n = 0U;
-  while (n < GENESIS_VSPRITE_MAX && n < ncand) {
-    unsigned best = n;
-    for (q = n + 1U; q < ncand; ++q) if (g_cand[q].dist < g_cand[best].dist) best = q;
-    if (best != n) { GenesisVirtualSprite ts = g_cand[n].s; int td = g_cand[n].dist; g_cand[n].s = g_cand[best].s; g_cand[n].dist = g_cand[best].dist; g_cand[best].s = ts; g_cand[best].dist = td; }
-    g_vset.sprites[n] = g_cand[n].s;
-    ++n;
+  /* at most GENESIS_VSPRITE_MAX commands: over the limit the pieces farthest from the picture are dropped one at a time; the remaining pieces keep the game's cell order (the first command wins, as in the game's
+   * own sprite table), so overlapping blocks stack exactly as the game stacks them */
+  while (ncand > GENESIS_VSPRITE_MAX) {
+    unsigned drop = 0U;
+    for (q = 1U; q < ncand; ++q) if (g_cand[q].dist >= g_cand[drop].dist) drop = q;
+    for (q = drop; q + 1U < ncand; ++q) g_cand[q] = g_cand[q + 1U];
+    --ncand;
   }
+  for (n = 0U; n < ncand; ++n) g_vset.sprites[n] = g_cand[n].s;
   g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_EXTENDED;
   g_vset.space = GENESIS_VSPRITE_SPACE_PRESENTATION;
   g_vset.count = n;

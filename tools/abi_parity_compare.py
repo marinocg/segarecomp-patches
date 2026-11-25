@@ -213,6 +213,71 @@ def ss_plane_model(regs, vram, cram, vsram, cvt):
     return at, boxes
 
 
+def selfbad_edit(text):
+    """A deliberately wrong reconstruction (the derived tile ignores the type's own art-tile base): the self-test must catch it."""
+    text = selfmaze_edit(text)
+    a = "(uint16_t)(g_sstype[u].tile[q] + u16(ram, ot + 6U) - u16(ram, ou + 6U))"
+    if a not in text:
+        raise ValueError("selfbad edit target missing")
+    return text.replace(a, "(uint16_t)g_sstype[u].tile[q]", 1)
+
+
+def selfmaze_edit(text):
+    """The test-only variant behind `maze_selftest` (never shipped): redraw every reconstructed piece of the blocks the GAME itself drew (its own window and cull), whole and unclipped, over the picture, and force the derivation path."""
+    rep = [("if ((x >= 0 && x + w <= 320) || x + w <= -lpx || x >= 320 + right_px) continue;", "if (kept == 0 || x + w <= -lpx || x >= 320 + right_px) continue;"),
+           ("        if (kept) sp->flags = GENESIS_VSPRITE_FLAG_HARDWARE_PIECE;", "        (void)kept;"),
+           ("if (x < 0 && x + w > 0) {", "if (0) {"), ("else if (x < 320 && x + w > 320) {", "else if (0) {"),
+           ("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_EXTENDED;", "g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;"),   # the hardware's per-line sprite budget applies to the redraw too, as it did to the game's own sprites
+           ("  ss_derive(ram);\n", "  for (unsigned st = 1U; st <= SS_TYPE_MAX; ++st) for (unsigned su = 1U; su < st; ++su) if (g_sstype[su].n != 0U && g_sstype[st].n != 0U && u16(ram, SS_ITEMS + su * 8U) == u16(ram, SS_ITEMS + st * 8U) && u16(ram, SS_ITEMS + su * 8U + 2U) == u16(ram, SS_ITEMS + st * 8U + 2U) && u16(ram, SS_ITEMS + su * 8U + 4U) == u16(ram, SS_ITEMS + st * 8U + 4U)) { g_sstype[st].n = 0U; break; }\n  ss_derive(ram);\n")]
+    for a, b in rep:
+        if a not in text:
+            raise ValueError("selfmaze edit target missing: " + a)
+        text = text.replace(a, b, 1)
+    return text
+
+
+_COVERAGE_STATS = r'''
+static const SegaModHost *g_host;
+static int dg_why, dg_fit, dg_learn, dg_nsat, dg_ncell, dg_elig, dg_edge, dg_cand;
+static int dg_unl_t[0x50];
+static void dg_put(char *b, int *n, int v) { char t[12]; int m = 0; unsigned u; if (v < 0) { b[(*n)++] = '-'; u = (unsigned)(-v); } else u = (unsigned)v; do { t[m++] = (char)('0' + u % 10U); u /= 10U; } while (u); while (m) b[(*n)++] = t[--m]; b[(*n)++] = ' '; }
+static void dg_reset(void) { unsigned i; dg_why = 0; dg_fit = 2; dg_learn = 2; dg_nsat = dg_ncell = dg_elig = dg_edge = dg_cand = 0; for (i = 0U; i < 0x50U; ++i) dg_unl_t[i] = 0; }
+static void dg_flush(void) {
+  char b[256]; int n = 0; unsigned i;
+  b[n++] = 'Z'; b[n++] = ' ';
+  dg_put(b, &n, (int)g_host->frame); dg_put(b, &n, dg_fit); dg_put(b, &n, dg_learn); dg_put(b, &n, dg_nsat); dg_put(b, &n, dg_ncell); dg_put(b, &n, dg_elig); dg_put(b, &n, dg_edge); dg_put(b, &n, dg_cand); dg_put(b, &n, dg_why);
+  for (i = 1U; i < 0x50U; ++i) if (dg_unl_t[i] != 0 && n < 235) dg_put(b, &n, 10000 + dg_unl_t[i] * 100 + (int)i);
+  for (i = 1U; i < 0x50U; ++i) if (g_ssblank[i] != 0U && n < 235) dg_put(b, &n, 2000 + (int)i);
+  g_host->log(b, (uint32_t)n);
+}
+'''
+
+
+def coverage_edit(text):
+    """The test-only logging variant behind `special_coverage` (never shipped): the production code plus one log line per special-stage frame saying whether the margin maze was fitted, learned and delivered, and why not."""
+    rep = [("static int ss_fit(", _COVERAGE_STATS + "\nstatic int ss_fit("),
+           ("  Sonic1Frame *f = &g_frame;\n", "  Sonic1Frame *f = &g_frame;\n  g_host = host;\n"),
+           ("  if (ss_fit(ram, &s, &c, &dx0, &dy0) != 0) return;\n", "  dg_fit = 1;\n  if (ss_fit(ram, &s, &c, &dx0, &dy0) != 0) return;\n  dg_fit = 0;\n"),
+           ("  nsat = ss_read_sat(v);\n", "  nsat = ss_read_sat(v);\n  dg_nsat = (int)nsat; dg_ncell = (int)ncell;\n"),
+           ("  if (ss_learn(nsat, ncell) != 0) return;\n", "  dg_learn = 1;\n  if (ss_learn(nsat, ncell) != 0) return;\n  dg_learn = 0;\n"),
+           ("        if (off * 4U > ncell + 3U) { ok = 0U; break; }", "        if (off * 4U > ncell + 3U) { dg_why |= 1; ok = 0U; break; }"),
+           ("      } else if (g_sstype[t].n != g) {\n        ok = 0U;\n      } else {", "      } else if (g_sstype[t].n != g) {\n        ok = 0U; dg_why |= 2;\n      } else {"),
+           ("g_sstype[t].tile[q] != (uint16_t)sp->tile) ok = 0U;\n        }", "g_sstype[t].tile[q] != (uint16_t)sp->tile) { ok = 0U; dg_why |= 4; }\n        }"),
+           ("      if (t == 0U || t > SS_TYPE_MAX || g_sstype[t].n == 0U) continue;\n",
+            "      if (t != 0U && t <= SS_TYPE_MAX && (cx < 16 || cx >= 304)) { ++dg_elig; if (g_sstype[t].n == 0U && g_ssblank[t] == 0U) ++dg_unl_t[t]; if (i == -24 || i == 39 || j == -24 || j == 39) ++dg_edge; }\n      if (t == 0U || t > SS_TYPE_MAX || g_sstype[t].n == 0U) continue;\n"),
+           ("  if (ncand == 0U) return;\n", "  dg_cand = (int)ncand;\n  if (ncand == 0U) return;\n"),
+           ("      if (v->side != 0U) ss_margin_maze(r, v, ram, left_px, margin_px);", "      if (v->side != 0U) { dg_reset(); ss_margin_maze(r, v, ram, left_px, margin_px); dg_flush(); }")]
+    for a, b in rep:
+        if a not in text:
+            raise ValueError("coverage edit target missing: " + a)
+        text = text.replace(a, b, 1)
+    return text
+
+
+def coverage_manifest(m):
+    return m.replace("required = [", 'required = ["host.log", ', 1) if '"host.log"' not in m else m
+
+
 def scene_totals(scenes):
     """The coverage accounting of a run as per-component totals over EVERY scene of the report. A schema 2 package has one unnamed scene ('*'); a schema 3 package attributes frames to its declared scenes
     ('level', 'special-stage') and to '*' for the frames outside them (an attract demo), so a positional read of one scene would compare different frames. Summing every scene is strictly stronger than
@@ -603,7 +668,6 @@ class Cmp:
                 ok = self.check(d["differing"] == 0, f"{name}: no margin is presented, so the pictures are equal ({d['differing']} pixels differ)") and ok
             else:
                 ok = self.check(inside == 0, f"{name}: the native picture is pixel-identical to ABI 1 ({inside} pixels differ inside it)") and ok
-                ok = self.check(d["differing"] > 0, f"{name}: the margins show the maze (ABI 2 differs from ABI 1 there)") and ok
             self.report.setdefault("checkpoints", []).append({"name": name, "mode": mode, "geometry": [w, h], "differing_pixels": d["differing"], "differing_inside_native_picture": inside, "ok": ok})
             if self.diag is not None:
                 for tag, data in (("abi1", ra["bmp"]), ("abi2", rb["bmp"])):
@@ -685,6 +749,109 @@ class Cmp:
                 self.check(d["geometry"] and d["differing"] == 0 and r1_["ram"] == rn_["ram"] and r1_["ram"][0xF600] == 0x10, f"planes {mode}@{poll}: ABI 2 without the maze equals ABI 1 pixel for pixel in the special stage, margins included ({d['differing']} differing)")
                 agg[f"{mode}@{poll}-abi1-vs-nomaze"] = {"differing_pixels": d["differing"]}
 
+
+    def maze_selftest(self, sp, polls, variant="selfmaze", expect_clean=True):
+        """SEG-152-T009: validates the margin maze's RECONSTRUCTION on real frames, where the answer is known. A test-only provider variant redraws EVERY reconstructed piece of the blocks the game itself drew (whole, unclipped, in the
+        game's cell order, in the pieces' own priority layer, under the hardware's per-line budget) and, to exercise the derivation path, throws away every learned block type that has a same-mapping sibling so it must be derived from that
+        sibling. If position, size, tile, palette, flips, layer and order of the reconstruction are exact, the native picture stays pixel-identical to the maze-free run; a missing, misplaced, mis-tiled or mis-ordered block changes pixels.
+        Excluded: only the pixels under the game's own leading non-maze sprites (the player and effects, which the game draws OVER the blocks and a virtual sprite cannot go under). Non-vacuous: pieces must really have been drawn."""
+        agg = self.report.setdefault("maze_selftest", {})
+        for poll in polls:
+            pad = merge_pad(sp, [f"{poll} S", f"{poll + 2} -", f"{poll + 30} K", f"{poll + 31} -"], poll + 50)
+            sd = self.work / f"save-mst-{poll}"
+            shutil.rmtree(sd, ignore_errors=True)
+            ref = self.play("nomaze", f"mst-ref-{poll}", "wide", pad, save=sd)
+            run = self.play(variant, f"mst-self-{poll}", "wide", pad)
+            cov = json.loads((self.work / f"mst-self-{poll}.coverage.json").read_text())["virtual_sprites"]
+            ram = ref["ram"]
+            ok = self.check(len(ram) == 65536 and ram[0xF600] == 0x10 and ram[0xF63A:0xF63C] == b"\x00\x01" and run["ram"] == ram, f"selftest {poll}: a paused special-stage frame, the same state in both runs")
+            regs, vram, cram, vsram = sgstate_vdp((sd / "states/quick.sgstate").read_bytes())
+            _, boxes = ss_plane_model(regs, vram, cram, vsram, lambda v: v)
+            # the leading sprites: those before the first sprite whose box is centred on a block position the game computed
+            u16 = lambda o: (ram[o] << 8) | ram[o + 1]   # noqa: E731
+            centres = set()
+            for i in range(16):
+                for j in range(16):
+                    px, py = u16(0x8000 + (i * 16 + j) * 4), u16(0x8000 + (i * 16 + j) * 4 + 2)
+                    centres.add((((px + 0x8000) & 0xFFFF) - 0x8000 + 160, ((py + 0x8000) & 0xFFFF) - 0x8000 + 112))
+            lead = next((n for n, b in enumerate(boxes) if n > 0 and (b[0] + b[2] // 2, b[1] + b[3] // 2) in centres), 1)
+            d = bmp_diff(run["bmp"], ref["bmp"])
+            r0, r1, r2, r3 = content_rect(ref["bmp"])
+            k = (r3 - r1) // 224
+            x0 = (r0 + r2 - 320 * k) // 2
+            inside = covered = 0
+            if d["geometry"]:
+                for y, xs in d["mask"]:
+                    for x in xs:
+                        g, line = (x - x0) // k, (y - r1) // k
+                        if 0 <= g < 320 and 0 <= line < 224:
+                            if any(b[0] <= g < b[0] + b[2] and b[1] <= line < b[1] + b[3] for b in boxes[:lead]):
+                                covered += 1
+                            else:
+                                inside += 1
+            else:
+                inside = -1
+            ok = self.check(cov["pixels_picture"] > 0 and cov["sets"] > 0, f"selftest {poll}: the reconstruction was really drawn over the picture ({cov['pixels_picture']} picture pixels from {cov['sets']} set)") and ok
+            if expect_clean:
+                ok = self.check(inside == 0, f"selftest {poll}: every reconstructed block (derived types included) reproduces the game's own sprite pixel for pixel ({inside} pixels differ outside the {lead} leading non-maze sprites)") and ok
+            else:
+                ok = self.check(inside != 0, f"FALSIFY selftest {poll} [{variant}]: a deliberately wrong reconstruction is caught ({inside} pixels differ)") and ok
+            agg[f"{variant}-{poll}" if variant != "selfmaze" else str(poll)] = {"picture_pixels_redrawn": cov["pixels_picture"], "differing_outside_leading_sprites": inside, "differing_under_leading_sprites": covered, "leading_sprites": lead}
+
+
+    def special_coverage(self, sp):
+        """SEG-152-T009: for EVERY special-stage frame at each margin presentation, why the margin maze is or is not delivered. Eligible block = a layout block (work RAM) whose computed centre puts it where a piece can reach a margin
+        (centre < 16 px from the picture's left edge or beyond 304, inside the presented margin and the game's vertical cull). Per frame exactly one class: `fit_failed` (the game's block-position grid could not be reproduced), `learn_refused`
+        (the frame's sprite table could not be aligned with its blocks, or a type contradicted itself: fail-closed), `no_eligible_blocks` (the layout has no block there), `eligible_not_reconstructed` (blocks exist but none could be
+        drawn) or `delivered`; and, in delivered frames, the count of eligible blocks that were omitted because their type was not on screen that frame (by type), and whether the 64-piece limit dropped pieces. Hard invariants:
+        the fit never fails, every frame is classified, and `delivered` equals the production run's delivery verdicts frame for frame."""
+        agg = self.report.setdefault("special_coverage", {})
+        for mode in ("wide", "w219", "w169"):
+            rec = self.record("special", sp)
+            a1, a2 = self.run_pairs([(f"cov-{mode}", dict(mode=mode, pad=sp, replay=rec))])[f"cov-{mode}"]
+            au = self.play("audit", f"cov-audit-{mode}", mode, sp, replay=rec)
+            extra, bad = self.maze_frames(a1, a2)
+            rows = []
+            for m in au["lines"].get("MOD_LOG", []):
+                line = m.get("line", "")
+                if line.startswith("Z "):
+                    v = [int(x) for x in line[2:].split()]
+                    rows.append({"f": v[0], "fit": v[1], "learn": v[2], "nsat": v[3], "ncell": v[4], "elig": v[5], "edge": v[6], "cand": v[7], "why": v[8],
+                                 "unl": {x % 100: (x - 10000) // 100 for x in v[9:] if 10000 <= x < 20000}, "blank": [x - 2000 for x in v[9:] if 2000 <= x < 3000]})
+            def klass(r):
+                if r["fit"] != 0:
+                    return "fit_failed"
+                if r["learn"] != 0:
+                    return "learn_refused"
+                if r["elig"] == 0:
+                    return "no_eligible_blocks"
+                return "eligible_not_reconstructed" if r["cand"] == 0 else "delivered"
+            cls = {}
+            for r in rows:
+                cls.setdefault(klass(r), []).append(r)
+            delivered = sorted(r["f"] for r in cls.get("delivered", []))
+            # the audit log numbers the provider's own frame counter; the production verdicts carry the viewer's: they differ by one constant offset (as for the scenery logs), which must be one constant
+            off = {a - b for a, b in zip(delivered, sorted(extra))} if len(delivered) == len(extra) else None
+            ok = self.check(not cls.get("fit_failed") and len(cls.get("fit_failed", [])) == 0 and all(r["fit"] != 2 for r in rows), f"coverage {mode}: the game's block-position grid is reproduced in every special-stage frame")
+            ok = self.check(len(delivered) == len(extra) and off is not None and len(off) == 1 and not bad, f"coverage {mode}: the frames the audit calls delivered ({len(delivered)}) are exactly the production run's delivery verdicts ({len(extra)}; one constant frame-number offset {sorted(off) if off else off}; other differing frames {len(bad)})") and ok
+            omitted, eligible = {}, 0
+            for r in cls.get("delivered", []):
+                for t, n in r["unl"].items():
+                    omitted[t] = omitted.get(t, 0) + n
+            for r in rows:
+                if klass(r) in ("delivered", "eligible_not_reconstructed"):
+                    eligible += r["elig"]
+            blank_seen = sorted({t for r in rows for t in r["blank"]})
+            learn_refused = sorted(r["f"] for r in cls.get("learn_refused", []))
+            agg[mode] = {"special_stage_frames": len(rows), "classes": {k: len(v) for k, v in sorted(cls.items())},
+                         "learn_refused_with_no_blocks": sum(1 for r in cls.get("learn_refused", []) if r["ncell"] == 0), "learn_refused_first_last": [learn_refused[0], learn_refused[-1]] if learn_refused else None,
+                         "learn_refused_reason_bits": {str(w): sum(1 for r in cls.get("learn_refused", []) if r["why"] == w) for w in sorted({r["why"] for r in cls.get("learn_refused", [])})},
+                         "eligible_block_instances": eligible, "omitted_type_not_on_screen": {str(t): n for t, n in sorted(omitted.items())}, "omitted_total": sum(omitted.values()),
+                         "omitted_blank_type_instances": omitted.get(74, 0), "blank_types_observed": blank_seen,
+                         "frames_with_an_omission": sum(1 for r in cls.get("delivered", []) if r["unl"]), "frames_over_the_64_piece_limit": sum(1 for r in rows if r["cand"] > 64), "max_pieces": max([r["cand"] for r in rows] or [0]),
+                         "window_edge_hits": sum(r["edge"] for r in rows)}
+            self.check(ok, f"coverage {mode}: {agg[mode]['classes']}")
+
     # ------------------------------------------------------------------ scenarios
     def run_pairs(self, jobs):
         """jobs: [(key, name_a1_args, name_a2_args)] run in parallel; returns {key: (a1, a2)}."""
@@ -736,8 +903,11 @@ def main(argv=None):
             ]
         if want("fault"):
             futs.append(pool.submit(c.abi2_program, "mut-fault", lambda t: t.replace("  r = feat->render;\n", "  r = feat->render;\n  (void)r->overlay_layer_bitmap(2U, 2U, 0U, 0, 0, 257U, 16U, 1U);\n", 1)))
+        if want("coverage"):
+            futs.append(pool.submit(c.abi2_program, "audit", coverage_edit, coverage_manifest))
         if want("planes"):
             futs += [pool.submit(c.abi2_program, "nomaze", lambda t: t.replace("if (v->side != 0U) ss_margin_maze(", "if (v->side == 99U) ss_margin_maze(")),
+                     pool.submit(c.abi2_program, "selfmaze", selfmaze_edit), pool.submit(c.abi2_program, "selfbad", selfbad_edit),
                      pool.submit(c.abi2_program, "nogen", lambda t: t.replace("if (r->scenery_generic_rows(0U, mask, 224U, 28U) != 0 || r->scenery_generic_rows(1U, mask, 224U, 28U) != 0) return;", "(void)mask;"))]
         if want("zones"):
             probe = ("static unsigned g_probe_zone = 0xFFFFU;\n  { const unsigned zone = ram[S2_ZONE] | (unsigned)ram[S2_ZONE + 1U] << 8U | (level_mode(ram) ? 0x10000U : 0U); if (zone != g_probe_zone && host->log != NULL) {"
@@ -777,17 +947,25 @@ def main(argv=None):
             c.equal_maze(key, x, y, key.split("-", 1)[1])
             continue
         c.equal(key, x, y, minimum=100, need=("scenery",) if key.startswith("demos") and a.scenario_set == "s1" else ("scenery", "hud"))   # the Sonic 1 attract demo runs outside the verified HUD scope (both packages present no HUD there; the HUD accounting is still compared)
+    if want("coverage") and a.scenario_set == "s1":
+        c.special_coverage(act_pad(1, 100, until=2400, downs=SPECIAL_STAGE_DOWNS))
     if want("planes") and a.scenario_set == "s1":   # the mandatory special-stage extension on real special-stage frames
         sp_pad = act_pad(1, 100, until=2400, downs=SPECIAL_STAGE_DOWNS)
         a1, a2 = c.run_pairs([("planes-probe", dict(mode="wide", pad=sp_pad, replay=c.record("special", sp_pad)))])["planes-probe"]
         ext, _ = c.maze_frames(a1, a2)
         c.special_planes(sp_pad, [ext[len(ext) // 6], ext[len(ext) // 2], ext[5 * len(ext) // 6]])
+        c.maze_selftest(sp_pad, [ext[len(ext) * n // 10] for n in range(1, 10)])
+        c.maze_selftest(sp_pad, [ext[len(ext) // 2]], variant="selfbad", expect_clean=False)
     if want("special") and a.scenario_set == "s1":   # pictures of three special-stage frames that deliver the maze, at every presentation mode (the frames are chosen from ABI 2's own run)
         extra, _ = c.maze_frames(*results["special-wide"])
         picks = [extra[len(extra) // 6], extra[len(extra) // 2], extra[5 * len(extra) // 6]] if len(extra) >= 6 else extra
         for n, poll in enumerate(picks):
             for m in MODES:
                 c.maze_checkpoint(f"special-maze-{n}-{m}", poll, m, sp)
+        for m in MODES:   # a narrow margin can hold no block in one picked frame; every margin mode must show the maze in at least one
+            if m not in ("orig", "43"):
+                shown = [cp["differing_pixels"] for cp in c.report.get("checkpoints", []) if cp["name"].startswith("special-maze-") and cp["name"].endswith("-" + m)]
+                c.check(any(x > 0 for x in shown), f"special-maze checkpoints at {m}: the margins show the maze in at least one picked frame ({shown})")
     if "transitions" in results:
         for i, label in ((0, "abi1"), (1, "abi2")):
             t1, t2 = results["transitions"][i], results["transitions-again"][i]
