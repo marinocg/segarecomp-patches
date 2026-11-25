@@ -264,8 +264,9 @@ static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic1Frame 
 /* The special stage's maze is sprites, and the game only builds the sprites of the blocks inside its own 320 px view (it computes the screen position of a 16 x 16 window of 24 px blocks into a position
  * buffer and culls each block against the picture). The blocks that would be visible in the widescreen margins are therefore never drawn by the game. This reconstructs them: the game's own position
  * grid is extended to more cells (positions are linear in the cell index before one rounding, so the extension is exact and is verified against all 256 buffered positions of the frame, otherwise nothing is
- * added), the sprite pieces of each block type are learned from the sprites the game DID build this frame (they are emitted in cell order, one block after the other, and a block's pieces are centred on the
- * block), and the pieces that reach into the margins are submitted as one virtual-sprite set whose art is the frame's own VRAM/CRAM. Nothing is remembered between frames and no game art is stored here. */
+ * added), the sprite pieces of each block type come from the game's own mapping tables (read from the cartridge through the declared `m68k.rom` ranges; the game's sprite table of the frame is the witness that must agree
+ * with them), and the pieces that reach into the margins are submitted as one virtual-sprite set whose art is the frame's own VRAM/CRAM; pieces beyond the host's 64 commands are composited into overlay layers.
+ * Nothing is remembered between frames and no game art or mapping byte is stored here. */
 #define SS_SCRX 0xF700U         /* words: the stage camera (the same variables as the level camera) */
 #define SS_SCRY 0xF704U
 #define SS_ANGLE 0xF780U        /* word: the rotation angle; its high byte (low 2 bits cleared) indexes the sine table */
@@ -280,7 +281,7 @@ typedef struct { int x, y; unsigned w, h, tile; } SsSprite;              /* scre
 typedef struct { uint8_t n; int16_t x[SS_MAX_PIECES], y[SS_MAX_PIECES]; uint8_t wc[SS_MAX_PIECES], hc[SS_MAX_PIECES]; uint16_t tile[SS_MAX_PIECES]; } SsType;   /* pieces relative to the block centre */
 typedef struct { uint8_t type; int cx, cy; } SsCell;
 static SsType g_sstype[SS_TYPE_MAX + 1U];
-static uint8_t g_ssblank[SS_TYPE_MAX + 1U];   /* 1: this type drew no sprite in this frame (it is learned as having no pieces) */
+static uint8_t g_ssstate[SS_TYPE_MAX + 1U];   /* this frame: 0 not read yet, 1 pieces from the game's mapping (n may be 0: a blank type), 2 not readable */
 static SsSprite g_sat[SS_SAT_MAX];
 static SsCell g_sscell[256];
 static GenesisVirtualSpriteSet g_vset;
@@ -328,98 +329,179 @@ static unsigned ss_read_sat(const SegaGenesisFrameView *v) {
   return n;
 }
 
-/* The number of sprites (1..SS_MAX_PIECES) starting at `p` whose bounding box is centred on block `k`, or 0 when no such group exists. */
-static unsigned ss_group(unsigned p, unsigned nsat, unsigned k) {
-  int xmin = 0, xmax = 0, ymin = 0, ymax = 0;
-  for (unsigned g = 0U; p + g < nsat && g < SS_MAX_PIECES; ++g) {
-    const SsSprite *q = &g_sat[p + g];
-    if (g == 0U || q->x < xmin) xmin = q->x;
-    if (g == 0U || q->y < ymin) ymin = q->y;
-    if (g == 0U || q->x + (int)q->w > xmax) xmax = q->x + (int)q->w;
-    if (g == 0U || q->y + (int)q->h > ymax) ymax = q->y + (int)q->h;
-    if (xmin + xmax == 2 * g_sscell[k].cx && ymin + ymax == 2 * g_sscell[k].cy) return g + 1U;
-  }
-  return 0U;
+/* The mapping data of the block types (SEG-152-T018, ADR 0321). The game keeps, per block type, a pointer to a sprite-mapping table, a frame and an art-tile base in its item table (work RAM); the mapping bytes are in the
+ * cartridge, which the provider reads through the declared `m68k.rom` ranges of mod.toml (the only bytes the host materialises). The ranges below are the SAME ranges (byte offsets into the effective image); a
+ * pointer or frame outside them is never read (the host would fault the callback): the type is then simply unavailable and the blocks of that type are left out. The record FORMAT (a word offset table, a piece count,
+ * 5-byte pieces: y, size, tile word, x) is generic Genesis mapping layout; no mapping byte is stored in this repository. */
+#define SS_ROM_RANGES 4U
+static const uint32_t k_ss_rom[SS_ROM_RANGES][2] = {{40850U, 40914U}, {60160U, 60199U}, {112908U, 114612U}, {181604U, 181732U}};   /* [begin, end) */
+
+static int ss_rom_get(const SegaModHost *host, uint32_t a, unsigned width, unsigned *out) {
+  uint32_t value = 0U;
+  for (unsigned i = 0U; i < SS_ROM_RANGES; ++i)
+    if (a >= k_ss_rom[i][0] && a + width <= k_ss_rom[i][1]) {
+      if (host->read == NULL || host->read(SEGA_GEN_SPACE_M68K_ROM, a, width, &value) != SEGA_MOD_OK) return 1;
+      *out = (unsigned)value;
+      return 0;
+    }
+  return 1;
 }
 
-/* Learns the pieces of every block type that the game drew this frame; 0 on success. The game emits the blocks' sprites in cell order. A block's pieces are normally centred on the block. A block with no sprite at
- * all (a type whose mapping has no pieces) is recognised by the NEXT block matching the current sprite; otherwise a block whose single piece is not centred takes the next sprite (at most a quarter of the blocks may
- * need this, otherwise the sequence is misaligned and the frame is refused). Every later instance of a type must agree with the first (same pieces, offsets, sizes and tiles, or blank again): any contradiction
- * refuses the frame, so nothing is ever drawn from a type the frame itself contradicts. */
-static int ss_learn(unsigned nsat, unsigned ncell) {
-  for (unsigned p0 = 0U; p0 < 8U && p0 < nsat; ++p0) {
-    unsigned p = p0, k, t, ok = 1U, off = 0U;
-    for (t = 0U; t <= SS_TYPE_MAX; ++t) { g_sstype[t].n = 0U; g_ssblank[t] = 0U; }
-    for (k = 0U; k < ncell && ok != 0U; ++k) {
-      unsigned g;
-      if (p >= nsat) break;   /* the game ran out of sprites: the remaining blocks have none */
-      g = ss_group(p, nsat, k);
-      t = g_sscell[k].type;
-      if (g == 0U && k + 1U < ncell && ss_group(p, nsat, k + 1U) != 0U) {   /* this block drew nothing */
-        if (g_ssblank[t] == 0U && g_sstype[t].n != 0U) ok = 0U;
-        g_ssblank[t] = 1U;
-        continue;
+/* The pieces of block type `t` from the game's own tables: 0 and out->n pieces (0 = the frame has no piece: a blank type), or 1 when the pointer, the frame or a piece is not readable (never a guess). */
+static int ss_rom_type(const SegaModHost *host, const uint8_t *ram, unsigned t, SsType *out) {
+  const unsigned ot = SS_ITEMS + t * 8U;
+  const uint32_t ptr = (((uint32_t)u16(ram, ot) << 16) | u16(ram, ot + 2U)) & 0xFFFFFFU;
+  const unsigned frame = u16(ram, ot + 4U), art = u16(ram, ot + 6U);
+  unsigned first, off, cnt, q, y, size, th, tl, x;
+  uint32_t a;
+  out->n = 0U;
+  if (ptr == 0U || (ptr & 1U) != 0U) return 1;
+  if (ss_rom_get(host, ptr, 2U, &first) != 0 || (first & 1U) != 0U || frame >= first / 2U) return 1;   /* the offset table is `first / 2` words long */
+  if (ss_rom_get(host, ptr + 2U * frame, 2U, &off) != 0) return 1;
+  a = ptr + off;
+  if (ss_rom_get(host, a, 1U, &cnt) != 0 || cnt > SS_MAX_PIECES) return 1;
+  for (q = 0U; q < cnt; ++q) {
+    const uint32_t b = a + 1U + 5U * q;
+    if (ss_rom_get(host, b, 1U, &y) != 0 || ss_rom_get(host, b + 1U, 1U, &size) != 0 || ss_rom_get(host, b + 2U, 1U, &th) != 0 || ss_rom_get(host, b + 3U, 1U, &tl) != 0 || ss_rom_get(host, b + 4U, 1U, &x) != 0) return 1;
+    out->x[q] = (int16_t)(int8_t)x;
+    out->y[q] = (int16_t)(int8_t)y;
+    out->wc[q] = (uint8_t)(((size >> 2) & 3U) + 1U);
+    out->hc[q] = (uint8_t)((size & 3U) + 1U);
+    out->tile[q] = (uint16_t)(((th << 8) | tl) + art);
+  }
+  out->n = (uint8_t)cnt;
+  return 0;
+}
+
+/* The pieces of block type `t` for this frame (read once, kept in g_sstype); NULL when the type is not readable. */
+static const SsType *ss_type(const SegaModHost *host, const uint8_t *ram, unsigned t) {
+  if (t == 0U || t > SS_TYPE_MAX) return NULL;
+  if (g_ssstate[t] == 0U) g_ssstate[t] = ss_rom_type(host, ram, t, &g_sstype[t]) == 0 ? 1U : 2U;
+  return g_ssstate[t] == 1U ? &g_sstype[t] : NULL;
+}
+
+/* The sprite table the game built this frame is a WITNESS of the mapping, not its source: the game emits the pieces of its blocks in cell order, so the sprites that follow (after at most a few leading sprites of other
+ * objects) must be exactly the mapping's pieces of the blocks it drew, in that order (same position, size and tile word), for as long as both sequences last (the table may run out first: the game's own limit). Any
+ * difference, or a block whose mapping cannot be read, refuses the frame: nothing is ever drawn from a frame the game's own tables contradict. 0 when consistent. */
+static int ss_witness(const SegaModHost *host, const uint8_t *ram, unsigned nsat, unsigned ncell) {
+  for (unsigned p0 = 0U; p0 < 8U; ++p0) {
+    unsigned p = p0, k, ok = 1U;
+    for (k = 0U; k < ncell && ok != 0U && p < nsat; ++k) {
+      const SsType *ty = ss_type(host, ram, g_sscell[k].type);
+      if (ty == NULL) return 1;
+      for (unsigned q = 0U; q < ty->n && p < nsat; ++q, ++p) {
+        const SsSprite *sp = &g_sat[p];
+        if (sp->x != g_sscell[k].cx + ty->x[q] || sp->y != g_sscell[k].cy + ty->y[q] || sp->w != (unsigned)ty->wc[q] * 8U || sp->h != (unsigned)ty->hc[q] * 8U || sp->tile != ty->tile[q]) { ok = 0U; break; }
       }
-      if (g == 0U) {
-        g = 1U;   /* a single piece that is not centred on its block */
-        ++off;
-        if (off * 4U > ncell + 3U) { ok = 0U; break; }
-      }
-      if (g_ssblank[t] != 0U) { ok = 0U; break; }
-      if (g_sstype[t].n == 0U) {
-        g_sstype[t].n = (uint8_t)g;
-        for (unsigned q = 0U; q < g; ++q) {
-          const SsSprite *sp = &g_sat[p + q];
-          g_sstype[t].x[q] = (int16_t)(sp->x - g_sscell[k].cx);
-          g_sstype[t].y[q] = (int16_t)(sp->y - g_sscell[k].cy);
-          g_sstype[t].wc[q] = (uint8_t)(sp->w / 8U);
-          g_sstype[t].hc[q] = (uint8_t)(sp->h / 8U);
-          g_sstype[t].tile[q] = (uint16_t)sp->tile;
-        }
-      } else if (g_sstype[t].n != g) {
-        ok = 0U;
-      } else {
-        for (unsigned q = 0U; q < g; ++q) {
-          const SsSprite *sp = &g_sat[p + q];
-          if (g_sstype[t].x[q] != (int16_t)(sp->x - g_sscell[k].cx) || g_sstype[t].y[q] != (int16_t)(sp->y - g_sscell[k].cy) || g_sstype[t].wc[q] != (uint8_t)(sp->w / 8U) ||
-              g_sstype[t].hc[q] != (uint8_t)(sp->h / 8U) || g_sstype[t].tile[q] != (uint16_t)sp->tile) ok = 0U;
-        }
-      }
-      p += g;
     }
-    if (ok != 0U && k > 0U) return 0;
+    if (ok != 0U) return 0;
+    if (p0 + 1U >= nsat) break;
   }
   return 1;
 }
 
-/* A block type with no instance in the picture shares its mapping, and therefore its pieces, with every type that has the same mapping pointer and frame in the game's item table (verified on every group of
- * the real stage: identical geometry, and each piece's tile is the type's art-tile base plus the same offset), so only the base differs. The pieces are derived from a type that was seen, never invented. */
-static void ss_derive(const uint8_t *ram) {
-  uint8_t seen[SS_TYPE_MAX + 1U];
-  unsigned t, u, q;
-  for (t = 0U; t <= SS_TYPE_MAX; ++t) seen[t] = g_sstype[t].n != 0U || g_ssblank[t] != 0U;
-  for (t = 1U; t <= SS_TYPE_MAX; ++t) {
-    const unsigned ot = SS_ITEMS + t * 8U;
-    if (seen[t] != 0U || (u16(ram, ot) | u16(ram, ot + 2U)) == 0U) continue;   /* (a blank type is a learned type too) */
-    for (u = 1U; u <= SS_TYPE_MAX; ++u) {
-      const unsigned ou = SS_ITEMS + u * 8U;
-      if (seen[u] == 0U || u16(ram, ou) != u16(ram, ot) || u16(ram, ou + 2U) != u16(ram, ot + 2U) || u16(ram, ou + 4U) != u16(ram, ot + 4U)) continue;
-      if (g_ssblank[u] != 0U) { g_ssblank[t] = 1U; break; }
-      g_sstype[t].n = g_sstype[u].n;
-      for (q = 0U; q < g_sstype[u].n; ++q) {
-        g_sstype[t].x[q] = g_sstype[u].x[q];
-        g_sstype[t].y[q] = g_sstype[u].y[q];
-        g_sstype[t].wc[q] = g_sstype[u].wc[q];
-        g_sstype[t].hc[q] = g_sstype[u].hc[q];
-        g_sstype[t].tile[q] = (uint16_t)(g_sstype[u].tile[q] + u16(ram, ot + 6U) - u16(ram, ou + 6U));
-      }
-      break;
-    }
+/* Pieces beyond the host's 64 virtual-sprite commands are composited into RGBA overlay layers instead (the sprite ABI is unchanged). A piece's pixel is exactly what a hardware sprite shows (column-major tiles,
+ * flips, palette line, colour 0 transparent, the clip of a straddling piece). The overlay is drawn above every sprite, so the overlay set is closed under the game's stacking: a piece is moved into it too when it
+ * overlaps an overlay piece that the game draws beneath it (earlier = on top). One layer per side, at most 256 x 256 each and 65,536 pixels together; when that does not hold the frame falls back to the farthest
+ * pieces being dropped (never a fault). */
+static int ss_px(const SegaGenesisFrameView *v, const GenesisVirtualSprite *sp, int cx, int cy, uint8_t o[4]) {
+  const unsigned w = (unsigned)sp->width_cells * 8U, h = (unsigned)sp->height_cells * 8U;
+  const unsigned px = (unsigned)cx, py = (unsigned)cy;
+  const unsigned sx = sp->h_flip != 0U ? w - 1U - px : px, sy = sp->v_flip != 0U ? h - 1U - py : py;
+  const unsigned tile = ((unsigned)sp->tile_index + (sx >> 3) * (unsigned)sp->height_cells + (sy >> 3)) & 0x7FFU;
+  const uint8_t b = v->vram[(tile * 32U + (sy & 7U) * 4U + ((sx & 7U) >> 1)) & 0xFFFFU];
+  const unsigned idx = (sx & 1U) == 0U ? (unsigned)(b >> 4) : (unsigned)(b & 15U);
+  const int gx = sp->x + cx, gy = sp->y + cy;
+  if (idx == 0U) return 0;
+  if (sp->has_clip != 0U && (gx < sp->clip_x || gx >= sp->clip_x + (int)sp->clip_w || gy < sp->clip_y || gy >= sp->clip_y + (int)sp->clip_h)) return 0;
+  {
+    const unsigned c = (unsigned)sp->palette * 16U + idx, word = ((unsigned)v->lines[0].cram[c * 2U] << 8) | v->lines[0].cram[c * 2U + 1U];
+    o[0] = (uint8_t)(((word >> 1) & 7U) * 255U / 7U); o[1] = (uint8_t)(((word >> 5) & 7U) * 255U / 7U); o[2] = (uint8_t)(((word >> 9) & 7U) * 255U / 7U); o[3] = 255U;
   }
+  return 1;
+}
+
+/* The part of a piece that can show: its box cut to the presented extent [lo, hi) x [0, height) and to its clip. 0 when nothing of it can show. */
+static int ss_visible(const GenesisVirtualSprite *sp, int lo, int hi, int height, int box[4]) {
+  int x0 = sp->x, y0 = sp->y, x1 = sp->x + sp->width_cells * 8, y1 = sp->y + sp->height_cells * 8;
+  if (sp->has_clip != 0U) {
+    if (x0 < sp->clip_x) x0 = sp->clip_x;
+    if (y0 < sp->clip_y) y0 = sp->clip_y;
+    if (x1 > sp->clip_x + (int)sp->clip_w) x1 = sp->clip_x + (int)sp->clip_w;
+    if (y1 > sp->clip_y + (int)sp->clip_h) y1 = sp->clip_y + (int)sp->clip_h;
+  }
+  if (x0 < lo) x0 = lo;
+  if (x1 > hi) x1 = hi;
+  if (y0 < 0) y0 = 0;
+  if (y1 > height) y1 = height;
+  box[0] = x0; box[1] = y0; box[2] = x1; box[3] = y1;
+  return x1 > x0 && y1 > y0;
+}
+
+static uint8_t g_ovr[256U * 256U * 4U];
+static uint8_t g_ov[512];   /* 1: the piece goes to the overlay */
+
+/* One side's overlay layer from the listed pieces (ascending game order; composited lowest-priority first so the first command wins). 0 on success, 1 when the layer cannot hold them (nothing submitted). */
+static int ss_layer_side(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, unsigned side, int lo, int hi, unsigned ncand, unsigned *pixels, int submit) {
+  int bx0 = 1 << 20, by0 = 1 << 20, bx1 = -(1 << 20), by1 = -(1 << 20), box[4];
+  unsigned k, cw, ch;
+  for (k = 0U; k < ncand; ++k) {
+    if (g_ov[k] == 0U || (side == 0U) != (g_cand[k].s.x < 160)) continue;
+    if (!ss_visible(&g_cand[k].s, lo, hi, (int)v->height, box)) continue;
+    if (box[0] < bx0) bx0 = box[0];
+    if (box[1] < by0) by0 = box[1];
+    if (box[2] > bx1) bx1 = box[2];
+    if (box[3] > by1) by1 = box[3];
+  }
+  if (bx1 <= bx0 || by1 <= by0) return 0;
+  cw = (unsigned)(bx1 - bx0);
+  ch = (unsigned)(by1 - by0);
+  if (cw > 256U || ch > 256U || *pixels + cw * ch > 65536U) return 1;
+  *pixels += cw * ch;
+  if (submit == 0) return 0;
+  for (unsigned z = 0U; z < cw * ch * 4U; ++z) g_ovr[z] = 0U;
+  for (k = ncand; k > 0U; --k) {
+    const GenesisVirtualSprite *sp = &g_cand[k - 1U].s;
+    if (g_ov[k - 1U] == 0U || (side == 0U) != (sp->x < 160) || !ss_visible(sp, lo, hi, (int)v->height, box)) continue;
+    for (int gy = box[1]; gy < box[3]; ++gy)
+      for (int gx = box[0]; gx < box[2]; ++gx) {
+        uint8_t o[4];
+        if (ss_px(v, sp, gx - sp->x, gy - sp->y, o)) { uint8_t *d = &g_ovr[((unsigned)(gy - by0) * cw + (unsigned)(gx - bx0)) * 4U]; d[0] = o[0]; d[1] = o[1]; d[2] = o[2]; d[3] = o[3]; }
+      }
+  }
+  if (r->overlay_layer_bitmap(side + 1U, 0U, 1U, bx0 - lo, by0, cw, ch, 0U) != 0 || r->overlay_target(side + 1U) != 0 || r->overlay_bitmap(0, 0, cw, ch, g_ovr, cw * 4U) != 0) return 1;
+  return 0;
+}
+
+/* Chooses the overlay set (the farthest pieces beyond the command limit, closed under the game's stacking) and submits it; 0 when the sprites that remain fit the command limit and the overlay carries the rest. */
+static int ss_overflow_overlay(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, unsigned ncand, int lo, int hi) {
+  unsigned a, b, n_ov = 0U, pixels = 0U, changed;
+  int ba[4], bb[4];
+  for (a = 0U; a < ncand; ++a) g_ov[a] = 0U;
+  while (ncand - n_ov > GENESIS_VSPRITE_MAX) {
+    unsigned far = ncand;
+    for (a = 0U; a < ncand; ++a) if (g_ov[a] == 0U && (far == ncand || g_cand[a].dist >= g_cand[far].dist)) far = a;
+    g_ov[far] = 1U;
+    ++n_ov;
+  }
+  do {   /* a sprite the game draws above an overlay piece it overlaps would end up beneath it */
+    changed = 0U;
+    for (a = 0U; a < ncand; ++a) {
+      if (g_ov[a] != 0U || !ss_visible(&g_cand[a].s, lo, hi, (int)v->height, ba)) continue;
+      for (b = a + 1U; b < ncand; ++b) {
+        if (g_ov[b] == 0U || !ss_visible(&g_cand[b].s, lo, hi, (int)v->height, bb)) continue;
+        if (ba[0] < bb[2] && bb[0] < ba[2] && ba[1] < bb[3] && bb[1] < ba[3]) { g_ov[a] = 1U; ++n_ov; changed = 1U; break; }
+      }
+    }
+  } while (changed != 0U);
+  if (ss_layer_side(r, v, 0U, lo, hi, ncand, &pixels, 0) != 0 || ss_layer_side(r, v, 1U, lo, hi, ncand, &pixels, 0) != 0) return 1;   /* both sides fit: nothing is submitted otherwise */
+  pixels = 0U;
+  if (ss_layer_side(r, v, 0U, lo, hi, ncand, &pixels, 1) != 0 || ss_layer_side(r, v, 1U, lo, hi, ncand, &pixels, 1) != 0) return 1;
+  return 0;
 }
 
 /* Submits the maze blocks that reach into the margins as virtual sprites (presentation space). Silent on any doubt: the frame then simply has no maze in its margins, as before. */
-static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, const uint8_t *ram, unsigned left_px, unsigned margin_px) {
+static void ss_margin_maze(const SegaModHost *host, const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, const uint8_t *ram, unsigned left_px, unsigned margin_px) {
   const int right_px = (int)(2U * margin_px - left_px), lpx = (int)left_px;
   const int scrx = (int)u16(ram, SS_SCRX), scry = (int)u16(ram, SS_SCRY);
   int s, c, dx0, dy0, i, j;
@@ -439,8 +521,8 @@ static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrame
       ++ncell;
     }
   nsat = ss_read_sat(v);
-  if (ss_learn(nsat, ncell) != 0) return;
-  ss_derive(ram);
+  for (unsigned t = 0U; t <= SS_TYPE_MAX; ++t) g_ssstate[t] = 0U;
+  if (ncell != 0U && ss_witness(host, ram, nsat, ncell) != 0) return;   /* the frame contradicts the game's own mapping: nothing is drawn */
   for (i = -24; i < 40; ++i)
     for (j = -24; j < 40; ++j) {
       const int row = scry / SS_BLOCK + i, col = scrx / SS_BLOCK + j;
@@ -448,7 +530,7 @@ static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrame
       unsigned t;
       if (row < 0 || row >= 128 || col < 0 || col >= 128 || cy < -16 || cy >= 240 || cx < -16 - lpx || cx >= 336 + right_px) continue;
       t = ram[(unsigned)row * SS_LAYOUT_STRIDE + (unsigned)col];
-      if (t == 0U || t > SS_TYPE_MAX || g_sstype[t].n == 0U) continue;
+      if (t == 0U || t > SS_TYPE_MAX || ss_type(host, ram, t) == NULL || g_sstype[t].n == 0U) continue;
       for (q = 0U; q < g_sstype[t].n && ncand < 512U; ++q) {
         const int x = cx + g_sstype[t].x[q], y = cy + g_sstype[t].y[q], w = (int)g_sstype[t].wc[q] * 8;
         GenesisVirtualSprite *sp = &g_cand[ncand].s;
@@ -471,8 +553,13 @@ static void ss_margin_maze(const SegaGenesisRenderApi *r, const SegaGenesisFrame
       }
     }
   if (ncand == 0U) return;
-  /* at most GENESIS_VSPRITE_MAX commands: over the limit the pieces farthest from the picture are dropped one at a time; the remaining pieces keep the game's cell order (the first command wins, as in the game's
-   * own sprite table), so overlapping blocks stack exactly as the game stacks them */
+  /* at most GENESIS_VSPRITE_MAX commands: the pieces beyond the limit go to the overlay (exact, see ss_overflow_overlay). Where the overlay cannot hold them the farthest pieces are dropped one at a time instead; the remaining
+   * pieces keep the game's cell order (the first command wins, as in the game's own sprite table), so overlapping blocks stack exactly as the game stacks them */
+  if (ncand > GENESIS_VSPRITE_MAX && ss_overflow_overlay(r, v, ncand, -lpx, 320 + right_px) == 0) {
+    unsigned kept = 0U;
+    for (q = 0U; q < ncand; ++q) if (g_ov[q] == 0U) g_cand[kept++] = g_cand[q];
+    ncand = kept;
+  }
   while (ncand > GENESIS_VSPRITE_MAX) {
     unsigned drop = 0U;
     for (q = 1U; q < ncand; ++q) if (g_cand[q].dist >= g_cand[drop].dist) drop = q;
@@ -578,7 +665,7 @@ static void render_frame(const SegaModHost *host) {
       for (unsigned i = 0U; i < 28U; ++i) mask[i] = 0xFFU;
       (void)r->scene("special-stage", 13U);
       if (r->scenery_generic_rows(0U, mask, 224U, 28U) != 0 || r->scenery_generic_rows(1U, mask, 224U, 28U) != 0) return;   /* both planes: the VDP's own wrapped plane */
-      if (v->side != 0U) ss_margin_maze(r, v, ram, left_px, margin_px);   /* the maze blocks the game culls at the picture edges, drawn into the margins */
+      if (v->side != 0U) ss_margin_maze(host, r, v, ram, left_px, margin_px);   /* the maze blocks the game culls at the picture edges, drawn into the margins */
     }
     return;
   }

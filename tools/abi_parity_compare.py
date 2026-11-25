@@ -214,20 +214,21 @@ def ss_plane_model(regs, vram, cram, vsram, cvt):
 
 
 def selfbad_edit(text):
-    """A deliberately wrong reconstruction (the derived tile ignores the type's own art-tile base): the self-test must catch it."""
+    """A deliberately wrong reconstruction (the mapping's tile ignores the type's own art-tile base, and the witness that would refuse the contradicting frame is bypassed): the self-test must catch it."""
     text = selfmaze_edit(text)
-    a = "(uint16_t)(g_sstype[u].tile[q] + u16(ram, ot + 6U) - u16(ram, ou + 6U))"
-    if a not in text:
+    a, w = "(uint16_t)(((th << 8) | tl) + art)", "ss_witness(host, ram, nsat, ncell) != 0"
+    if a not in text or w not in text:
         raise ValueError("selfbad edit target missing")
-    return text.replace(a, "(uint16_t)g_sstype[u].tile[q]", 1)
+    return text.replace(a, "(uint16_t)(((th << 8) | tl) + (art & 0U))", 1).replace(w, "(ss_witness(host, ram, nsat, ncell) & 0) != 0", 1)
 
 
 def selfmaze_edit(text):
-    """The test-only variant behind `maze_selftest` (never shipped): redraw every reconstructed piece of the blocks the GAME itself drew (its own window and cull), whole and unclipped, over the picture, and force the derivation path."""
+    """The test-only variant behind `maze_selftest` (never shipped): redraw every reconstructed piece of the blocks the GAME itself drew (its own window and cull), whole and unclipped, over the picture (sprites only)."""
     rep = [("if ((x >= 0 && x + w <= 320) || x + w <= -lpx || x >= 320 + right_px) continue;", "if (!(i >= 0 && i < 16 && j >= 0 && j < 16 && cx >= -16 && cx < 336 && cy >= -16 && cy < 240) || x + w <= -lpx || x >= 320 + right_px) continue;"),
            ("if (x < 0 && x + w > 0) {", "if (0) {"), ("else if (x < 320 && x + w > 320) {", "else if (0) {"),
            ("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_EXTENDED;", "g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;"),   # the hardware's per-line sprite budget applies to the redraw too, as it did to the game's own sprites
-           ("  ss_derive(ram);\n", "  for (unsigned st = 1U; st <= SS_TYPE_MAX; ++st) for (unsigned su = 1U; su < st; ++su) if (g_sstype[su].n != 0U && g_sstype[st].n != 0U && u16(ram, SS_ITEMS + su * 8U) == u16(ram, SS_ITEMS + st * 8U) && u16(ram, SS_ITEMS + su * 8U + 2U) == u16(ram, SS_ITEMS + st * 8U + 2U) && u16(ram, SS_ITEMS + su * 8U + 4U) == u16(ram, SS_ITEMS + st * 8U + 4U)) { g_sstype[st].n = 0U; break; }\n  ss_derive(ram);\n")]
+           ("if (ncand > GENESIS_VSPRITE_MAX && ss_overflow_overlay(", "if (0 && ss_overflow_overlay("),   # the redraw is sprites only
+           ]
     for a, b in rep:
         if a not in text:
             raise ValueError("selfmaze edit target missing: " + a)
@@ -246,26 +247,24 @@ static void dg_flush(void) {
   b[n++] = 'Z'; b[n++] = ' ';
   dg_put(b, &n, (int)g_host->frame); dg_put(b, &n, dg_fit); dg_put(b, &n, dg_learn); dg_put(b, &n, dg_nsat); dg_put(b, &n, dg_ncell); dg_put(b, &n, dg_elig); dg_put(b, &n, dg_edge); dg_put(b, &n, dg_cand); dg_put(b, &n, dg_why);
   for (i = 1U; i < 0x50U; ++i) if (dg_unl_t[i] != 0 && n < 235) dg_put(b, &n, 10000 + dg_unl_t[i] * 100 + (int)i);
-  for (i = 1U; i < 0x50U; ++i) if (g_ssblank[i] != 0U && n < 235) dg_put(b, &n, 2000 + (int)i);
+  for (i = 1U; i < 0x50U; ++i) if (i <= SS_TYPE_MAX && g_ssstate[i] == 1U && g_sstype[i].n == 0U && n < 235) dg_put(b, &n, 2000 + (int)i);
   g_host->log(b, (uint32_t)n);
 }
 '''
 
 
 def coverage_edit(text):
-    """The test-only logging variant behind `special_coverage` (never shipped): the production code plus one log line per special-stage frame saying whether the margin maze was fitted, learned and delivered, and why not."""
+    """The test-only logging variant behind `special_coverage` (never shipped): the production code plus one log line per special-stage frame saying whether the margin maze was fitted, witnessed (the game's sprite table agrees
+    with the mapping) and delivered, and why not. `learn` is the witness verdict (0 consistent or nothing to witness, 1 refused); `unl` lists the block types whose mapping could not be read (none on the verified image)."""
     rep = [("static int ss_fit(", _COVERAGE_STATS + "\nstatic int ss_fit("),
            ("  Sonic1Frame *f = &g_frame;\n", "  Sonic1Frame *f = &g_frame;\n  g_host = host;\n"),
            ("  if (ss_fit(ram, &s, &c, &dx0, &dy0) != 0) return;\n", "  dg_fit = 1;\n  if (ss_fit(ram, &s, &c, &dx0, &dy0) != 0) return;\n  dg_fit = 0;\n"),
            ("  nsat = ss_read_sat(v);\n", "  nsat = ss_read_sat(v);\n  dg_nsat = (int)nsat; dg_ncell = (int)ncell;\n"),
-           ("  if (ss_learn(nsat, ncell) != 0) return;\n", "  dg_learn = 1;\n  if (ss_learn(nsat, ncell) != 0) return;\n  dg_learn = 0;\n"),
-           ("        if (off * 4U > ncell + 3U) { ok = 0U; break; }", "        if (off * 4U > ncell + 3U) { dg_why |= 1; ok = 0U; break; }"),
-           ("      } else if (g_sstype[t].n != g) {\n        ok = 0U;\n      } else {", "      } else if (g_sstype[t].n != g) {\n        ok = 0U; dg_why |= 2;\n      } else {"),
-           ("g_sstype[t].tile[q] != (uint16_t)sp->tile) ok = 0U;\n        }", "g_sstype[t].tile[q] != (uint16_t)sp->tile) { ok = 0U; dg_why |= 4; }\n        }"),
-           ("      if (t == 0U || t > SS_TYPE_MAX || g_sstype[t].n == 0U) continue;\n",
-            "      if (t != 0U && t <= SS_TYPE_MAX && (cx < 16 || cx >= 304)) { ++dg_elig; if (g_sstype[t].n == 0U && g_ssblank[t] == 0U) ++dg_unl_t[t]; if (i == -24 || i == 39 || j == -24 || j == 39) ++dg_edge; }\n      if (t == 0U || t > SS_TYPE_MAX || g_sstype[t].n == 0U) continue;\n"),
+           ("  if (ncell != 0U && ss_witness(host, ram, nsat, ncell) != 0) return;", "  dg_learn = 1;\n  if (ncell != 0U && ss_witness(host, ram, nsat, ncell) != 0) return;\n  dg_learn = 0;"),
+           ("      if (t == 0U || t > SS_TYPE_MAX || ss_type(host, ram, t) == NULL || g_sstype[t].n == 0U) continue;\n",
+            "      if (t != 0U && t <= SS_TYPE_MAX && (cx < 16 || cx >= 304)) { ++dg_elig; if (ss_type(host, ram, t) == NULL) ++dg_unl_t[t]; if (i == -24 || i == 39 || j == -24 || j == 39) ++dg_edge; }\n      if (t == 0U || t > SS_TYPE_MAX || ss_type(host, ram, t) == NULL || g_sstype[t].n == 0U) continue;\n"),
            ("  if (ncand == 0U) return;\n", "  dg_cand = (int)ncand;\n  if (ncand == 0U) return;\n"),
-           ("      if (v->side != 0U) ss_margin_maze(r, v, ram, left_px, margin_px);", "      if (v->side != 0U) { dg_reset(); ss_margin_maze(r, v, ram, left_px, margin_px); dg_flush(); }")]
+           ("      if (v->side != 0U) ss_margin_maze(host, r, v, ram, left_px, margin_px);", "      if (v->side != 0U) { dg_reset(); ss_margin_maze(host, r, v, ram, left_px, margin_px); dg_flush(); }")]
     for a, b in rep:
         if a not in text:
             raise ValueError("coverage edit target missing: " + a)
@@ -347,13 +346,16 @@ def compose_expected(base_bmp, pieces, vram, cram, lpx, rpx, skip_flagged=False,
         return conv((w >> 1) & 7), conv((w >> 5) & 7), conv((w >> 9) & 7)
     ps = [p for p in pieces if not (skip_flagged and p[5] // 10)]
     order = [p for p in ps if p[4] & 0x8000] + [p for p in ps if not p[4] & 0x8000]
+    k = max(1, (r3 - r1) // height)   # the viewer presents a narrow picture (16:9) at an integer scale: every guest pixel is a k x k block
     for line in range(height):
         for g in range(-lpx, 320 + rpx):
             for p in order:
                 col = pixel(p, g, line)
                 if col is not None:
-                    X, Y = r0 + g + lpx, r1 + line
-                    out[Y][X * st + 2], out[Y][X * st + 1], out[Y][X * st] = col
+                    for dy in range(k):
+                        for dx in range(k):
+                            X, Y = r0 + (g + lpx) * k + dx, r1 + line * k + dy
+                            out[Y][X * st + 2], out[Y][X * st + 1], out[Y][X * st] = col
                     break
     return [bytes(r) for r in out], (r0, r1, r2, r3), st
 
@@ -362,85 +364,6 @@ def rows_diff(a, b, st, rect):
     """The set of presented pixels (x, y) at which two pictures (lists of rows) differ inside `rect`."""
     r0, r1, r2, r3 = rect
     return {(x, y) for y in range(r1, r3) if a[y] != b[y] for x in range(r0, r2) if a[y][x * st:(x + 1) * st] != b[y][x * st:(x + 1) * st]}
-
-
-_OVERFLOW_RASTER = r'''
-/* EXPERIMENT (test-only): the pixel of a piece exactly as a hardware sprite shows it (column-major tiles, flips, palette line, colour 0 transparent, clip). Returns 1 and the RGBA when opaque. */
-static int ss_px(const SegaGenesisFrameView *v, const GenesisVirtualSprite *sp, int cx, int cy, uint8_t o[4]) {
-  const unsigned w = (unsigned)sp->width_cells * 8U, h = (unsigned)sp->height_cells * 8U;
-  const unsigned px = (unsigned)cx, py = (unsigned)cy;
-  const unsigned sx = sp->h_flip != 0U ? w - 1U - px : px, sy = sp->v_flip != 0U ? h - 1U - py : py;
-  const unsigned tile = ((unsigned)sp->tile_index + (sx >> 3) * (unsigned)sp->height_cells + (sy >> 3)) & 0x7FFU;
-  const uint8_t b = v->vram[(tile * 32U + (sy & 7U) * 4U + ((sx & 7U) >> 1)) & 0xFFFFU];
-  const unsigned idx = (sx & 1U) == 0U ? (unsigned)(b >> 4) : (unsigned)(b & 15U);
-  const int gx = sp->x + cx, gy = sp->y + cy;
-  if (idx == 0U) return 0;
-  if (sp->has_clip != 0U && (gx < sp->clip_x || gx >= sp->clip_x + (int)sp->clip_w || gy < sp->clip_y || gy >= sp->clip_y + (int)sp->clip_h)) return 0;
-  { const unsigned c = (unsigned)sp->palette * 16U + idx, word = ((unsigned)v->lines[0].cram[c * 2U] << 8) | v->lines[0].cram[c * 2U + 1U];
-    o[0] = (uint8_t)(((word >> 1) & 7U) * 255U / 7U); o[1] = (uint8_t)(((word >> 5) & 7U) * 255U / 7U); o[2] = (uint8_t)(((word >> 9) & 7U) * 255U / 7U); o[3] = 255U; }
-  return 1;
-}
-/* the listed pieces composited into ONE RGBA layer (the lowest piece first, so the first command wins as in the game), cropped to the presented extent [lo, hi) x [0, height): the host rejects a layer that is not wholly inside */
-static uint8_t g_ovr[256 * 256 * 4];
-static int ss_layer_group(const SegaGenesisRenderApi *r, const SegaGenesisFrameView *v, const unsigned *list, unsigned cnt, unsigned layer, int lo, int hi) {
-  unsigned k;
-  int bx0 = 1 << 20, by0 = 1 << 20, bx1 = -(1 << 20), by1 = -(1 << 20);
-  for (k = 0U; k < cnt; ++k) {
-    const GenesisVirtualSprite *sp = &g_cand[list[k]].s;
-    int x0 = sp->x, y0 = sp->y, x1 = sp->x + sp->width_cells * 8, y1 = sp->y + sp->height_cells * 8;
-    if (x0 < lo) x0 = lo;
-    if (x1 > hi) x1 = hi;
-    if (y0 < 0) y0 = 0;
-    if (y1 > (int)v->height) y1 = (int)v->height;
-    if (x1 <= x0 || y1 <= y0) continue;
-    if (x0 < bx0) bx0 = x0;
-    if (y0 < by0) by0 = y0;
-    if (x1 > bx1) bx1 = x1;
-    if (y1 > by1) by1 = y1;
-  }
-  if (bx1 > bx0 && by1 > by0) {
-    const unsigned cw = (unsigned)(bx1 - bx0), ch = (unsigned)(by1 - by0);
-    if (cw > 256U || ch > 256U) return 1;   /* fail closed: one layer holds at most 256 x 256 */
-    for (unsigned z = 0U; z < cw * ch * 4U; ++z) g_ovr[z] = 0U;
-    for (k = cnt; k > 0U; --k) {
-      const GenesisVirtualSprite *sp = &g_cand[list[k - 1U]].s;
-      for (int cy = by0; cy < by1; ++cy) for (int cx = bx0; cx < bx1; ++cx) {
-        uint8_t o[4];
-        if (cx < sp->x || cx >= sp->x + sp->width_cells * 8 || cy < sp->y || cy >= sp->y + sp->height_cells * 8 || cx < lo || cx >= hi) continue;
-        if (ss_px(v, sp, cx - sp->x, cy - sp->y, o)) { uint8_t *d = &g_ovr[((unsigned)(cy - by0) * cw + (unsigned)(cx - bx0)) * 4U]; d[0] = o[0]; d[1] = o[1]; d[2] = o[2]; d[3] = o[3]; }
-      }
-    }
-    if (r->overlay_layer_bitmap(layer, 0U, 1U, bx0 - lo, by0, cw, ch, 0U) != 0) return 1;   /* presentation coordinates: picture x - lo */
-    if (r->overlay_target(layer) != 0) return 1;
-    if (r->overlay_bitmap(0, 0, cw, ch, g_ovr, cw * 4U) != 0) return 1;
-  }
-  return 0;
-}
-'''
-
-
-def overflow_edit(text, mode="one-layer"):
-    """EXPERIMENT (never shipped): the pieces the production rule drops over the host's 64-command limit are composited into RGBA overlay layers instead (`one-layer`: one layer for all of them; `per-side`: one layer for the left and one
-    for the right margin) and the remaining pieces stay sprites in the game's order. A layer that would exceed 256 x 256 fails closed (the maze is then not submitted for that frame)."""
-    start = "  /* at most GENESIS_VSPRITE_MAX commands"
-    end = "  for (n = 0U; n < ncand; ++n) g_vset.sprites[n] = g_cand[n].s;\n"
-    marker = "/* Submits the maze blocks that reach into the margins"
-    if start not in text or end not in text or marker not in text or mode not in ("one-layer", "per-side"):
-        raise ValueError("overflow edit targets missing")
-    a, b = text.index(start), text.index(end) + len(end)
-    if mode == "one-layer":
-        call = "    if (nd != 0U && ss_layer_group(r, v, dropped, nd, 1U, -lpx, 320 + right_px) != 0) return;   /* fail closed */\n"
-    else:
-        call = ("    { static unsigned dl[512], dr[512]; unsigned nl = 0U, nr = 0U, kk;\n"
-                "      for (kk = 0U; kk < nd; ++kk) { const GenesisVirtualSprite *dp = &g_cand[dropped[kk]].s; if (dp->x + dp->width_cells * 4 < 160) dl[nl++] = dropped[kk]; else dr[nr++] = dropped[kk]; }\n"
-                "      if (nl != 0U && ss_layer_group(r, v, dl, nl, 1U, -lpx, 320 + right_px) != 0) return;\n"
-                "      if (nr != 0U && ss_layer_group(r, v, dr, nr, 2U, -lpx, 320 + right_px) != 0) return; }\n")
-    new = ("  {\n    static unsigned alive[512], dropped[512];\n    unsigned na = ncand, nd = 0U, qq;\n    for (qq = 0U; qq < ncand; ++qq) alive[qq] = 1U;\n"
-           "    while (na > GENESIS_VSPRITE_MAX) { unsigned far = 0U; int have = 0; for (qq = 0U; qq < ncand; ++qq) if (alive[qq] != 0U) { if (have == 0 || g_cand[qq].dist >= g_cand[far].dist) { far = qq; have = 1; } } alive[far] = 0U; --na; }\n"
-           "    for (qq = 0U; qq < ncand; ++qq) if (alive[qq] == 0U) dropped[nd++] = qq;\n" + call +
-           "    for (n = 0U, qq = 0U; qq < ncand; ++qq) if (alive[qq] != 0U) g_vset.sprites[n++] = g_cand[qq].s;\n  }\n")
-    text = text[:a] + new + text[b:]
-    return text.replace(marker, _OVERFLOW_RASTER + "\n" + marker, 1)
 
 
 def scene_totals(scenes):
@@ -542,6 +465,7 @@ class Cmp:
         self.cp_runs = {}
         self.recs = {}
         self.rec_lock = threading.Lock()
+        self.build_locks = {}
         (self.work / "rec.cfg").write_text(ENHANCED % "32:9")
 
     # ------------------------------------------------------------------ results
@@ -576,6 +500,12 @@ class Cmp:
         self.report["abi1_package_sha256"] = self.vms.sha(pkg.read_bytes())
 
     def abi2_program(self, name, provider_edit=None, manifest_edit=None):
+        with self.build_locks.setdefault(name, threading.Lock()):   # two scenarios that need the same variant (maze-free for `overflow` and `planes`) build it once, never into one directory at the same time
+            if name in self.progs and name != "abi2":
+                return {}
+            return self._abi2_program(name, provider_edit, manifest_edit)
+
+    def _abi2_program(self, name, provider_edit=None, manifest_edit=None):
         d = self.work / (name + "-src")
         if d.exists():
             shutil.rmtree(d)
@@ -1018,58 +948,99 @@ class Cmp:
             self.check(ok, f"coverage {mode}: {agg[mode]['classes']}")
 
 
-    def overflow_investigation(self, sp):
+    def overflow_investigation(self, sp, seed=None, until=1480, deltas=None, tag="", validation=3, max_over=0, mode="wide"):
         """SEG-152-T009: can the RGBA overlay (an existing output) carry the pieces over the host's 64-command limit EXACTLY? For every frame of the recorded special stage whose complete inventory exceeds the limit: (1) the complete
         ordered inventory is recorded before truncation; (2) an INDEPENDENT expected picture is composed from the frame's own VRAM/CRAM (the model is first validated on frames within the limit, where production's output is
         known: it must reproduce production's stacking pixel for pixel); (3) the pieces production drops are composited into overlay layers and the picture compared with the expected one. Differences are classified: `restored` =
         pixels production got wrong because it dropped pieces and the composition got right; `errors` = pixels where the composition differs from the expected picture. The frames are paused (the game's pause makes the picture
-        static, a quicksave describes it), reached by the same input; the paused frame is checked to be the frame it is meant to be (equal inventory). Test-only variants; the provider is not changed."""
+        static, a quicksave describes it), reached by the same input; the paused frame is checked to be the frame it is meant to be (equal inventory). Test-only variants of the production provider (logging and maze-free).
+        `seed`: a save directory, or one per program (`{"inv": dir, "nomaze": dir}`), holding a quicksave of the level-select screen with the stage chosen, every run starts from it, `until`: the end poll of the full run, `deltas`: the pause offsets to try (None = calibrated on one frame),
+        `mode`: the presentation (a key of MODES), `validation`: how many frames within the limit are checked against the independent model, `max_over` (0 = all): at most this many over-limit frames (the largest first, then evenly spread)."""
         agg = self.report.setdefault("overflow_investigation", {})
-        run_a = self.play("inv", "oiv-all", "wide", merge_pad(sp, [], 1480))
+        def fresh(path, key="inv"):
+            """a clean save directory for a run of program `key`, seeded with that program's own quicksave (a state is bound to the package identity of the program that wrote it)"""
+            shutil.rmtree(path, ignore_errors=True)
+            if seed is not None:
+                shutil.copytree(seed[key] if isinstance(seed, dict) else seed, path)
+            return path if seed is not None else None
+        sv = fresh(self.work / f"save-oiv{tag}-all")
+        run_a = self.play("inv", f"oiv{tag}-all", mode, merge_pad(sp, [], until), save=sv)
         invs = {i["frame"]: i for i in parse_inventories(run_a)}
         over = sorted(f for f, i in invs.items() if i["n"] > 64)
-        ok = self.check(len(over) > 0, f"overflow investigation: the recorded stage has frames over the command limit ({len(over)})")
+        ok = self.check(len(over) > 0 or seed is not None, f"overflow investigation{tag}: the recorded stage has frames over the command limit ({len(over)})")
         quiet = sorted(f for f, i in invs.items() if 20 <= i["n"] <= 64)
-        targets = [("validation", f) for f in (quiet[len(quiet) // 6], quiet[len(quiet) // 2], quiet[5 * len(quiet) // 6])] + [("over", f) for f in over]
+        if max_over and len(over) > max_over:
+            big = sorted(over, key=lambda f: (-invs[f]["n"], f))[:max_over // 2]
+            rest = [f for f in over if f not in big]
+            over = sorted(big + [rest[k * len(rest) // (max_over - len(big))] for k in range(max_over - len(big))])
+        if deltas is None:   # calibrate: the frame a pause at poll P freezes is P + delta
+            probe = quiet[len(quiet) // 2]
+            for guess in (3, -7, 10, -20, 41):
+                run_c = self.play("inv", f"oiv{tag}-cal", mode, merge_pad(sp, [f"{probe - guess} S", f"{probe - guess + 2} -"], probe - guess + 50), save=fresh(self.work / f"save-oiv{tag}-cal"))
+                got = parse_inventories(run_c)
+                frozen = [f for f, i in invs.items() if got and i["pieces"] == got[-1]["pieces"]]   # the paused picture is the one frame of the full run whose complete inventory it repeats
+                if frozen:
+                    d = min(frozen) - (probe - guess)
+                    deltas = (d, d - 1, d + 1, d - 2, d + 2)
+                    break
+            ok = self.check(deltas is not None, f"overflow investigation{tag}: the pause offset is calibrated ({deltas})") and ok
+            if deltas is None:
+                return
+        nval = max(1, validation)
+        targets = [("validation", quiet[(2 * k + 1) * len(quiet) // (2 * nval)]) for k in range(nval)] + [("over", f) for f in over]
         for kind, frame in targets:
-            sd = self.work / f"save-oiv-{frame}"
-            near = None
-            exact = False
-            for delta in (3, 2, 4, 1, 5):   # a pause at poll P freezes the picture of guest frame P + delta (3 usually, the input timing moves it by one)
-                poll = frame - delta
-                shutil.rmtree(sd, ignore_errors=True)
-                run_i = self.play("inv", f"oiv-inv-{frame}", "wide", merge_pad(sp, [f"{poll} S", f"{poll + 2} -", f"{poll + 30} K", f"{poll + 31} -"], poll + 50), save=sd)
-                inv = parse_inventories(run_i)[-1]
-                if inv["pieces"] == invs[frame]["pieces"]:
+            sd = self.work / f"save-oiv{tag}-{frame}"
+            exact, poll, inv, run_i, alt, tried = False, frame - deltas[0], None, None, None, set()
+            for _ in range(8):   # a pause at poll P freezes some frame F of the full run (the game's slowdowns make the offset drift): move the pause by the difference until the target is frozen
+                if poll in tried:
+                    break
+                tried.add(poll)
+                fresh(sd)
+                run_i = self.play("inv", f"oiv{tag}-inv-{frame}", mode, merge_pad(sp, [f"{poll} S", f"{poll + 2} -", f"{poll + 30} K", f"{poll + 31} -"], poll + 50), save=sd)
+                got = parse_inventories(run_i)
+                inv = got[-1] if got else None
+                hits = [f for f, i in invs.items() if inv is not None and i["pieces"] == inv["pieces"]]   # the frozen picture repeats exactly one frame's complete inventory
+                if not hits:
+                    poll += 1
+                    continue
+                hit = min(hits, key=lambda f: abs(f - frame))
+                if hit == frame:
                     exact = True
                     break
-                if near is None and inv["n"] == invs[frame]["n"] and all(abs(p[0] - q[0]) <= 4 and abs(p[1] - q[1]) <= 4 and p[2:5] == q[2:5] and p[5] % 10 == q[5] % 10 for p, q in zip(inv["pieces"], invs[frame]["pieces"])):
-                    near = (poll, delta, shutil.copytree(sd, self.work / f"save-oiv-{frame}-near", dirs_exist_ok=True), run_i, inv)
-            if not exact and near is not None:   # no pause timing freezes exactly this frame: the nearest reproducible state (same pieces and clips, every one within four pixels)
-                poll, delta, _, run_i, inv = near
+                if alt is None and ((kind == "over" and inv["n"] > 64) or (kind == "validation" and 20 <= inv["n"] <= 64)):   # a frozen frame of the same class stands in when the target itself cannot be frozen
+                    alt = (poll, hit, shutil.copytree(sd, self.work / f"save-oiv{tag}-{frame}-alt", dirs_exist_ok=True), run_i, inv)
+                poll += frame - hit
+            if not exact and alt is not None:
+                poll, frame, alt_dir, run_i, inv = alt
                 shutil.rmtree(sd, ignore_errors=True)
-                shutil.copytree(self.work / f"save-oiv-{frame}-near", sd)
-            run_b = self.play("nomaze", f"oiv-base-{frame}", "wide", merge_pad(sp, [f"{poll} S", f"{poll + 2} -"], poll + 50))
-            ok = self.check(exact or near is not None, f"overflow investigation {frame}: the paused frame is the frame under test ({inv['n']} pieces, pause offset {delta}; {'identical complete inventory' if exact else 'nearest reproducible state: same pieces and clips, every one within four pixels'})") and ok
+                shutil.copytree(alt_dir, sd)
+            elif not exact:   # no pause timing freezes this frame (the game's slowdown around it): not a result about the provider, recorded, and another frame stands in (the minimum below)
+                agg.setdefault(f"not_reproducible{tag}", []).append(frame)
+                continue
+            run_b = self.play("nomaze", f"oiv{tag}-base-{frame}", mode, merge_pad(sp, [f"{poll} S", f"{poll + 2} -"], poll + 50), save=fresh(self.work / f"save-oiv{tag}-base-{frame}", "nomaze"))
+            self.report.setdefault("overflow_verified" + tag, []).append((kind, frame, inv["n"], "exact" if exact else "same-class frame"))
             _, vram, cram, _ = sgstate_vdp((sd / "states/quick.sgstate").read_bytes())
             exp, rect, st = compose_expected(run_b["bmp"], inv["pieces"], vram, cram, inv["lpx"], inv["rpx"])
             prod = bmp_info(run_i["bmp"])[3]
+            k = max(1, (rect[3] - rect[1]) // 224)
+            native = (rect[0] + inv["lpx"] * k, rect[1], rect[0] + (inv["lpx"] + 320) * k, rect[3])   # the 320-pixel native picture: the margin maze (sprites and overlay) never touches it
+            ok = self.check(len(rows_diff(prod, bmp_info(run_b["bmp"])[3], st, native)) == 0, f"overflow investigation{tag} {frame}: the native picture equals the maze-free picture pixel for pixel") and ok
             if kind == "validation":
                 d = len(rows_diff(prod, exp, st, rect))
-                ok = self.check(all(p[5] // 10 == 0 for p in inv["pieces"]), f"overflow investigation {frame}: no piece is marked as drawn by the host (a marked piece would be stacked beneath the virtual pieces, not in the game's order)") and ok
-                ok = self.check(d == 0, f"overflow investigation {frame}: production's margin maze equals the independent model in the GAME's cell order, pixel for pixel, on a frame within the limit ({inv['n']} pieces, {d} pixels differ)") and ok
-                agg[f"validation-{frame}"] = {"pieces": inv["n"], "production_vs_game_cell_order": d}
+                ok = self.check(all(p[5] // 10 == 0 for p in inv["pieces"]), f"overflow investigation{tag} {frame}: no piece is marked as drawn by the host (a marked piece would be stacked beneath the virtual pieces, not in the game's order)") and ok
+                ok = self.check(d == 0, f"overflow investigation{tag} {frame}: production's margin maze equals the independent model in the GAME's cell order, pixel for pixel, on a frame within the limit ({inv['n']} pieces, {d} pixels differ)") and ok
+                agg[f"validation{tag}-{frame}"] = {"pieces": inv["n"], "production_vs_game_cell_order": d}
                 continue
-            restored = rows_diff(prod, exp, st, rect)
-            entry = {"pieces": inv["n"], "excess": inv["n"] - 64, "restored_pixels_needed": len(restored), "reproduced_exactly": exact, "max_shift_px": 0 if exact else max(max(abs(p[0] - q[0]), abs(p[1] - q[1])) for p, q in zip(inv["pieces"], invs[frame]["pieces"]))}
-            for mode, key in (("one-layer", "ovf-one"), ("per-side", "ovf-side")):
-                run_v = self.play(key, f"oiv-{key}-{frame}", "wide", merge_pad(sp, [f"{poll} S", f"{poll + 2} -"], poll + 50))
-                d = rows_diff(bmp_info(run_v["bmp"])[3], exp, st, rect)
-                entry[mode] = {"errors": len(d), "restored_correctly": len(restored - d), "new_errors": len(d - restored), "faulted": run_v["summary"].get("faulted")}
-            ok = self.check(entry["one-layer"]["errors"] == 0 and entry["one-layer"]["restored_correctly"] == len(restored) and entry["one-layer"]["faulted"] is False,
-                            f"overflow investigation {frame}: the dropped pieces carried by ONE overlay layer reproduce the complete expected picture exactly ({entry['one-layer']}, {entry['restored_pixels_needed']} pixels restored)") and ok
-            agg[str(frame)] = entry
-        agg["over_limit_frames"] = over
+            errors = rows_diff(prod, exp, st, rect)   # production now carries the pieces over the command limit itself (overlay): it must equal the independent expected picture
+            entry = {"pieces": inv["n"], "excess": inv["n"] - 64, "production_errors": len(errors), "reproduced_exactly": exact, "max_shift_px": 0 if exact else max(max(abs(p[0] - q[0]), abs(p[1] - q[1])) for p, q in zip(inv["pieces"], invs[frame]["pieces"])),
+                     "faulted": run_i["summary"].get("faulted")}
+            ok = self.check(entry["production_errors"] == 0 and entry["faulted"] is False,
+                            f"overflow investigation{tag} {frame}: production's pieces over the command limit (carried by the overlay) reproduce the complete expected picture exactly ({entry['production_errors']} pixels differ, {inv['n']} pieces)") and ok
+            agg[f"{tag}{frame}"] = entry
+        agg[f"over_limit_frames{tag}"] = over
+        done = self.report.get("overflow_verified" + tag, [])
+        ok = self.check(sum(1 for k, _, _, _ in done if k == "validation") >= min(nval, 2) and sum(1 for k, _, _, _ in done if k == "over") >= min(len(over), 4),
+                        f"overflow investigation{tag}: enough paused frames could be verified against the independent model (validation {sum(1 for k, _, _, _ in done if k == 'validation')}, over the limit {sum(1 for k, _, _, _ in done if k == 'over')} of {len(over)}; not reproducible: {agg.get('not_reproducible' + tag, [])})") and ok
 
     # ------------------------------------------------------------------ scenarios
     def run_pairs(self, jobs):
@@ -1126,7 +1097,7 @@ def main(argv=None):
             futs.append(pool.submit(c.abi2_program, "audit", coverage_edit, coverage_manifest))
         if want("overflow"):
             futs += [pool.submit(c.abi2_program, "inv", inventory_edit, coverage_manifest), pool.submit(c.abi2_program, "nomaze", lambda t: t.replace("if (v->side != 0U) ss_margin_maze(", "if (v->side == 99U) ss_margin_maze(")),
-                     pool.submit(c.abi2_program, "ovf-one", lambda t: overflow_edit(t, "one-layer")), pool.submit(c.abi2_program, "ovf-side", lambda t: overflow_edit(t, "per-side"))]
+                     ]
         if want("planes"):
             futs += [pool.submit(c.abi2_program, "nomaze", lambda t: t.replace("if (v->side != 0U) ss_margin_maze(", "if (v->side == 99U) ss_margin_maze(")),
                      pool.submit(c.abi2_program, "selfmaze", selfmaze_edit), pool.submit(c.abi2_program, "selfbad", selfbad_edit),

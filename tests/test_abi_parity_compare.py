@@ -154,11 +154,13 @@ class ProviderVariants(unittest.TestCase):
     SRC = (ROOT / "patches/genesis/sonic-1/native-widescreen-abi2/src/provider.c").read_text()
 
     def test_every_variant_applies_to_the_real_provider(self):
-        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit), ("overflow-one", lambda x: tool.overflow_edit(x, "one-layer")), ("overflow-side", lambda x: tool.overflow_edit(x, "per-side")), ("inventory", tool.inventory_edit)):
+        for name, edit in (("selfmaze", tool.selfmaze_edit), ("selfbad", tool.selfbad_edit), ("coverage", tool.coverage_edit), ("inventory", tool.inventory_edit)):
             out = edit(self.SRC)
             self.assertNotEqual(out, self.SRC, name)
         self.assertIn("g_vset.budget_mode = GENESIS_VSPRITE_BUDGET_LIMIT;", tool.selfmaze_edit(self.SRC))
-        self.assertNotIn("u16(ram, ot + 6U) - u16(ram, ou + 6U)", tool.selfbad_edit(self.SRC))   # the mutant really drops the art-tile base adjustment
+        self.assertNotIn("+ art)", tool.selfbad_edit(self.SRC))   # the mutant really drops the art-tile base adjustment
+        self.assertNotIn("ss_witness(host, ram, nsat, ncell) != 0", tool.selfbad_edit(self.SRC))   # and bypasses the witness that would refuse the contradicting frame
+        self.assertIn("if (0 && ss_overflow_overlay(", tool.selfmaze_edit(self.SRC))   # the redraw is sprites only
         self.assertIn("host.log", tool.coverage_manifest('[capabilities]\nrequired = ["frame.vdp"]\n'))
         self.assertEqual(tool.coverage_manifest('required = ["host.log"]'), 'required = ["host.log"]')
 
@@ -168,7 +170,7 @@ class ProviderVariants(unittest.TestCase):
         self.assertIn("  r = feat->render;\n", self.SRC)   # fault variant
 
     def test_a_variant_refuses_a_provider_it_does_not_fit(self):
-        for edit in (tool.selfmaze_edit, tool.coverage_edit, tool.inventory_edit, tool.overflow_edit):
+        for edit in (tool.selfmaze_edit, tool.coverage_edit, tool.inventory_edit):
             with self.assertRaises(ValueError):
                 edit("int main(void) { return 0; }\n")
 
