@@ -430,14 +430,15 @@ static int32_t placement(int32_t cam, int32_t range, int32_t margin) {
   return (int32_t)(((int64_t)margin * lo) / zone + (int64_t)margin - ((int64_t)margin * hi) / zone);
 }
 
-/* The scenes that shift: the scrolling levels of the campaign inventory (scenery_scope), each with the left-to-right camera the placement is a function of. Every other scene of the inventory keeps its scenery and HUD and the
- * picture stays centred, because its camera is not a left-to-right traversal of the layout: the second act of Sky Sanctuary (zone 0x0A act 1: the camera never scrolls), The Doomsday (0x0C), the Lava Reef boss act (0x16 act 0)
- * and the Death Egg final-boss act (0x17), whose limits are the camera (minimum = maximum = camera) or an automatic scroll rather than a level width (SEG-152-T016 evidence). */
-static int placement_scope(unsigned zone, unsigned act) {
-  if (zone == 0x0AU) return act == 0U;
-  if (zone <= 0x0BU) return act <= 1U;
-  return zone == 0x16U && act == 1U;
-}
+/* The scenes that shift: only those whose camera boundaries and behaviour the recorded evidence of SEG-152-T016 supports (README "Which scenes shift"). Each has the game's left limit 0 (the layout's first column), a
+ * left-to-right run that reaches a right limit the GAME sets less than 6 margins (of the widest view) before the layout's end, and no recorded camera loop, act boundary or exit camera reset that would step the picture or could not be shown not to. Eligibility for
+ * authored scenery (scenery_scope) does not imply eligibility for placement: every other scene keeps its scenery and HUD with the picture centred. One byte per zone id, bit n = act n. */
+static const uint8_t k_placement_acts[0x0C] = {
+    [0x02] = 0x03,   /* Marble Garden acts 1 and 2 */
+    [0x08] = 0x01,   /* Sandopolis act 1 */
+    [0x0B] = 0x02,   /* Death Egg act 2 */
+};
+static int placement_scope(unsigned zone, unsigned act) { return zone < sizeof(k_placement_acts) && act < 8U && ((k_placement_acts[zone] >> act) & 1U) != 0U; }
 
 /* The camera's range: its first value is 0 (the layout's first column is world x 0) and its last value is the layout's end - 320 (the foreground holds no world beyond it, so the view's right edge never passes
  * it). That is the world's end, a constant of the act's layout, NOT the game's own camera limit: that limit (Camera_max_X_pos) is a default far beyond the layout until a boss or act event locks it to the arena

@@ -141,31 +141,30 @@ int main(void) {
       }
     }
   printf("OK placement\n");
-  /* level_left_px: adaptive from the camera and the layout's end; outside the scope or with an unreadable layout it stays centred */
+  /* level_left_px: adaptive from the camera and the layout's end in the verified scenes only; every other scene id and an unreadable layout stay centred */
   make_world(97U);   /* 97 chunks: range 97 * 128 - 320 = 12096 */
-  set_scene(0U, 0U, 0U);
-  if (S3K_PLACEMENT == 0) { if (level_left_px(ram, 238U) != 238U) { printf("FAIL baseline build is not centred\n"); ++fails; } }
-  else {
-    if (level_left_px(ram, 238U) != 0U) { printf("FAIL level start not left aligned\n"); ++fails; }
-    set_scene(0U, 0U, 12096U);
-    if (level_left_px(ram, 238U) != 476U) { printf("FAIL layout end not right aligned\n"); ++fails; }
-    set_scene(0U, 0U, 6048U);
+  {
+    static const unsigned char shifting[][2] = {{0x02, 0}, {0x02, 1}, {0x08, 0}, {0x0B, 1}};
+    unsigned zone, act, i, count = 0U;
+    for (zone = 0U; zone < 256U; ++zone)
+      for (act = 0U; act < 256U; ++act) {   /* exhaustive over both scene bytes */
+        int want = 0;
+        unsigned at_start, at_end;
+        for (i = 0U; i < sizeof(shifting) / sizeof(shifting[0]); ++i) want = want || (zone == shifting[i][0] && act == shifting[i][1]);
+        if (S3K_PLACEMENT == 0) want = 0;
+        set_scene(zone, act, 0U); at_start = level_left_px(ram, 238U);
+        set_scene(zone, act, 12096U); at_end = level_left_px(ram, 238U);
+        if (at_start != (want ? 0U : 238U) || at_end != (want ? 476U : 238U)) { printf("FAIL scope zone=%u act=%u start=%u end=%u\n", zone, act, at_start, at_end); ++fails; zone = 255U; break; }
+        count += (unsigned)want;
+      }
+    if (fails == 0 && count != (S3K_PLACEMENT == 0 ? 0U : 4U)) { printf("FAIL scope count %u\n", count); ++fails; }
+  }
+  if (S3K_PLACEMENT != 0) {
+    set_scene(2U, 1U, 6048U);
     if (level_left_px(ram, 238U) != 238U) { printf("FAIL middle not centred\n"); ++fails; }
-    set_scene(0U, 0U, 20000U);
+    set_scene(2U, 1U, 20000U);
     if (level_left_px(ram, 238U) != 476U) { printf("FAIL camera past the layout is not clamped to right aligned\n"); ++fails; }
-    set_scene(0x0AU, 1U, 0U);   /* the camera never scrolls here: centred */
-    if (level_left_px(ram, 238U) != 238U) { printf("FAIL static-camera act not centred\n"); ++fails; }
-    set_scene(0x0CU, 0U, 0U);
-    if (level_left_px(ram, 238U) != 238U) { printf("FAIL script-camera scene not centred\n"); ++fails; }
-    set_scene(0x16U, 0U, 0U);
-    if (level_left_px(ram, 238U) != 238U) { printf("FAIL boss act not centred\n"); ++fails; }
-    set_scene(0x16U, 1U, 0U);
-    if (level_left_px(ram, 238U) != 0U) { printf("FAIL scrolling act of zone 0x16 not adaptive\n"); ++fails; }
-    set_scene(0x0BU, 1U, 0U);
-    if (level_left_px(ram, 238U) != 0U) { printf("FAIL death egg act 2 not adaptive\n"); ++fails; }
-    set_scene(0x0CU + 1U, 0U, 0U);   /* a zone that is not in the inventory */
-    if (level_left_px(ram, 238U) != 238U) { printf("FAIL unknown zone not centred\n"); ++fails; }
-    set_scene(0U, 0U, 0U); put16(S3K_LAYOUT, 0U);   /* an unreadable layout: the verified-boundary-not-obtainable fallback */
+    set_scene(2U, 1U, 0U); put16(S3K_LAYOUT, 0U);   /* an unreadable layout: the verified-boundary-not-obtainable fallback */
     if (level_left_px(ram, 238U) != 238U) { printf("FAIL zero-width layout not centred\n"); ++fails; }
     put16(S3K_LAYOUT, 0x101U);
     if (level_left_px(ram, 238U) != 238U) { printf("FAIL oversize layout not centred\n"); ++fails; }

@@ -20,9 +20,9 @@
       ],
       "trust": "trusted-native-source",
       "executable_code": true,
-      "package_sha256": "973da516dc32fc39691ba61a407ffb00040f5190dce4e2cdb9be8897af7f6978",
-      "package_size": 37825,
-      "package_identity": "1a50ecf172b055fe913b8195c2b9e0383e38dba86fa7c13b4aa75d38eb590f86",
+      "package_sha256": "d123f927c398429cf0c5723bc6043da64527d6c8e0adf60cb09d03b4ccbbad6d",
+      "package_size": 38041,
+      "package_identity": "7e8ce21fbebaf50d86c46e3fa84863453116ce62c41c991aac6b9fdccd6ca6e4",
       "images": [
         {
           "label": "lock-on-composite",
@@ -33,10 +33,10 @@
       "author": "segarecomp SEG-124",
       "evidence_tier": "synthetic-only",
       "gameplay": "changes slightly",
-      "supported_scope": "Single-player Sonic route of the 4 MiB Sonic & Knuckles + Sonic 3 lock-on composite (built with the lock-on cartridge declaration) with reconstructed scenery (foreground, and background where the level layout explains it) and the relocated animated HUD (the ABI 2 successor of the published ABI 1 package: same scope, same BPS delta, same verification). In the scrolling levels the native picture moves inside the widescreen surface: left at the first camera position, centred in the middle, right at the end of the level layout.",
+      "supported_scope": "Single-player Sonic route of the 4 MiB Sonic & Knuckles + Sonic 3 lock-on composite (built with the lock-on cartridge declaration) with reconstructed scenery (foreground, and background where the level layout explains it) and the relocated animated HUD (the ABI 2 successor of the published ABI 1 package: same scope, same BPS delta, same verification). In four scenes (Marble Garden 1 and 2, Sandopolis 1, Death Egg 2) the native picture moves inside the widescreen surface: toward the left at the start of the level, centred in the middle, partly toward the right at its end; elsewhere it stays centred.",
       "limitations": [
         "Applies only to the exact 4 MiB lock-on composite this entry lists; standalone Sonic 3 or Sonic & Knuckles images are different identities, and it must be built as a declared lock-on cartridge (the launcher selects it automatically for this image; CLI builds need --mapper lock_on).",
-        "The picture is right-aligned only where the camera reaches the end of the level layout; an act whose boss arena locks the camera earlier keeps a partly shifted (or centred) picture there. The Sky Sanctuary act 2, The Doomsday, the Lava Reef boss act and the Death Egg final-boss act keep the picture centred.",
+        "No shifting scene reaches full right alignment where the game stops the camera (centred there at 16:9 in Marble Garden 2 and Death Egg 2). The other 24 scenes keep the picture centred because their camera boundaries or behaviour are not verified or would step the picture (see the README). The act exits of the four shifting scenes were not recorded; every act exit that was recorded resets the camera in play, which would step a shifted picture.",
         "Some backgrounds still use the VDP's own wrapped scenery. Competition mode, bonus stages, the ending and attract-mode demos fall back to the generic renderer.",
         "Gameplay can differ slightly: additional actors and rings become active in the widened margins (the BPS delta is the ABI 1 package's).",
         "Needs a segarecomp build with native ABI 2 minor 3 (a product revision that contains SEG-152-T017, pinned in scripts/PRODUCT_REF); no tagged segarecomp release can install it yet. Compared with the ABI 1 package on all 28 scene classes of its scope. The ABI 1 package of this image stays the published one."
