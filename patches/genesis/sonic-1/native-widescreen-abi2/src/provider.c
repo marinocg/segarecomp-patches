@@ -768,12 +768,18 @@ static int32_t placement(int32_t cam, int32_t range, int32_t margin) {
   return (int32_t)(((int64_t)margin * lo) / zone + (int64_t)margin - ((int64_t)margin * hi) / zone);
 }
 
-/* The placement of this frame's running level. The camera's first value is 0 in every supported act (the game's left limit is 0 there and the layout's first column is world x 0) and its last value is the game's right limit
+/* The placement of this frame's running level, for the acts of k_placement_acts only (others: centred, no placement declared). The camera's first value is 0 in every such act (the game's left limit is 0 there and the layout's first column is world x 0) and its last value is the game's right limit
  * (level width - 320: the camera never passes it). The LEFT limit is deliberately not read: the end-of-act sequence sets it to the right limit to lock the screen, which would collapse the range and make a camera-only
  * placement jump; the first column of the layout is a property of the layout, not of that limit. A right limit the world cannot hold is the verified-boundary-not-obtainable fallback: the picture stays centred. */
+/* The acts whose camera start, right limit and placement were verified on the real image at every supported ratio, with save/load, rewind and aspect transitions: Green Hill acts 1-3 (zone 0). Eligibility for authored scenery
+ * (k_scenery_acts) does not imply eligibility for placement: every other scenery act keeps its scenery and HUD and the picture stays centred until its boundaries are verified (SEG-152-T014 evidence). */
+static const uint8_t k_placement_acts[6] = {0x07, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+static int placement_scope(unsigned zone, unsigned act) { return zone < 6U && act < 8U && ((k_placement_acts[zone] >> act) & 1U) != 0U; }
+
 static unsigned level_left_px(const uint8_t *ram, unsigned margin_px) {
   const int camx = (int)u16(ram, S1_CAMX), lim_r = (int)u16(ram, S1_LIMRIGHT);
-  if (S1_PLACEMENT == 0 || lim_r <= 0 || lim_r >= S1_WORLD_W) return margin_px;
+  if (S1_PLACEMENT == 0 || !placement_scope(ram[S1_ZONE], ram[S1_ZONE + 1U]) || lim_r <= 0 || lim_r >= S1_WORLD_W) return margin_px;
   return (unsigned)placement(camx, lim_r, (int32_t)margin_px);
 }
 
@@ -836,7 +842,7 @@ static void render_frame(const SegaModHost *host) {
     left_px = level_left_px(ram, margin_px);
     if (build_plane_windows(r, f, ram, 0U, v->height, left_px, margin_px) != 0 || build_plane_windows(r, f, ram, 1U, v->height, left_px, margin_px) != 0)
       (void)r->decline(SEGA_GEN_COMPONENT_SCENERY, REASON_BAD_STATE);   /* the windows cannot express this frame's answers: never served half-way */
-    else if (S1_PLACEMENT != 0 && v->side != 0U && r->view_left != NULL && r->view_left(left_px, margin_px) != 0)
+    else if (S1_PLACEMENT != 0 && placement_scope(ram[S1_ZONE], ram[S1_ZONE + 1U]) && v->side != 0U && r->view_left != NULL && r->view_left(left_px, margin_px) != 0)
       (void)r->decline(SEGA_GEN_COMPONENT_SCENERY, REASON_BAD_STATE);   /* a placement the host does not accept: the windows built for it are not served either */
   }
   if ((accepted & SEGA_GEN_COMPONENT_HUD) != 0U && draw_hud(f, v, vdp) != 0) {

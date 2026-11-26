@@ -139,6 +139,12 @@ int main(void) {
     if (level_left_px(ram, 238U) != 0U) { printf("FAIL level start not left aligned\n"); ++fails; }
     ram[S1_CAMX] = (uint8_t)(9407 >> 8); ram[S1_CAMX + 1] = (uint8_t)(9407 & 255);
     if (level_left_px(ram, 238U) != 476U) { printf("FAIL level end not right aligned\n"); ++fails; }
+    ram[S1_ZONE] = 1U; ram[S1_ZONE + 1U] = 0U;   /* a scenery act whose boundaries are not verified: centred */
+    if (level_left_px(ram, 238U) != 238U) { printf("FAIL unverified zone not centred\n"); ++fails; }
+    ram[S1_ZONE] = 0U; ram[S1_ZONE + 1U] = 3U;
+    if (level_left_px(ram, 238U) != 238U) { printf("FAIL unverified act not centred\n"); ++fails; }
+    ram[S1_ZONE] = 0U; ram[S1_ZONE + 1U] = 2U;
+    if (level_left_px(ram, 238U) != 476U) { printf("FAIL green hill act 3 not adaptive\n"); ++fails; }
     ram[S1_LIMRIGHT] = 0xFFU; ram[S1_LIMRIGHT + 1] = 0xFFU;   /* a right limit the world cannot hold: centred */
     if (level_left_px(ram, 238U) != 238U) { printf("FAIL unverifiable right limit not centred\n"); ++fails; }
     ram[S1_LIMRIGHT] = 0U; ram[S1_LIMRIGHT + 1] = 0U;
@@ -208,6 +214,7 @@ class Source(unittest.TestCase):
     def test_shipped_default_is_adaptive_and_baseline_is_selectable(self):
         self.assertIn("#ifndef S1_PLACEMENT\n#define S1_PLACEMENT 1", self.SRC)
         self.assertIn("r->view_left(left_px, margin_px)", self.SRC)
+        self.assertIn("k_placement_acts[6] = {0x07, 0x00, 0x00, 0x00, 0x00, 0x00}", self.SRC)
 
     def test_no_guest_memory_write_and_no_state(self):
         self.assertNotIn("->write(", self.SRC)
