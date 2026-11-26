@@ -11,6 +11,8 @@ from synth_repo import PRODUCT_REF, S, Synthetic, git, run
 import check_repo, check_source_review, release_meta
 
 CLI, SDK, CC, SEGAPATCH = os.environ.get("SEGARECOMP_CLI"), os.environ.get("SEGARECOMP_SDK_DIR"), os.environ.get("SEGARECOMP_CC", "cc"), os.environ.get("SEGAPATCH")
+# the product tool built at the revision the historical Castle package records (its build record is history: it is neither rewritten nor claimed for another revision)
+HCLI, HSDK = os.environ.get("SEGARECOMP_CASTLE_CLI"), os.environ.get("SEGARECOMP_CASTLE_SDK_DIR")
 
 
 def castle_like(test):
@@ -412,6 +414,23 @@ def check_repo_assets(out):
 
 
 @unittest.skipUnless(CLI and SDK, "set SEGARECOMP_CLI and SEGARECOMP_SDK_DIR to run against the product's mod tools")
+class Sonic3kAbi2(unittest.TestCase):
+    """SEG-152-T011: the Sonic 3 & Knuckles ABI 2 candidate is validated by the exec job with the pinned product CLI (mod check, deterministic mod pack, recorded identity / SHA-256 / size)."""
+    D = "patches/genesis/sonic-3-and-knuckles/native-widescreen-abi2"
+    def test_recorded_pinned_and_reproducible(self):
+        rec = next(pk for pk in release_meta.packages(ROOT) if pk.id == "sonic3k-native-widescreen-abi2")
+        self.assertEqual((rec.version, rec.p["schema_version"], rec.p["native_abi"]), ("0.1.0", 3, 2))
+        self.assertEqual(rec.build.get("writer_ref"), (ROOT / "scripts/PRODUCT_REF").read_text().strip())
+        e = []; check_repo.check_mod_projects(ROOT, CLI, e, ["--cc", CC, "--sdk-dir", SDK], only={self.D}); self.assertEqual(e, [])
+    def test_the_bps_delta_is_the_published_abi1_delta(self):
+        a = (ROOT / self.D / "bps/game.bps").read_bytes(); b = (ROOT / "patches/genesis/sonic-3-and-knuckles/native-widescreen/source/sonic3k-native-widescreen.bps").read_bytes()
+        self.assertEqual(a, b)
+    def test_it_is_a_candidate_and_the_abi1_package_stays_eligible(self):
+        self.assertEqual(release_meta.state_of(ROOT, "genesis/sonic-3-and-knuckles/native-widescreen-abi2"), "candidate")
+        self.assertEqual(release_meta.state_of(ROOT, "genesis/sonic-3-and-knuckles/native-widescreen"), "eligible")
+
+
+@unittest.skipUnless(CLI and SDK, "set SEGARECOMP_CLI and SEGARECOMP_SDK_DIR to run against the product's mod tools")
 class CastleIntegration(unittest.TestCase):
     """The real Castle projects, real product CLI: a dry-run release that selects only castle-of-illusion-widescreen-practice."""
     PID = "castle-of-illusion-widescreen-practice"
@@ -431,17 +450,18 @@ class CastleIntegration(unittest.TestCase):
         rec = next(pk for pk in release_meta.packages(ROOT) if pk.id == self.PID); self.assertEqual((rec.version, rec.p["schema_version"], rec.p["native_abi"]), ("0.1.0", 3, 2))
         e = []; check_repo.check_mod_projects(ROOT, CLI, e, ["--cc", CC, "--sdk-dir", SDK], only={"patches/genesis/castle-of-illusion/widescreen-practice"}); self.assertEqual(e, [])
 
+    @unittest.skipUnless(HCLI and HSDK, "set SEGARECOMP_CASTLE_CLI and SEGARECOMP_CASTLE_SDK_DIR (the product built at the Castle package's recorded revision)")
     def test_dry_run_selects_only_the_widescreen_practice_package(self):
         d = self.copy(); st = json.loads((d / "publication.json").read_text())
         for f in ("releases/v0.2.0.json", "docs/release-notes/v0.2.0.md"): (d / f).unlink(missing_ok=True)   # the dry run models the FIRST selection of the Castle package, whatever release the repository has prepared since
         st["patches"]["genesis/castle-of-illusion/widescreen-practice"] = {"state": "eligible", "review": "dry run only (test fixture)"}; (d / "publication.json").write_text(json.dumps(st))
         run(S / "prepare_release.py", "--root", d, "begin", "--tag", "v0.2.0", "--package", f"{self.PID}@0.1.0", check=True)
         self.assertEqual(json.loads((d / "releases/v0.2.0.json").read_text())["packages"], [f"{self.PID}@0.1.0"])
-        out = d / "dry-run"; ref = (d / "scripts/PRODUCT_REF").read_text().strip()
-        r = run(S / "build_packages.py", "--root", d, "--release", "v0.2.0", "--out", out, "--segarecomp", CLI, "--segarecomp-ref", ref, "--cc", CC, "--sdk-dir", SDK); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        out = d / "dry-run"; ref = json.loads((d / "patches/genesis/castle-of-illusion/widescreen-practice/package.json").read_text())["packages"][0]["build"]["writer_ref"]   # the package's own recorded revision, which is not the global pin the newer Sonic packages use
+        r = run(S / "build_packages.py", "--root", d, "--release", "v0.2.0", "--out", out, "--segarecomp", HCLI, "--segarecomp-ref", ref, "--cc", CC, "--sdk-dir", HSDK); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(sorted(p.name for p in out.iterdir()), ["SHA256SUMS", f"{self.PID}.segapatch"])
         self.assertEqual((out / "SHA256SUMS").read_text().split(), [json.loads((d / "patches/genesis/castle-of-illusion/widescreen-practice/package.json").read_text())["packages"][0]["package_sha256"], f"{self.PID}.segapatch"])
-        e = []; check_repo.check_assets(d, out, CLI, e, "v0.2.0"); self.assertEqual(e, [], "the product's `mod inspect` agrees with the recorded identity, ABI and capabilities")
+        e = []; check_repo.check_assets(d, out, HCLI, e, "v0.2.0"); self.assertEqual(e, [], "the product's `mod inspect` agrees with the recorded identity, ABI and capabilities")
         for tool in ("debug-fly", "input-recorder"): self.assertFalse(any(tool in p.name for p in out.iterdir()))
         for internal in ("castle-of-illusion-debug-fly", "castle-of-illusion-input-recorder"):
             r = run(S / "prepare_release.py", "--root", d, "begin", "--tag", "v0.3.0", "--package", f"{internal}@0.1.0"); self.assertNotEqual(r.returncode, 0)
