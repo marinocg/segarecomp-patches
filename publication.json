@@ -41,6 +41,10 @@
       "state": "candidate",
       "note": "SEG-152-T010: ABI 2 successor of the Sonic 2 widescreen provider (JUE REV01). Not approved for release selection; the ABI 1 package stays published."
     },
+    "genesis/sonic-3-and-knuckles/native-widescreen-abi2": {
+      "state": "candidate",
+      "note": "SEG-152-T011: ABI 2 successor of the Sonic 3 & Knuckles lock-on widescreen provider. Not approved for release selection; the ABI 1 package stays published."
+    },
     "genesis/sonic-3-and-knuckles/native-widescreen": {
       "state": "eligible",
       "review": "Published in v0.1.0 after the per-file source review (docs/source-review.md)."

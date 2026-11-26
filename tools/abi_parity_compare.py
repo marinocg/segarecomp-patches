@@ -24,6 +24,11 @@ def load(path, name):
     return mod
 
 
+def self_restore_ok(v):
+    """The one newly produced frame after a restore may differ from the uninterrupted run's verdict (the host drops what was bound to the pre-restore frames): a STALE_STATE refusal (nothing accepted, reason 1) or the same frame without the HUD (accepted scenery only). It must still be equal in the ABI 1 and the ABI 2 run: the pairwise comparison after this check enforces that."""
+    return v[2] == 0 and ((v[3] == 0 and v[4] == 1) or (v[3] == 2 and v[4] == 0))
+
+
 def level_pad(title_starts, run_from, until, jump_every=100):
     """Start presses to leave the title/menus, then run right with a jump every `jump_every` polls."""
     lines = ["0 -"]
@@ -191,6 +196,7 @@ class Cmp:
     def __init__(self, a):
         self.work = require_outside_repo(a.work, "--work")   # it holds the intermediate ROM images, captures and RAM snapshots: checked before anything is written
         self.a = a
+        self.mapper_args = ("--mapper", a.mapper) if a.mapper else ()   # a declared board (the Sonic 3 & Knuckles lock-on composite is built with --mapper lock_on, as the launcher does)
         self.root = pathlib.Path(a.product_root).resolve()
         sys.path.insert(0, str(self.root / "tests"))
         import viewer_mod_support as vms
@@ -234,7 +240,7 @@ class Cmp:
             self.report["abi1_package_sha256"] = self.vms.sha(pkg.read_bytes())
             return
         r = self.h.run_cli("build", "--rom", patched, "--output", self.work / "abi1", "--cc", a.cc, "--runtime-dir", self.root / "platforms/genesis", "--optimize", "0", "--runtime-optimize", "1",
-                           "--sdl3-include", pathlib.Path(a.sdl) / "include", "--sdl3-lib", pathlib.Path(a.sdl) / "lib", "--test-frame-seam", "1", "--patch-package", pkg, "--patch-identity", ident)
+                           "--sdl3-include", pathlib.Path(a.sdl) / "include", "--sdl3-lib", pathlib.Path(a.sdl) / "lib", "--test-frame-seam", "1", "--patch-package", pkg, "--patch-identity", ident, *self.mapper_args)
         self.check(r.returncode == 0, f"ABI 1 program builds: {r.stdout[-200:]}{r.stderr[-200:]}")
         if r.returncode == 0:
             stamp.write_text(ident)
@@ -266,7 +272,7 @@ class Cmp:
         if self.a.reuse and (self.work / name / "game").is_file() and stamp.is_file() and stamp.read_text() == str(doc.get("package_identity")):
             pass   # the same package identity was built into this program before: reuse it (the runtime and the SDK are those of the same product checkout)
         else:
-            b = self.h.build(self.rom, self.work / name, out, doc.get("package_identity"), native=True)
+            b = self.h.build(self.rom, self.work / name, out, doc.get("package_identity"), native=True, extra=self.mapper_args)
             self.check(b.returncode == 0, f"{name} builds: {b.stdout[-200:]}{b.stderr[-200:]}")
             if b.returncode == 0:
                 stamp.write_text(str(doc.get("package_identity")))
@@ -459,7 +465,11 @@ def main(argv=None):
         ap.add_argument(k, required=True)
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--reuse", action="store_true", help="reuse a program already built from the same package identity in --work")
-    ap.add_argument("--scenario-set", default="s2", choices=("s1", "s2"))
+    ap.add_argument("--scenario-set", default="s2", choices=("s1", "s2", "s3"))
+    ap.add_argument("--starts", default="", help="the host polls of the Start presses that leave the title and the menus (overrides the scenario set's)")
+    ap.add_argument("--run-from", type=int, default=0, help="the host poll at which the run to the right begins (with --starts)")
+    ap.add_argument("--level-end", type=int, default=0, help="the host poll at which the level run ends (with --starts)")
+    ap.add_argument("--mapper", default="", help="a declared cartridge board passed to every build (lock_on for the Sonic 3 & Knuckles composite)")
     ap.add_argument("--only", default="")
     ap.add_argument("--json", default="")
     ap.add_argument("--diag", default="", help="a LOCAL directory OUTSIDE this repository for the visual checkpoints (screenshots and difference pictures of the real game: never committed)")
@@ -474,7 +484,11 @@ def main(argv=None):
     pads = {
         "s1": level_pad([300, 700], 900, 4800), "s2": level_pad([400, 700, 1000], 1400, 6000),   # a fourth Start in a level PAUSES the game: three leave the title and the menus
     }
-    level, level_end = pads[a.scenario_set], 6200 if a.scenario_set == "s2" else 5000
+    level_end = {"s1": 5000, "s2": 6200, "s3": a.level_end or 7000}[a.scenario_set]
+    if a.starts:
+        pads[a.scenario_set] = level_pad([int(x) for x in a.starts.split(",")], a.run_from, level_end - 1200)
+    pads.setdefault("s3", level_pad([400, 700, 1060], 1500, level_end - 1200))
+    level = pads[a.scenario_set]
     level = level + [f"{level_end} Q"]
     idle = ["0 -", "14000 Q"]
     idle_level = [ln for ln in level if ln.split()[1] in ("-", "S")] + [f"{level_end} Q"]   # the title and the menus, then a level left alone: no input edge after the Starts, so no route-dependent timing
@@ -506,13 +520,16 @@ def main(argv=None):
     # scenario A: the level run at every presentation mode
     jobs = [(f"level-{m}", dict(mode=m, pad=level, replay=master)) for m in MODES if want("level") or want(f"level-{m}") or (want("visual") and m == "wide")]
     # scenario B: attract-mode demos (idle title), widest and 16:9
-    if want("demos") or want("visual"):
+    if (want("demos") or want("visual")) and a.scenario_set != "s3":   # the Sonic 3 & Knuckles provider serves running levels only: its attract-mode demos are refused by both ABIs
         jobs += [("demos-wide", dict(mode="wide", pad=idle)), ("demos-w169", dict(mode="w169", pad=idle))]
     # scenario C: aspect transitions in a level and replay determinism
     sched = "1600:21:9,1900:16:9,2200:orig,2500:4:3,2800:32:9"
     if want("transitions"):
         jobs += [("transitions", dict(mode="wide", pad=level, schedule=sched, replay=master)), ("transitions-again", dict(mode="wide", pad=level, schedule=sched, replay=master))]
     results = c.run_pairs(jobs) if jobs else {}
+    if os.environ.get("ABI_PARITY_PRINT_LOG"):   # a LOCAL debugging aid for a probe provider: the host.log lines of every ABI 2 run
+        for key, (x, y) in results.items():
+            print(key, [m.get("line") for m in y["lines"].get("MOD_LOG", [])][:600])
     for key, (x, y) in results.items():
         c.equal(key, x, y, minimum=100)
     if "transitions" in results:
@@ -548,9 +565,12 @@ def main(argv=None):
                 jumps = [i for i in range(1, len(frames)) if frames[i] != frames[i - 1] + 1]
                 restored = [e for e in run["state"] if e.get("event") in (kind, "load", "rewind")]
                 # every occurrence equals the uninterrupted run's verdict for its frame number, but the one newly produced frame after the restore (the host's STALE_STATE for both ABIs)
-                wrong = [(i, e) for i, e in enumerate(events) if e[1:] != bv.get(e[0]) and not (i - 1 in jumps and e[1:][3] == 0 and e[1:][4] == 1 and e[1:][2] == 0)]
+                wrong = [(i, e) for i, e in enumerate(events) if e[1:] != bv.get(e[0]) and not ((i in jumps or i - 1 in jumps) and self_restore_ok(e[1:]))]
+                if os.environ.get("ABI_PARITY_PRINT_LOG") and wrong:   # a LOCAL debugging aid: the occurrences around an unexpected one
+                    for i, e in wrong[:2]:
+                        print("WRONG", k, kind, i, events[max(0, i - 2):i + 3], [bv.get(x[0]) for x in events[max(0, i - 2):i + 3]], flush=True)
                 shape = len(jumps) >= 1 and (kind == "load" and frames[jumps[0]] > frames[jumps[0] - 1] + 1 or kind == "rewind" and frames[jumps[0]] <= frames[jumps[0] - 1])
-                c.check(shape and not wrong, f"({k}) {kind}: a real discontinuity (jumps {[(frames[i - 1], frames[i]) for i in jumps][:3]}) and all {len(events)} occurrences equal the uninterrupted run's verdicts but the STALE_STATE restore frame (wrong: {len(wrong)}, first {wrong[:2]})")
+                c.check(shape and not wrong, f"({k}) {kind}: a real discontinuity (jumps {[(frames[i - 1], frames[i]) for i in jumps][:3]}) and all {len(events)} occurrences equal the uninterrupted run's verdicts but the STALE_STATE restore frame (wrong: {len(wrong)}, first {wrong[:2]}, uninterrupted verdicts there {[bv.get(e[0]) for _, e in wrong[:2]]})")
                 counts[f"{k}-{kind}"] = {"occurrences": len(events), "repeated_frame_numbers": len(events) - len(set(frames)), "discontinuities": len(jumps), "wrong": len(wrong)}
         for kind in ("base", "save", "load", "rewind"):
             x, y = res[("abi1", kind)], res[("abi2", kind)]
@@ -564,26 +584,42 @@ def main(argv=None):
         scroll = next((f for f in sorted(lw) if f >= 3500 and lw[f]["acc"] == 3), None)
         fade = next((f for f in sorted(lw) if f > 1600 and lw[f]["acc"] == 1 and lw.get(f - 1, {}).get("acc") == 3), None)
         refused = next((f for f in sorted(lw) if lw[f]["status"] == 2 and lw[f]["acc"] == 0 and f > 5), None)
-        dm = results["demos-wide"][0]["trace"]
-        accepted = [f for f in sorted(dm) if dm[f]["acc"] == 3]
-        cps = []
-        G = {"gameplay": True}
-        if scroll:
-            cps += [("level-scroll-wide", scroll, "wide", level, dict(G)), ("level-scroll-flash", scroll + 8, "wide", level, dict(G)), ("level-scroll-w219", scroll, "w219", level, dict(G)), ("level-scroll-w169", scroll, "w169", level, dict(G)),
-                    ("level-scroll-orig", scroll, "orig", level, dict(G)), ("level-scroll-43", scroll, "43", level, dict(G))]
-        if fade:
-            cps.append(("level-restart-fade", fade + 2, "wide", level, dict(G)))
-        if refused:
-            cps.append(("level-refused-generic", refused, "wide", idle_level, {}))
-        hud_only = next((f for f in sorted(results["demos-wide"][0]["trace"]) if results["demos-wide"][0]["trace"][f]["acc"] == 1 and f > 1000), None)   # a HUD-only frame (no scenery accepted) of the attract demos: the level-restart / transition fade
-        if hud_only:
-            cps.append(("demo-hud-only", hud_only, "wide", idle, {}))
-        for tag, q in (("a", 0.12), ("b", 0.5), ("c", 0.88)):
-            if accepted:
-                cps.append((f"demo-{tag}", accepted[int(q * (len(accepted) - 1))], "wide", idle, {}))
-        cps += [("hud-rings-zero-a", 1300, "wide", level, dict(G)), ("hud-rings-zero-b", 1308, "wide", level, dict(G))]   # the start of the level: no rings yet, the RINGS label flashes between its two palettes every eight frames
-        cps += [("transition-169", 1950, "wide", level, dict(G, schedule=sched)), ("transition-orig", 2350, "wide", level, dict(G, schedule=sched)), ("transition-back-wide", 2950, "wide", level, dict(G, schedule=sched)),
-                ("restore-load", 2400, "wide", idle_level, {"extras": ["1900 M", "1901 -"], "save": "save", "restore": "load"}), ("restore-rewind", 2560, "wide", idle_level, {"extras": ["2500 Y", "2501 -"], "save": "save-rw", "restore": "rewind"})]
+        if a.scenario_set == "s3":   # the Sonic 3 & Knuckles scenes: representative scenery frames of the recorded level run at every presentation mode, a HUD frame, a refusal and the aspect transitions
+            cps = []
+            G = {"gameplay": True}
+            served = [f for f in sorted(lw) if lw[f]["acc"] == 3]
+            picks = [served[int(q * (len(served) - 1))] for q in (0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95)]
+            for n, f in enumerate(picks):
+                cps.append((f"s3-scenery-{n}-wide", f, "wide", level, dict(G)))
+            mid = picks[3]
+            cps += [("s3-scenery-mid-w219", mid, "w219", level, dict(G)), ("s3-scenery-mid-w169", mid, "w169", level, dict(G)), ("s3-scenery-mid-orig", mid, "orig", level, dict(G)), ("s3-scenery-mid-43", mid, "43", level, dict(G))]
+            cps.append(("level-scroll-wide", mid, "wide", level, dict(G)))
+            cps.append(("level-scroll-flash", mid + 8, "wide", level, dict(G)))
+            cps.append(("transition-back-wide", picks[-1], "wide", level, dict(G, schedule=sched)))
+            refused = next((f for f in sorted(lw) if lw[f]["status"] == 2 and lw[f]["acc"] == 0 and f > 5), None)
+            if refused:
+                cps.append(("level-refused-generic", refused, "wide", idle_level, {}))
+        else:
+            dm = results["demos-wide"][0]["trace"]
+            accepted = [f for f in sorted(dm) if dm[f]["acc"] == 3]
+            cps = []
+            G = {"gameplay": True}
+            if scroll:
+                cps += [("level-scroll-wide", scroll, "wide", level, dict(G)), ("level-scroll-flash", scroll + 8, "wide", level, dict(G)), ("level-scroll-w219", scroll, "w219", level, dict(G)), ("level-scroll-w169", scroll, "w169", level, dict(G)),
+                        ("level-scroll-orig", scroll, "orig", level, dict(G)), ("level-scroll-43", scroll, "43", level, dict(G))]
+            if fade:
+                cps.append(("level-restart-fade", fade + 2, "wide", level, dict(G)))
+            if refused:
+                cps.append(("level-refused-generic", refused, "wide", idle_level, {}))
+            hud_only = next((f for f in sorted(results["demos-wide"][0]["trace"]) if results["demos-wide"][0]["trace"][f]["acc"] == 1 and f > 1000), None)   # a HUD-only frame (no scenery accepted) of the attract demos: the level-restart / transition fade
+            if hud_only:
+                cps.append(("demo-hud-only", hud_only, "wide", idle, {}))
+            for tag, q in (("a", 0.12), ("b", 0.5), ("c", 0.88)):
+                if accepted:
+                    cps.append((f"demo-{tag}", accepted[int(q * (len(accepted) - 1))], "wide", idle, {}))
+            cps += [("hud-rings-zero-a", 1300, "wide", level, dict(G)), ("hud-rings-zero-b", 1308, "wide", level, dict(G))]   # the start of the level: no rings yet, the RINGS label flashes between its two palettes every eight frames
+            cps += [("transition-169", 1950, "wide", level, dict(G, schedule=sched)), ("transition-orig", 2350, "wide", level, dict(G, schedule=sched)), ("transition-back-wide", 2950, "wide", level, dict(G, schedule=sched)),
+                    ("restore-load", 2400, "wide", idle_level, {"extras": ["1900 M", "1901 -"], "save": "save", "restore": "load"}), ("restore-rewind", 2560, "wide", idle_level, {"extras": ["2500 Y", "2501 -"], "save": "save-rw", "restore": "rewind"})]
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, a.jobs // 2)) as pool:
             futs = [pool.submit(c.checkpoint, n, f, m, pad, **kw) for n, f, m, pad, kw in cps]
             for fu in futs:
@@ -629,7 +665,7 @@ def main(argv=None):
             c.check(ld["events"] != good["events"], "FALSIFY mut-dropped-on-restore: dropping the maintained state on restore changes an occurrence the real provider keeps")
         bad = c.play("mut-fault", "fal-fault", "wide", level, replay=master)
         vanilla_prog = c.work / "vanilla"
-        b = c.h.build(c.work / "abi1-effective.rom", vanilla_prog)   # the BPS-patched image with NO provider (the BPS alone changes the guest: it moves the original HUD off screen)
+        b = c.h.build(c.work / "abi1-effective.rom", vanilla_prog, extra=c.mapper_args)   # the BPS-patched image with NO provider (the BPS alone changes the guest: it moves the original HUD off screen)
         c.check(b.returncode == 0, "the patched image without a provider builds")
         c.progs["vanilla"] = (vanilla_prog, None)
         van = c.play("vanilla", "fal-vanilla", "wide", level, replay=master)
