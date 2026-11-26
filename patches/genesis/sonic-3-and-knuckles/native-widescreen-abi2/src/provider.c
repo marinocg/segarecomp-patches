@@ -8,8 +8,9 @@
  * the VDP's own plane become the per-row generic mask (minor 2), the HUD overlay becomes one RGBA bitmap, and a frame the provider does not serve is refused with the ABI 1 diagnostic reason (a
  * refusal, never a fault). The provider is an exact-frame provider (capability frame.vdp): `render` runs once per produced frame against the frame's own copies.
  *
- * Cross-frame state (ADR 0320 decision 3): the ABI 1 provider kept the registered plane multiples of the previous presented frame (`g_prev_kx/g_prev_ky`) and used them only as a tie-break score term.
- * This port keeps NO state across frames: the previous-frame seed is dropped (see PREV_FRAME_SEED) and the package's evidence records that clearing it reproduces the ABI 1 output, i.e. it is a pure cache.
+ * Cross-frame state (ADR 0320 decision 3): the ABI 1 provider kept the registered plane multiples of the previous presented frame (`g_prev_kx/g_prev_ky`). They are NOT a pure cache: the previous-frame
+ * tie-break term changes which multiple wins in some real scenes (clearing them before every frame changed the accepted lines of Carnival Night Zone Act 1 in the local comparison). They are therefore
+ * ESSENTIAL state: kept by `render` exactly as the ABI 1 provider kept them, and serialized through `state.mod` (448 bytes) so that save/load and rewind restore the seed of the saved moment.
  */
 #include <segarecomp_mod_genesis.h>
 
@@ -39,7 +40,6 @@
 #define REASON_MISMATCH SEGA_GEN_REASON_MISMATCH
 #define MAX_COLS 128U
 #define MAX_WIN_ROWS 32U
-#define SPAN_MAX 1024
 
 typedef struct Sonic3kFrame {
   const uint8_t *ram;
@@ -61,7 +61,7 @@ typedef struct Sonic3kFrame {
 
 static Sonic3kFrame g_frame;
 static uint16_t g_words[2][MAX_COLS * MAX_WIN_ROWS];      /* one window of a plane is built and submitted at a time (the host copies it) */
-static int32_t g_cell[MAX_WIN_ROWS][SPAN_MAX];            /* the answer of a plane cell as the lines that ask it want it, or -1 while no line asked */
+static int32_t g_cell[MAX_WIN_ROWS][256];            /* the answer of a plane cell as the lines that ask it want it, or -1 while no line asked */
 static int16_t g_delta[2][S3K_HSCROLL_LINES];
 
 static unsigned u16(const uint8_t *r, unsigned a) { return ((unsigned)r[a & 0xFFFFU] << 8) | r[(a + 1U) & 0xFFFFU]; }
@@ -109,9 +109,8 @@ static int scenery_scope(unsigned zone, unsigned act) {
 /* Background registration (unchanged from ABI 1): the layout column a plane column shows is the scroll-implied position plus an unknown multiple of the plane's width (512 px), and likewise
  * vertically (256 px). For each line the multiple that makes the provider's cells equal the VDP's own cells across the visible line is searched (previous line's first); the line is then
  * reconstructed continuously from that origin. A line no multiple explains is answered from the VDP's own plane (see scenery_check).
- * PREV_FRAME_SEED: the ABI 1 provider also added a one-point tie-break term for the multiple the same line had in the previous PRESENTED frame (`g_prev_kx[l]`). That seed is the only cross-frame
- * input; it is not kept (the render callback of a skipped, restored or rewound frame would otherwise see a presentation-dependent value). */
-static int g_prev_kx[S3K_HSCROLL_LINES], g_prev_ky[S3K_HSCROLL_LINES];   /* this frame's earlier lines only: cleared at the start of every frame */
+ * The one-point tie-break term for the multiple the same line had in the previous presented frame (`g_prev_kx[l]`, `g_prev_ky[l]`) is the only cross-frame input (see the header). */
+static int g_prev_kx[S3K_HSCROLL_LINES], g_prev_ky[S3K_HSCROLL_LINES];   /* line l - 1: this frame's registered multiple; line l: the previous frame's (the ABI 1 arrays, unchanged) */
 
 static unsigned bg_line_bad(const Sonic3kFrame *f, const SegaGenesisFrameView *v, unsigned l, int wx0, int wy, unsigned limit) {
   unsigned bad = 0U;
@@ -148,7 +147,8 @@ static int bg_register(Sonic3kFrame *f, const SegaGenesisFrameView *v, unsigned 
       const int wx0 = f->off[l][1] + kx * 512, wy = (int)l + f->vs[1] + ky * 256;
       long score;
       if (bg_line_bad(f, v, l, wx0, wy, allowed) > allowed) continue;
-      score = (long)bg_ext_agree(f, v, l, wx0, wy) * 4L + ((l > 0U && kx == g_prev_kx[l - 1U] && ky == g_prev_ky[l - 1U]) ? 2L : 0L);
+      score = (long)bg_ext_agree(f, v, l, wx0, wy) * 4L + ((l > 0U && kx == g_prev_kx[l - 1U] && ky == g_prev_ky[l - 1U]) ? 2L : 0L) +
+              ((kx == g_prev_kx[l] && ky == g_prev_ky[l]) ? 1L : 0L);
       if (score > best) { best = score; best_kx = kx; best_ky = ky; }
     }
   *kx_out = best_kx; *ky_out = best_ky;
@@ -185,7 +185,6 @@ static unsigned scenery_check(Sonic3kFrame *f, const SegaGenesisFrameView *v, co
   f->ram = ram;
   f->vram = v->vram;
   f->height = v->height;
-  for (unsigned l = 0U; l < S3K_HSCROLL_LINES; ++l) { g_prev_kx[l] = 0; g_prev_ky[l] = 0; }
   for (unsigned l = 0U; l < v->height; ++l) {
     int kx, ky;
     if (!bg_register(f, v, l, &kx, &ky)) f->own_plane[l][1] = 1U;
@@ -218,116 +217,130 @@ static unsigned scenery_check(Sonic3kFrame *f, const SegaGenesisFrameView *v, co
   return REASON_OK;
 }
 
-/* The scenery of one plane as bounded windows, the per-row origin delta and the per-row generic mask. The host looks a column outside the picture up at plane cell c = floor((x - hscroll) / 8) + delta[line]
- * (the delta is the background's registered plane multiple, 64 cells per 512 px), plane row floor((line + vscroll) / 8). The ABI 1 provider answered the same pixel with the world cell at world x =
- * screen x + off(line) (off carries the multiple); plane cell c of line l therefore holds the world cell at x = 8c + hscroll + off(l), and the window cell c' = c + delta[l] = c + 64 kx holds
- * the world cell at x = 8c' + hscroll + off(l) - 512 kx. Two lines that still need DIFFERENT words for one window cell (a vertical multiple that differs inside a cell row, or per-line scrolls that differ
- * inside a cell row) cannot be expressed: reported (return 2) and the frame's scenery is refused honestly instead of serving wrong cells. Returns 0 on success. */
+/* The scenery of one plane as bounded windows, the per-row origin delta and the per-row generic mask.
+ *
+ * The host looks a column outside the picture up at plane cell p = floor((x - hscroll) / 8) + delta[line] (the window cell) of plane row floor((line + vscroll) / 8); the ABI 1 provider answered the same pixel
+ * with the world cell at world x = screen x + off(line) (off carries the registered plane multiple), i.e. plane cell p of line l holds the world cell at 8 p + hscroll + off(l), whatever the delta is: the delta
+ * only chooses WHERE in the windows the answer is stored. Lines of one cell row that ask the same plane-to-world mapping (the same multiples and scroll wrap) are a GROUP; their cells never conflict. Groups
+ * with different mappings would need different words for the same window cell if they sat at the same place, so each group gets its own whole-cell shift: its natural place (the multiple, relative to the
+ * smallest multiple of the row, times 64 cells, plus the row's scroll cell) when that is free, otherwise the nearest free place. Cell rows are independent of each other. Everything lives in one run of 256
+ * window columns (two windows of 128), so the cover is exact whatever the bands do. A frame that does not fit (more groups than room) is refused honestly, never answered half-way. Returns 0 on success. */
+#define PLACE_COLS 256
+#define MAX_GROUPS 12
 static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic3kFrame *f, unsigned plane, unsigned left_px, unsigned margin_px, uint8_t mask[28], unsigned *any_mask, unsigned *any_delta) {
   const unsigned right_px = 2U * margin_px - left_px, height = f->height;
-  int cmin = 0, cmax = 0, rmin = 0, rmax = 0, rows, span, c, rr, have = 0;
+  int rmin = 0, rmax = 0, rows, rr, have = 0, w1 = 0, nwin, used_max = -1;
   unsigned l;
-  int kbase[MAX_WIN_ROWS], shift[MAX_WIN_ROWS];
-  int al_[S3K_HSCROLL_LINES], bl_[S3K_HSCROLL_LINES], ar_[S3K_HSCROLL_LINES], br_[S3K_HSCROLL_LINES];
+  int kbase[MAX_WIN_ROWS], shift[MAX_WIN_ROWS], ngroups[MAX_WIN_ROWS];
+  int gq[MAX_WIN_ROWS][MAX_GROUPS], gkx[MAX_WIN_ROWS][MAX_GROUPS], gky[MAX_WIN_ROWS][MAX_GROUPS], gd[MAX_WIN_ROWS][MAX_GROUPS];
+  int pal[S3K_HSCROLL_LINES], pbl[S3K_HSCROLL_LINES], par[S3K_HSCROLL_LINES], pbr[S3K_HSCROLL_LINES], grp[S3K_HSCROLL_LINES], rowof[S3K_HSCROLL_LINES];
   for (l = 0U; l < 28U; ++l) mask[l] = 0U;
   for (l = 0U; l < S3K_HSCROLL_LINES; ++l) g_delta[plane][l] = 0;
-  /* Pass 1: the cell rows asked and, per cell row, the smallest registered multiple among its lines (kbase): every line of a row is shifted by its multiple relative to that base, so a row's cells
-   * sit in the columns of its base whatever the multiple is, and rows with different multiples (parallax bands drawn from far apart world columns) share the same columns of a window. */
-  for (l = 0U; l < MAX_WIN_ROWS; ++l) { kbase[l] = 0x7FFFFFFF; shift[l] = 0x7FFFFFFF; }
+  for (l = 0U; l < MAX_WIN_ROWS; ++l) { kbase[l] = 0x7FFFFFFF; shift[l] = 0x7FFFFFFF; ngroups[l] = 0; }
+  /* Pass 1: the cell rows asked; per row the smallest registered multiple (kbase) and the scroll cell of its first line (shift) */
   for (l = 0U; l < height; ++l) {
     const int row = floor_div((int)l + f->vsh[l][plane], 8);
-    if (f->own_plane[l][plane] != 0U) continue;
+    if (f->own_plane[l][plane] != 0U) {   /* answered by the VDP's own plane: marks the screen row, asks the windows nothing */
+      mask[l >> 3] = (uint8_t)(mask[l >> 3] | (1U << (l & 7U)));
+      *any_mask = 1U;
+      continue;
+    }
     if (!have || row < rmin) rmin = row;
     if (!have || row > rmax) rmax = row;
     have = 1;
   }
-  if (!have && height != 0U) { for (l = 0U; l < height; ++l) { mask[l >> 3] = (uint8_t)(mask[l >> 3] | (1U << (l & 7U))); } *any_mask = 1U; return 0; }
-  if (rmax - rmin + 1 > (int)MAX_WIN_ROWS) return 1;
-  for (l = 0U; l < height; ++l) {
-    const int row = floor_div((int)l + f->vsh[l][plane], 8) - rmin;
-    if (f->own_plane[l][plane] == 0U && plane == 1U) {
-      if (f->kx[l] < kbase[row]) kbase[row] = f->kx[l];
-      if (shift[row] == 0x7FFFFFFF) shift[row] = floor_div(f->hs[l][1], 8);   /* every line of the row keeps the same whole-cell shift: no new conflict, and the rows' columns line up */
-    }
-  }
-  have = 0;
-  for (l = 0U; l < height; ++l) {
-    const int hs = f->hs[l][plane], row = floor_div((int)l + f->vsh[l][plane], 8) - rmin;
-    int d;
-    if (f->own_plane[l][plane] != 0U) {   /* answered by the VDP's own plane: marks the screen row, asks the windows nothing */
-      mask[l >> 3] = (uint8_t)(mask[l >> 3] | (1U << (l & 7U)));
-      *any_mask = 1U;
-      al_[l] = 1; bl_[l] = 0; ar_[l] = 1; br_[l] = 0;
-      continue;
-    }
-    d = plane == 1U ? (f->kx[l] - kbase[row]) * 64 + shift[row] : 0;
-    g_delta[plane][l] = (int16_t)d;
-    if (d != 0) *any_delta = 1U;
-    al_[l] = floor_div(-(int)left_px - hs, 8) + d;   /* the host asks ONLY the off-picture pixels of a line: x = -left_px .. -1 and x = 320 .. 319 + right_px */
-    bl_[l] = floor_div(-1 - hs, 8) + d;
-    ar_[l] = floor_div(320 - hs, 8) + d;
-    br_[l] = floor_div(319 + (int)right_px - hs, 8) + d;
-    if (!have || al_[l] < cmin) cmin = al_[l];
-    if (!have || br_[l] > cmax) cmax = br_[l];
-    have = 1;
-  }
   if (!have) return 0;   /* every line of this plane is answered by the VDP: no window */
   rows = rmax - rmin + 1;
-  span = cmax - cmin + 1;
-  if (rows < 1 || rows > (int)MAX_WIN_ROWS || span > SPAN_MAX) return 1;
-  for (rr = 0; rr < rows; ++rr)
-    for (c = 0; c < span; ++c) g_cell[rr][c] = -1;
+  if (rows < 1 || rows > (int)MAX_WIN_ROWS) return 1;
   for (l = 0U; l < height; ++l) {
-    const int row = floor_div((int)l + f->vsh[l][plane], 8) - rmin;
-    int d, wy;
-    if (al_[l] > bl_[l] && ar_[l] > br_[l]) continue;
-    d = plane == 1U ? (f->kx[l] - kbase[row]) * 64 + shift[row] : 0;
-    wy = plane == 0U ? (int)l + f->vs[0] : f->bgy[l];
-    for (unsigned side = 0U; side < 2U; ++side)
-      for (c = side == 0U ? al_[l] : ar_[l]; c <= (side == 0U ? bl_[l] : br_[l]); ++c) {
-        int32_t *o = &g_cell[row][c - cmin];
-        const int word = (int)world_cell(f, plane, (c - d) * 8 + f->hs[l][plane] + f->off[l][plane], wy);
-        if (*o < 0) *o = word;
-        else if (*o != word) return 2;   /* one window cell asked by two lines that need different words */
-      }
+    int row;
+    if (f->own_plane[l][plane] != 0U) continue;
+    row = floor_div((int)l + f->vsh[l][plane], 8) - rmin;
+    rowof[l] = row;
+    if (plane == 1U && f->kx[l] < kbase[row]) kbase[row] = f->kx[l];
+    if (shift[row] == 0x7FFFFFFF) shift[row] = plane == 1U ? floor_div(f->hs[l][1], 8) : 0;
   }
-  /* Which windows cover the asked cells (at most two per plane, at most 128 x 32 cells each here). Per cell row the asked cells span [lo, hi]. In order of preference: one window; two windows side by side
-   * (each the full row range; the bounding span at most 256 columns); two windows stacked (the rows split once, each group of rows with its own column range: the background's parallax bands that
-   * carry different plane multiples sit in different screen rows). A cell no line asks is never read. */
-  {
-    int lo[MAX_WIN_ROWS], hi[MAX_WIN_ROWS], nwin = 0, wc0[2], wr0[2], wcols[2], wrows[2], split = -1;
-    for (rr = 0; rr < rows; ++rr) {
-      lo[rr] = SPAN_MAX; hi[rr] = -1;
-      for (c = 0; c < span; ++c) if (g_cell[rr][c] >= 0) { if (c < lo[rr]) lo[rr] = c; hi[rr] = c; }
+  /* Pass 2: the asked plane cells of every line, its group and the natural delta of the group */
+  for (l = 0U; l < height; ++l) {
+    int row, q, g, nat;
+    if (f->own_plane[l][plane] != 0U) continue;
+    row = rowof[l];
+    q = f->hs[l][plane] + f->off[l][plane] - (plane == 1U ? f->kx[l] * 512 : 0);   /* scroll wrap: hscroll minus the game's own scroll (0 unless the 10-bit read wrapped) */
+    pal[l] = floor_div(-(int)left_px - f->hs[l][plane], 8);   /* the host asks ONLY the off-picture pixels of a line: x = -left_px .. -1 and x = 320 .. 319 + right_px */
+    pbl[l] = floor_div(-1 - f->hs[l][plane], 8);
+    par[l] = floor_div(320 - f->hs[l][plane], 8);
+    pbr[l] = floor_div(319 + (int)right_px - f->hs[l][plane], 8);
+    for (g = 0; g < ngroups[row]; ++g) if (gq[row][g] == q && gkx[row][g] == (plane == 1U ? f->kx[l] : 0) && gky[row][g] == (plane == 1U ? f->bgy[l] - (int)l - f->vs[1] : 0)) break;
+    if (g == ngroups[row]) {
+      if (g == MAX_GROUPS) { return 3; }
+      gq[row][g] = q; gkx[row][g] = plane == 1U ? f->kx[l] : 0; gky[row][g] = plane == 1U ? f->bgy[l] - (int)l - f->vs[1] : 0;
+      nat = plane == 1U ? (f->kx[l] - kbase[row]) * 64 + shift[row] : 0;
+      gd[row][g] = nat;
+      ngroups[row] = g + 1;
     }
-    if (span <= (int)MAX_COLS) { nwin = 1; wc0[0] = cmin; wr0[0] = 0; wcols[0] = span; wrows[0] = rows; }
-    else if (span <= 2 * (int)MAX_COLS) {
-      nwin = 2; wc0[0] = cmin; wc0[1] = cmax - (int)MAX_COLS + 1; wr0[0] = wr0[1] = 0; wcols[0] = wcols[1] = (int)MAX_COLS; wrows[0] = wrows[1] = rows;
-    } else {
-      for (int s = 1; s < rows && split < 0; ++s) {
-        int a_lo = SPAN_MAX, a_hi = -1, b_lo = SPAN_MAX, b_hi = -1;
-        for (rr = 0; rr < rows; ++rr) {
-          if (hi[rr] < 0) continue;
-          if (rr < s) { if (lo[rr] < a_lo) a_lo = lo[rr]; if (hi[rr] > a_hi) a_hi = hi[rr]; }
-          else { if (lo[rr] < b_lo) b_lo = lo[rr]; if (hi[rr] > b_hi) b_hi = hi[rr]; }
+    grp[l] = g;
+  }
+  /* the run of window columns starts at the smallest natural column of any row's first group */
+  for (rr = 0, have = 0; rr < rows; ++rr) {
+    for (l = 0U; l < height; ++l) {
+      if (f->own_plane[l][plane] != 0U || rowof[l] != rr) continue;
+      if (!have || pal[l] + gd[rr][grp[l]] < w1) w1 = pal[l] + gd[rr][grp[l]];
+      have = 1;
+    }
+  }
+  for (rr = 0; rr < rows; ++rr) for (int c = 0; c < PLACE_COLS; ++c) g_cell[rr][c] = -1;
+  /* Pass 3: place every group of every row (the first group of a row at its natural place whenever it is free) */
+  for (rr = 0; rr < rows; ++rr) {
+    for (int g = 0; g < ngroups[rr]; ++g) {
+      int placed = 0;
+      for (int step = 0; step <= 2 * PLACE_COLS && !placed; ++step) {
+        const int s = (step & 1) ? (step + 1) / 2 : -(step / 2), d = gd[rr][g] + s;
+        int ok = 1;
+        for (l = 0U; l < height && ok; ++l) {
+          if (f->own_plane[l][plane] != 0U || rowof[l] != rr || grp[l] != g) continue;
+          for (unsigned side = 0U; side < 2U && ok; ++side)
+            for (int p = side == 0U ? pal[l] : par[l]; p <= (side == 0U ? pbl[l] : pbr[l]) && ok; ++p) {
+              const int col = p + d - w1;
+              int32_t cur;
+              if (col < 0 || col >= PLACE_COLS) { ok = 0; break; }
+              cur = g_cell[rr][col];
+              if (cur >= 0) {
+                const int wy = plane == 0U ? (int)l + f->vs[0] : f->bgy[l];
+                if (cur != (int32_t)world_cell(f, plane, p * 8 + f->hs[l][plane] + f->off[l][plane], wy)) ok = 0;
+              }
+            }
         }
-        if ((a_hi < 0 || a_hi - a_lo + 1 <= (int)MAX_COLS) && (b_hi < 0 || b_hi - b_lo + 1 <= (int)MAX_COLS)) {
-          split = s;
-          nwin = 0;
-          if (a_hi >= 0) { wc0[nwin] = cmin + a_lo; wr0[nwin] = 0; wcols[nwin] = a_hi - a_lo + 1; wrows[nwin] = s; ++nwin; }
-          if (b_hi >= 0) { wc0[nwin] = cmin + b_lo; wr0[nwin] = s; wcols[nwin] = b_hi - b_lo + 1; wrows[nwin] = rows - s; ++nwin; }
+        if (!ok) continue;
+        for (l = 0U; l < height; ++l) {
+          if (f->own_plane[l][plane] != 0U || rowof[l] != rr || grp[l] != g) continue;
+          for (unsigned side = 0U; side < 2U; ++side)
+            for (int p = side == 0U ? pal[l] : par[l]; p <= (side == 0U ? pbl[l] : pbr[l]); ++p) {
+              const int wy = plane == 0U ? (int)l + f->vs[0] : f->bgy[l], col = p + d - w1;
+              g_cell[rr][col] = (int32_t)world_cell(f, plane, p * 8 + f->hs[l][plane] + f->off[l][plane], wy);
+              if (col > used_max) used_max = col;
+            }
         }
+        gd[rr][g] = d;
+        placed = 1;
       }
-      if (split < 0) return 3;
+      if (!placed) { return 3; }
     }
-    for (int w = 0; w < nwin; ++w) {
-      for (rr = 0; rr < wrows[w]; ++rr)
-        for (c = 0; c < wcols[w]; ++c) {
-          const int32_t word = g_cell[wr0[w] + rr][wc0[w] - cmin + c];
-          g_words[plane][(unsigned)rr * (unsigned)wcols[w] + (unsigned)c] = (uint16_t)(word < 0 ? 0 : word);
-        }
-      if (r->scenery_window(plane, wc0[w], rmin + wr0[w], (uint32_t)wcols[w], (uint32_t)wrows[w], g_words[plane]) != 0) return 4;
-    }
+  }
+  for (l = 0U; l < height; ++l) {
+    if (f->own_plane[l][plane] != 0U) continue;
+    g_delta[plane][l] = (int16_t)gd[rowof[l]][grp[l]];
+    if (g_delta[plane][l] != 0) *any_delta = 1U;
+  }
+  if (used_max < 0) return 0;
+  nwin = used_max >= (int)MAX_COLS ? 2 : 1;
+  for (int w = 0; w < nwin; ++w) {
+    const int c0 = w * (int)MAX_COLS, cols = (w == 0 && nwin == 1) ? used_max + 1 : (w == 0 ? (int)MAX_COLS : used_max + 1 - (int)MAX_COLS);
+    for (rr = 0; rr < rows; ++rr)
+      for (int c = 0; c < cols; ++c) {
+        const int32_t word = g_cell[rr][c0 + c];
+        g_words[plane][(unsigned)rr * (unsigned)cols + (unsigned)c] = (uint16_t)(word < 0 ? 0 : word);   /* a cell no line asks is never read */
+      }
+    if (r->scenery_window(plane, w1 + c0, rmin, (uint32_t)cols, (uint32_t)rows, g_words[plane]) != 0) return 4;
   }
   return 0;
 }
@@ -449,6 +462,23 @@ static void render_frame(const SegaModHost *host) {
   }
 }
 
+/* ---------------------------------------------------------------------------------------------------------------- cross-frame state (state.mod) */
+static int provider_save(void *state, uint8_t *out, uint32_t cap, uint32_t *len) {
+  (void)state;
+  if (cap < 2U * S3K_HSCROLL_LINES) return 1;
+  for (unsigned l = 0U; l < S3K_HSCROLL_LINES; ++l) { out[l] = (uint8_t)g_prev_kx[l]; out[S3K_HSCROLL_LINES + l] = (uint8_t)g_prev_ky[l]; }
+  *len = 2U * S3K_HSCROLL_LINES;
+  return 0;
+}
+
+static int provider_load(void *state, const uint8_t *in, uint32_t len) {
+  (void)state;
+  if (len != 2U * S3K_HSCROLL_LINES) return 1;
+  for (unsigned l = 0U; l < S3K_HSCROLL_LINES; ++l) if (in[l] > 63U || in[S3K_HSCROLL_LINES + l] > 31U) return 1;   /* a multiple is below the plane count of the layout (at most 64 x 32) */
+  for (unsigned l = 0U; l < S3K_HSCROLL_LINES; ++l) { g_prev_kx[l] = in[l]; g_prev_ky[l] = in[S3K_HSCROLL_LINES + l]; }
+  return 0;
+}
+
 static int provider_init(void *state, const SegaModHost *host) {
   (void)state;
   return host->platform == SEGA_MOD_PLATFORM && host->platform_features != NULL ? 0 : 1;
@@ -459,7 +489,7 @@ static void provider_phase(void *state, const SegaModHost *host) {
   if (host->phase == SEGA_MOD_PHASE_RENDER) render_frame(host);
 }
 
-static const SegaModProvider provider = {sizeof(SegaModProvider), SEGA_MOD_ABI_MAJOR, 3U, SEGA_MOD_PLATFORM, "sonic3k.native-widescreen", 9U, provider_init, provider_phase, NULL, NULL, NULL,
+static const SegaModProvider provider = {sizeof(SegaModProvider), SEGA_MOD_ABI_MAJOR, 3U, SEGA_MOD_PLATFORM, "sonic3k.native-widescreen", 9U, provider_init, provider_phase, NULL, provider_save, provider_load,
                                          {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}};
 
 const SegaModProvider *segarecomp_mod_provider(void **state_out) {

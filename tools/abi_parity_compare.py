@@ -430,13 +430,13 @@ class Cmp:
                   "authored_a1": sum(1 for t in a["trace"].values() if t["auth"]), "authored_a2": sum(1 for t in b["trace"].values() if t["auth"])}
         return names, counts
 
-    def equal(self, key, a, b, minimum=30, restore=None):
+    def equal(self, key, a, b, minimum=30, restore=None, need_components=True):
         names, counts = self.compare(key, a, b)
         problems = validate_run(a, key + " [abi1]", a["end_poll"], restore=restore) + validate_run(b, key + " [abi2]", b["end_poll"], restore=restore, mod=True)
         for p in problems:
             self.check(False, p)
         names = names | ({"incomplete-run"} if problems else set())
-        if not key.endswith("orig"):   # a scenario that never exercised the components it compares proves nothing (the presentation setting can silently be Original): scenery and HUD must have been offered
+        if need_components and not key.endswith("orig"):   # a scenario that never exercised the components it compares proves nothing (the presentation setting can silently be Original): scenery and HUD must have been offered
             for what, n in (("scenery", counts["scenery_frames_a1"]), ("hud", counts["hud_frames_a1"])):
                 if n == 0:
                     self.check(False, f"{key}: the ABI 1 run never presented {what} (the scenario does not exercise it)")
@@ -469,6 +469,8 @@ def main(argv=None):
     ap.add_argument("--starts", default="", help="the host polls of the Start presses that leave the title and the menus (overrides the scenario set's)")
     ap.add_argument("--run-from", type=int, default=0, help="the host poll at which the run to the right begins (with --starts)")
     ap.add_argument("--level-end", type=int, default=0, help="the host poll at which the level run ends (with --starts)")
+    ap.add_argument("--zone-pads", default="", help="a LOCAL JSON file {scene name: [pad lines]} OUTSIDE this repository: each scene is recorded with the ABI 1 program and replayed frame-exactly in both programs (a sweep over the scene classes of a game that a single route cannot reach)")
+    ap.add_argument("--zone-modes", default="wide", help="comma separated presentation modes of the sweep")
     ap.add_argument("--mapper", default="", help="a declared cartridge board passed to every build (lock_on for the Sonic 3 & Knuckles composite)")
     ap.add_argument("--only", default="")
     ap.add_argument("--json", default="")
@@ -637,6 +639,25 @@ def main(argv=None):
             c.check(i["ok"], f"visual checkpoint {i['name']}: {i['differing_pixels']} differing pixels")
         if c.diag is not None:
             (c.diag / "manifest.json").write_text(json.dumps(c.report.get("checkpoints", []), indent=1, sort_keys=True))
+    # scenario S: the sweep of local scene recordings (--zone-pads)
+    if a.zone_pads:
+        pads_doc = json.loads(require_outside_repo(pathlib.Path(a.zone_pads).parent, "--zone-pads directory").joinpath(pathlib.Path(a.zone_pads).name).read_text())
+        sweep = {}
+        for name, pad in pads_doc.items():
+            if only and name not in only and "sweep" not in only:
+                continue
+            before = len(c.failures)
+            rec = c.record("zs-" + name, pad)
+            if len(c.failures) > before:   # the ABI 1 program itself stopped (a generated-program stop is the product's, not the provider's): reported, the sweep goes on
+                c.report.setdefault("unrecordable", {})[name] = c.failures.pop()
+                continue
+            sweep[name] = rec
+        jobs = [(f"zs-{name}-{m}", dict(mode=m, pad=pad_, replay=rec)) for name, rec in sweep.items() for m in a.zone_modes.split(",") for pad_ in [pads_doc[name]]]
+        for key, (x, y) in (c.run_pairs(jobs) if jobs else {}).items():
+            if os.environ.get("ABI_PARITY_PRINT_LOG"):   # a LOCAL debugging aid for a probe provider
+                print(key, [m.get("line") for m in y["lines"].get("MOD_LOG", [])][:900], y["summary"], sorted(y["lines"]), flush=True)
+            c.equal(key, x, y, minimum=100, need_components=False)
+        c.report["sweep"] = {k: {"scenery_frames": v["scenery_frames_a1"], "hud_frames": v["hud_frames_a1"], "differences": v["differences"], "frames": v["frames"]} for k, v in c.report.get("scenarios", {}).items() if k.startswith("zs-")}
     # scenario E: falsification
     if want("falsify"):
         ref = c.play("abi1", "fal-ref", "wide", level, replay=master)

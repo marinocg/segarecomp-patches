@@ -29,7 +29,10 @@ native = 2
 minor = 3
 
 [capabilities]
-required = ["frame.vdp", "frame.work_ram", "overlay.rgba", "scenery.words"]
+required = ["frame.vdp", "frame.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+
+[state]
+schema = 1
 
 [build]
 header_repair = "none"

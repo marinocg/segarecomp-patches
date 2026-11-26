@@ -15,13 +15,14 @@
         "frame.vdp",
         "frame.work_ram",
         "overlay.rgba",
-        "scenery.words"
+        "scenery.words",
+        "state.mod"
       ],
       "trust": "trusted-native-source",
       "executable_code": true,
-      "package_sha256": "616dd5c1ba19b4cf5139519878960eb25a77bf714a6e9f0a437b2961e106d513",
-      "package_size": 30515,
-      "package_identity": "70c01a162d127f105460dc84356bf3f4860eac3903ceb1b9118515197b5437bb",
+      "package_sha256": "c8dde1a68e6ba63e9e6bd3a9d9dfa6928207565a0b657470dcb9e0fd0f9831f9",
+      "package_size": 31906,
+      "package_identity": "f1e1f83dc8a29ba58e70ef67a68725317eda1322b30ae80b54b0bacaaffe6d22",
       "images": [
         {
           "label": "lock-on-composite",
@@ -37,7 +38,7 @@
         "Applies only to the exact 4 MiB lock-on composite this entry lists; standalone Sonic 3 or Sonic & Knuckles images are different identities, and it must be built as a declared lock-on cartridge (the launcher selects it automatically for this image; CLI builds need --mapper lock_on).",
         "Some backgrounds still use the VDP's own wrapped scenery. Competition mode, bonus stages, the ending and attract-mode demos fall back to the generic renderer.",
         "Gameplay can differ slightly: additional actors and rings become active in the widened margins (the BPS delta is the ABI 1 package's).",
-        "Needs a segarecomp build with native ABI 2 minor 3 (a product revision that contains SEG-152-T017, pinned in scripts/PRODUCT_REF); no tagged segarecomp release can install it yet. Verified against the ABI 1 package on Angel Island Zone 1 only. The ABI 1 package of this image stays the published one."
+        "Needs a segarecomp build with native ABI 2 minor 3 (a product revision that contains SEG-152-T017, pinned in scripts/PRODUCT_REF); no tagged segarecomp release can install it yet. Compared with the ABI 1 package on all 28 scene classes of its scope. The ABI 1 package of this image stays the published one."
       ],
       "build": {
         "writer": "segarecomp mod pack",
