@@ -1,8 +1,8 @@
-# Sonic 3 & Knuckles (Genesis, lock-on composite): native widescreen as a schema 3 / ABI 2 package (SEG-152-T011)
+# Sonic 3 & Knuckles (Genesis, lock-on composite): native widescreen as a schema 3 / ABI 2 package (SEG-152-T011, adaptive placement SEG-152-T016)
 
 > The ABI 2 successor of the [Sonic 3 & Knuckles widescreen provider](../native-widescreen/README.md): the same game knowledge, constants and verification logic, the same BPS delta and the same scope (reconstructed scenery of the single-player running levels, the relocated animated HUD), delivered through the exact-frame ABI 2 API (scenery windows, the per-row origin delta of ABI minor 3, the per-row generic mask, one RGBA bitmap, refusal with the ABI 1 reason). The ABI 1 package stays published and unchanged.
 
-**Status: candidate (not approved for release selection).** No release selects it, so it has no catalog entry and no release asset. Its package version `0.1.0` is recorded in [`package.json`](package.json) (identity and SHA-256 from the product's `mod pack` at the revision pinned in `scripts/PRODUCT_REF`).
+**Status: candidate (not approved for release selection).** No release selects it, so it has no catalog entry and no release asset. Its package version `0.2.0` is recorded in [`package.json`](package.json) (identity and SHA-256 from the product's `mod pack` at the revision pinned in `scripts/PRODUCT_REF`).
 
 | | |
 |---|---|
@@ -13,7 +13,39 @@
 | Capabilities | `frame.vdp` (selects the exact-frame `render`), `frame.work_ram`, `overlay.rgba`, `scenery.words`, `state.mod` (448 bytes, schema 1: the registered plane multiples of the last produced frame). No guest memory read |
 | BPS delta | `bps/game.bps` is byte-for-byte the delta of the published ABI 1 package (source `fba0677f...`, target `8d31e8b6288f0f35304daaa33a8ea7431b514e4cf2f34993594a21b3d44e7c43`, 172 bytes); `[build] header_repair = "none"` keeps the patched image equal to that target |
 | Geometry claim | up to 32:9, scene `level` (scenery and HUD) |
-| Placement | centred (the ABI 1 presentation): the provider declares no `view_left`. It builds its windows from the margin it learns (`view->side`) and a `left_px` variable (equal to the margin in this baseline), so the adaptive-placement tasks only change how `left_px` is chosen |
+| Placement | adaptive in the scrolling levels (`view_left`, ADR 0315): see [Adaptive placement](#adaptive-placement-seg-152-t016). Original and 4:3 stay centred. Compiled with `S3K_PLACEMENT 0` the provider is the centred SEG-152-T011 baseline |
+
+## Adaptive placement (SEG-152-T016)
+
+`left_px` (the columns of the planned `2 * margin` that lie left of the native picture) is a **pure function of the camera and the act's layout width**, with no placement state: 0 at camera 0, `margin` in the middle, `2 * margin` where the camera reaches the layout's end minus 320. It ramps over `6 * margin` pixels of camera travel at each end (`RAMP_DEN` 6, the shape of the Castle of Illusion package), so it never moves faster than 1/6 of the camera. A range narrower than `2 * margin` uses the plain rule (picture at the left until the camera is `margin` in); no shipped scene is that narrow.
+
+* **Right boundary = the layout's end, not the game's camera limit.** The game's right limit is a default far past the layout until a boss or act event locks the camera, and the lock arrives when the camera is already there, so a placement computed from it would jump. The layout width is constant for the act: the view never passes the end of the layout and the placement is continuous. **Limit:** where the game stops the camera before the layout's end (a boss arena), the picture there is only partly shifted, or centred if it stops `6 * margin` or more earlier.
+* **Declared on every frame of a shifting scene,** also on frames whose scenery the identity checks decline (the host then extends them generically). Declaring it only with authored scenery recentred the picture for single frames (a jump of up to 238 px, found and fixed during this task). Frames the provider refuses wholly while a level loads (title card) are centred by the host.
+* **Background registration** samples the actual extension: the baseline's sample budget, split between the left and right sides in proportion to the placement (identical to the baseline when centred).
+* **Centred scenes** (scenery and HUD unchanged): Sky Sanctuary act 2 (the camera never scrolls), The Doomsday, the Lava Reef boss act and the Death Egg final-boss act (their camera is script-driven: minimum = maximum = camera, or an automatic scroll, not a level traversal). **Shifting scenes (24):** Angel Island to Death Egg acts 1 and 2 except Sky Sanctuary act 2, and Hidden Palace.
+
+### Placement evidence (local, aggregate only)
+
+Same local test image and debug-fly method as the zone sweep below, with a logging-only variant of the provider. The flights are a few thousand frames and do **not** cross every level end to end.
+
+* **All 28 scenes at 32:9, 21:9 and 16:9 (84 runs):** the declared placement equals an independent re-implementation on every level frame with a host verdict except 168 wholly refused level-load frames (centred). While the camera moves continuously (at most 24 px per frame) the shift changes by at most 4 px per frame, outside the one change from a refused load frame to the first level frame. A camera teleport (restart, act change) moves the placement with it.
+* **One unbroken start to right-end traversal at all three ratios:** Marble Garden act 2: `left_px` 0, centred, then `2 * margin` in 1,604 consecutive frames, maximum step 3, never against the camera, authored scenery served on 1,316 of them (the rest are the baseline's own declines).
+* **What the flights reached per scene** (at 32:9):
+
+  | Observed | Scenes |
+  |---|---|
+  | left value at camera 0, centred and `2 * margin` (not always in one unbroken run) | Marble Garden 2, Launch Base 2, Death Egg 1 |
+  | centred and `2 * margin`; camera 0 not among the served frames | Hydrocity 1 and 2, Marble Garden 1, Carnival Night 2, Sandopolis 2, Lava Reef 1 and 2 |
+  | camera 0 left-aligned and centred; right end not reached | Angel Island 1, Carnival Night 1, Flying Battery 1 and 2, IceCap 1, Sky Sanctuary 1 |
+  | partial: centred and part of a ramp; no end value | Launch Base 1, Mushroom Hill 2, Sandopolis 1, Death Egg 2, Hidden Palace |
+  | partial: part of the left ramp only (centred not reached) | Mushroom Hill 1 |
+  | **no shift observed** (the flight's camera did not move) | Angel Island 2, IceCap 2 |
+
+* **Against the SEG-152-T011 baseline, 84 runs / 553,401 frames:** with `S3K_PLACEMENT 0`, every verdict, the coverage accounting, the guest-state log, the final picture and the final work RAM are identical to the T011 provider. With placement on, every verdict field **except the shift** (status, margin, accepted components, reason, authored status) and the coverage accounting are identical to T011, so no new decline appears; the guest-state log and final work RAM equal the centred run's; a second run repeats exactly.
+* **Pixels:** 18 captures (Marble Garden 2, Lava Reef 1, Hydrocity 2, Launch Base 2; left, ramp, centred, right) compared with the centred build on the same frame: **0 differing pixels** in the world columns both show (the HUD's screen area excluded). Seen by eye (two of the captures): at the level start and at the layout end the shifted view shows authored scenery where the centred one shows cells outside the level; the HUD keeps its place at the left of the surface. The provider submits no virtual sprites.
+* **Lifecycle** (Marble Garden 2 and Lava Reef 1, all three ratios): quick save/load and rewind near both ends: 0 placement mismatches. Reversal flights (7 to 9 camera direction changes): 0 mismatches, maximum step 3, never against the camera. Aspect changes 21:9, 16:9, Original, 4:3, 32:9 mid-level: every extended frame matches the function for its own margin, Original and 4:3 are centred, the run repeats exactly and ends with the uninterrupted run's work RAM.
+* **Parallax:** background factors measured at 32:9 from the game's per-line scroll buffer (14 sampled lines, the median over 60-frame windows of steady scrolling, per scene) all lie in 0..1, so the drift of a background layer against the foreground during a ramp is at most `(1 - k) / 6` <= 0.167 of the camera's speed (no measurement for Angel Island 2, IceCap 2 and Sky Sanctuary 2, whose camera did not scroll).
+* **Bounds:** `tests/test_sonic3k_placement.py` runs the placement and the window builder for three margins and three placements under AddressSanitizer and UBSan on **fabricated** work RAM. The real-image runs were not sanitizer builds.
 
 ## What is carried over, what changes
 

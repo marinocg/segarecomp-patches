@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           export SEGARECOMP_CLI="$RUNNER_TEMP/pc/build/apps/segarecomp/segarecomp" SEGARECOMP_SDK_DIR="$RUNNER_TEMP/pc/src/platforms"
           export SEGARECOMP_CASTLE_CLI="$RUNNER_TEMP/pc-castle/build/apps/segarecomp/segarecomp" SEGARECOMP_CASTLE_SDK_DIR="$RUNNER_TEMP/pc-castle/src/platforms"
-          python3 -m unittest -v tests.test_castle_activation_exec tests.test_castle_provider tests.test_castle_activation tests.test_castle_debug_fly tests.test_input_recorder tests.test_mod_projects tests.test_publication 2>&1 | tee "$RUNNER_TEMP/exec.log"
+          python3 -m unittest -v tests.test_castle_activation_exec tests.test_castle_provider tests.test_castle_activation tests.test_castle_debug_fly tests.test_sonic3k_placement tests.test_input_recorder tests.test_mod_projects tests.test_publication 2>&1 | tee "$RUNNER_TEMP/exec.log"
           grep -E "^Ran [0-9]+ tests" "$RUNNER_TEMP/exec.log"
           ! grep -q "skipped" "$RUNNER_TEMP/exec.log"
       - name: Check and pack the schema 3 projects this pull request changed and the prepared releases it affects (same selection as the release rebuild), nothing else
