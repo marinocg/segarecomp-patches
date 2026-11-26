@@ -105,7 +105,7 @@ static int floor_div(int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b)
 
 /* The zones and acts the scenery component is validated for: bit `act` of entry `zone` (zone ids: 0 Green Hill, 1 Labyrinth, 2 Marble, 3 Star Light, 4 Spring Yard, 5 Scrap Brain; Labyrinth's
  * act 3 slot is the third Scrap Brain act). Every frame is additionally identity-checked, so an entry only widens the scope; it never relaxes a check. */
-static const uint8_t k_scenery_acts[6] = {0x07, 0x0F, 0x07, 0x07, 0x07, 0x07};   /* Green Hill acts 1-3 */
+static const uint8_t k_scenery_acts[6] = {0x07, 0x0F, 0x07, 0x07, 0x07, 0x07};   /* acts 1-3 of every zone, plus the fourth slot of zone 1 (the ABI 1 provider's scope; the comment was wrong to say Green Hill only) */
 
 static int scenery_scope(unsigned zone, unsigned act) { return zone < 6U && act < 8U && ((k_scenery_acts[zone] >> act) & 1U) != 0U; }
 
