@@ -1,0 +1,50 @@
+{
+  "package_format": 1,
+  "platform": "genesis",
+  "source_identity_kind": "cartridge-image-sha256",
+  "bios_requirement": "none",
+  "game": "Sonic 3 & Knuckles",
+  "packages": [
+    {
+      "id": "sonic3k-native-widescreen-abi2",
+      "version": "0.1.0",
+      "name": "Sonic 3 & Knuckles Native Widescreen (lock-on, ABI 2)",
+      "schema_version": 3,
+      "native_abi": 2,
+      "capabilities": [
+        "frame.vdp",
+        "frame.work_ram",
+        "overlay.rgba",
+        "scenery.words",
+        "state.mod"
+      ],
+      "trust": "trusted-native-source",
+      "executable_code": true,
+      "package_sha256": "c8dde1a68e6ba63e9e6bd3a9d9dfa6928207565a0b657470dcb9e0fd0f9831f9",
+      "package_size": 31906,
+      "package_identity": "f1e1f83dc8a29ba58e70ef67a68725317eda1322b30ae80b54b0bacaaffe6d22",
+      "images": [
+        {
+          "label": "lock-on-composite",
+          "sha256": "fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23"
+        }
+      ],
+      "license": "MPL-2.0",
+      "author": "segarecomp SEG-124",
+      "evidence_tier": "synthetic-only",
+      "gameplay": "changes slightly",
+      "supported_scope": "Single-player Sonic route of the 4 MiB Sonic & Knuckles + Sonic 3 lock-on composite (built with the lock-on cartridge declaration) with reconstructed scenery (foreground, and background where the level layout explains it) and the relocated animated HUD (the ABI 2 successor of the published ABI 1 package: same scope, same BPS delta, same verification).",
+      "limitations": [
+        "Applies only to the exact 4 MiB lock-on composite this entry lists; standalone Sonic 3 or Sonic & Knuckles images are different identities, and it must be built as a declared lock-on cartridge (the launcher selects it automatically for this image; CLI builds need --mapper lock_on).",
+        "Some backgrounds still use the VDP's own wrapped scenery. Competition mode, bonus stages, the ending and attract-mode demos fall back to the generic renderer.",
+        "Gameplay can differ slightly: additional actors and rings become active in the widened margins (the BPS delta is the ABI 1 package's).",
+        "Needs a segarecomp build with native ABI 2 minor 3 (a product revision that contains SEG-152-T017, pinned in scripts/PRODUCT_REF); no tagged segarecomp release can install it yet. Compared with the ABI 1 package on all 28 scene classes of its scope. The ABI 1 package of this image stays the published one."
+      ],
+      "build": {
+        "writer": "segarecomp mod pack",
+        "writer_ref": "52cecb2e2f725b7f757ac535f7843bd6cdb2a7a8",
+        "deterministic": true
+      }
+    }
+  ]
+}

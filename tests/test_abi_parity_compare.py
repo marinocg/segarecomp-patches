@@ -342,3 +342,14 @@ class Evidence(unittest.TestCase):
             self.assertEqual((pathlib.Path(t) / "x.png").read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
         with self.assertRaises(ValueError):
             tool.bmp_info(a[:60])
+
+class RestoreFrame(unittest.TestCase):
+    """SEG-152-T011: the one newly produced frame after a restore may be a STALE_STATE refusal or the scenery without the HUD; nothing else is exempt."""
+    def test_exempt_shapes(self):
+        self.assertTrue(tool.self_restore_ok((2, 238, 0, 0, 1, 0)))   # nothing accepted, reason 1 (STALE_STATE)
+        self.assertTrue(tool.self_restore_ok((2, 238, 0, 2, 0, 1)))   # scenery only
+    def test_other_shapes_are_not_exempt(self):
+        self.assertFalse(tool.self_restore_ok((2, 238, 0, 3, 0, 1)))   # a full frame is the ordinary verdict
+        self.assertFalse(tool.self_restore_ok((2, 238, 0, 0, 2, 0)))   # an unsupported-scene refusal
+        self.assertFalse(tool.self_restore_ok((2, 238, 5, 2, 0, 1)))   # a placement shift
+

@@ -414,6 +414,23 @@ def check_repo_assets(out):
 
 
 @unittest.skipUnless(CLI and SDK, "set SEGARECOMP_CLI and SEGARECOMP_SDK_DIR to run against the product's mod tools")
+class Sonic3kAbi2(unittest.TestCase):
+    """SEG-152-T011: the Sonic 3 & Knuckles ABI 2 candidate is validated by the exec job with the pinned product CLI (mod check, deterministic mod pack, recorded identity / SHA-256 / size)."""
+    D = "patches/genesis/sonic-3-and-knuckles/native-widescreen-abi2"
+    def test_recorded_pinned_and_reproducible(self):
+        rec = next(pk for pk in release_meta.packages(ROOT) if pk.id == "sonic3k-native-widescreen-abi2")
+        self.assertEqual((rec.version, rec.p["schema_version"], rec.p["native_abi"]), ("0.1.0", 3, 2))
+        self.assertEqual(rec.build.get("writer_ref"), (ROOT / "scripts/PRODUCT_REF").read_text().strip())
+        e = []; check_repo.check_mod_projects(ROOT, CLI, e, ["--cc", CC, "--sdk-dir", SDK], only={self.D}); self.assertEqual(e, [])
+    def test_the_bps_delta_is_the_published_abi1_delta(self):
+        a = (ROOT / self.D / "bps/game.bps").read_bytes(); b = (ROOT / "patches/genesis/sonic-3-and-knuckles/native-widescreen/source/sonic3k-native-widescreen.bps").read_bytes()
+        self.assertEqual(a, b)
+    def test_it_is_a_candidate_and_the_abi1_package_stays_eligible(self):
+        self.assertEqual(release_meta.state_of(ROOT, "genesis/sonic-3-and-knuckles/native-widescreen-abi2"), "candidate")
+        self.assertEqual(release_meta.state_of(ROOT, "genesis/sonic-3-and-knuckles/native-widescreen"), "eligible")
+
+
+@unittest.skipUnless(CLI and SDK, "set SEGARECOMP_CLI and SEGARECOMP_SDK_DIR to run against the product's mod tools")
 class CastleIntegration(unittest.TestCase):
     """The real Castle projects, real product CLI: a dry-run release that selects only castle-of-illusion-widescreen-practice."""
     PID = "castle-of-illusion-widescreen-practice"
