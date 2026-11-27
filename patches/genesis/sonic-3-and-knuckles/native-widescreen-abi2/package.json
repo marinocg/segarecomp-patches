@@ -43,7 +43,7 @@
       ],
       "build": {
         "writer": "segarecomp mod pack",
-        "writer_ref": "e0f6657c7efc618afd8a06cbba263bc8a62d87fd",
+        "writer_ref": "52cecb2e2f725b7f757ac535f7843bd6cdb2a7a8",
         "deterministic": true
       }
     }
