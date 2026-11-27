@@ -32,8 +32,12 @@
 #define S1_LIVES 0xFE12U        /* byte */
 #define S1_RINGS 0xFE20U        /* word */
 #define S1_WORLD_W 0x4000       /* 64 chunks of 256 px */
+#define S1_LIMRIGHT 0xF722U     /* word: the camera's current right limit (the last value of the camera x: level width - 320; constant per act in the supported scope) */
 
 /* The reasons of a refusal are the ABI 1 diagnostics (SEGA_GEN_REASON_* are the host's GENESIS_COMPAT_* values). */
+#ifndef S1_PLACEMENT
+#define S1_PLACEMENT 1          /* 0: the SEG-152-T009 baseline (the picture always centred, no placement declared); the baseline comparison builds with 0 */
+#endif
 #define REASON_OK 0U
 #define REASON_UNSUPPORTED_SCENE SEGA_GEN_REASON_UNSUPPORTED_SCENE
 #define REASON_BAD_STATE SEGA_GEN_REASON_BAD_STATE
@@ -42,7 +46,7 @@
 
 #define MAX_COLS 128U           /* one scenery window: at most 128 x 32 words (4096), at most two windows per plane */
 #define MAX_WIN_ROWS 32U
-#define SPAN_MAX 256            /* the two windows of a plane together cover at most this many columns */
+#define NEED_MAX 1024           /* the translated world columns the lines of one plane ask span at most this many (the two windows of a plane then cover the asked ones: at most 2 x MAX_COLS) */
 
 static unsigned u16(const uint8_t *r, unsigned a) { return ((unsigned)r[a & 0xFFFFU] << 8) | r[(a + 1U) & 0xFFFFU]; }
 
@@ -83,7 +87,10 @@ typedef struct Sonic1Frame {
 
 static Sonic1Frame g_frame;
 static uint16_t g_words[2][2][MAX_COLS * MAX_WIN_ROWS];   /* [plane][window] */
-static int32_t g_cell[MAX_WIN_ROWS][SPAN_MAX];            /* the answer (a name-table word) of a plane cell as the lines that ask it want it, or -1 while no line asked */
+static uint8_t g_set[2][MAX_COLS * MAX_WIN_ROWS];         /* 1 once the cell of that window has its answer */
+static int g_lo[S1_HSCROLL_LINES], g_hi[S1_HSCROLL_LINES], g_cand_lo[S1_HSCROLL_LINES];   /* per line: the lowest and highest translated world column it asks */
+static uint8_t g_masked[S1_HSCROLL_LINES];                  /* 1: this line is answered by the VDP's own plane (the per-row generic mask) */
+static uint8_t g_need[NEED_MAX];                           /* 1: some line asks this translated world column of the plane */
 static uint8_t g_hud_rgba[104U * 224U * 4U];
 
 /* Congruent value of `v` (mod `period`) nearest to `ref` within [ref - period/2, ref + period/2). */
@@ -98,7 +105,7 @@ static int floor_div(int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b)
 
 /* The zones and acts the scenery component is validated for: bit `act` of entry `zone` (zone ids: 0 Green Hill, 1 Labyrinth, 2 Marble, 3 Star Light, 4 Spring Yard, 5 Scrap Brain; Labyrinth's
  * act 3 slot is the third Scrap Brain act). Every frame is additionally identity-checked, so an entry only widens the scope; it never relaxes a check. */
-static const uint8_t k_scenery_acts[6] = {0x07, 0x0F, 0x07, 0x07, 0x07, 0x07};   /* Green Hill acts 1-3 */
+static const uint8_t k_scenery_acts[6] = {0x07, 0x0F, 0x07, 0x07, 0x07, 0x07};   /* acts 1-3 of every zone, plus the fourth slot of zone 1 (the ABI 1 provider's scope; the comment was wrong to say Green Hill only) */
 
 static int scenery_scope(unsigned zone, unsigned act) { return zone < 6U && act < 8U && ((k_scenery_acts[zone] >> act) & 1U) != 0U; }
 
@@ -200,65 +207,179 @@ static unsigned ss_check(Sonic1Frame *f, const SegaGenesisFrameView *v) {
  * line + vscroll of that line; the ABI 1 provider answered the same lookup with the world cell at world x = screen x + off(line) (off(line) is -hscroll up to a multiple of 512, verified per line).
  * A line therefore needs the world cell (c + k, r + dy) for the plane cell (c, r) it asks, k = (hscroll + off) / 8 being the line's own whole-plane shift. The provider states that shift per produced
  * row as the origin delta, so the host looks up the TRANSLATED world column c + k_row; the windows are keyed by world column and plane row, i.e. by a function of the world cell alone, and two lines of
- * one plane cell row whose shifts differ by a multiple of 64 cells no longer need different words for the same window cell. Packing: one window when the translated width is at most MAX_COLS columns,
- * else two EQUAL halves up to SPAN_MAX columns, else the plane cannot be expressed and the caller declines the scenery.
+ * one plane cell row whose shifts differ by a multiple of 64 cells no longer need different words for the same window cell. Packing: the translated columns some line asks (never the picture itself, never a side with no extension) are covered by at most two windows of at most MAX_COLS columns each (a greedy cover: the first starts at the lowest asked column, the second at the first
+ * asked column beyond the first); when that is not enough, the rows are split once and each group of rows gets one window over the columns its own lines ask; else the plane cannot be expressed and the caller declines the scenery.
  * `left_px` / `margin_px`: the planned per-side margin and the number of planned columns left of the picture (the centred baseline: left_px == margin_px). The windows are built for exactly that
  * pair; a placement is a different `left_px` and nothing else changes. Returns 0 on success. */
 static int build_plane_windows(const SegaGenesisRenderApi *r, const Sonic1Frame *f, const uint8_t *ram, unsigned plane, unsigned height, unsigned left_px, unsigned margin_px) {
   const unsigned right_px = 2U * margin_px - left_px;
   const int *off = plane == 0U ? f->off_fg : f->off_bg;
   const int camy = plane == 0U ? f->camy : f->bgy;
-  int cmin = 0, cmax = 0, rmin, rmax, rows, span, c, rr;
-  unsigned l, windows;
+  int cmin = 0, cmax = 0, rmin, rmax, rows, span, c, nwin = 0, wc0[2] = {0, 0}, wr0[2] = {0, 0}, wrn[2] = {0, 0}, rmn[MAX_WIN_ROWS], rmx[MAX_WIN_ROWS];
+  unsigned l, w, wcols[2] = {0U, 0U};
   int16_t al_[S1_HSCROLL_LINES], bl_[S1_HSCROLL_LINES], ar_[S1_HSCROLL_LINES], br_[S1_HSCROLL_LINES], k_[S1_HSCROLL_LINES];
-  for (l = 0U; l < height; ++l) {
-    /* The host asks ONLY the off-picture pixels of a line: x = -left_px .. -1 on the left and x = 320 .. 319 + right_px on the right (never an in-picture pixel), each at plane x = x - hscroll. */
-    const int a = floor_div(-(int)left_px - f->hs[plane][l], 8), b = floor_div(319 + (int)right_px - f->hs[plane][l], 8);
-    const int k = (f->hs[plane][l] + off[l]) / 8;
-    al_[l] = (int16_t)a;
-    bl_[l] = (int16_t)floor_div(-1 - f->hs[plane][l], 8);
-    ar_[l] = (int16_t)floor_div(320 - f->hs[plane][l], 8);
-    br_[l] = (int16_t)b;
-    k_[l] = (int16_t)k;
-    if (l == 0U || a + k < cmin) cmin = a + k;   /* translated world columns */
-    if (l == 0U || b + k > cmax) cmax = b + k;
-  }
+  int seen = 0, ok = 0, nmask = 0;
   rmin = floor_div(f->vs[plane][0], 8);
   rmax = floor_div((int)height - 1 + f->vs[plane][0], 8);
   rows = rmax - rmin + 1;
+  if (rows < 1 || rows > (int)MAX_WIN_ROWS) return 1;
+  for (c = 0; c < rows; ++c) { rmn[c] = 1 << 20; rmx[c] = -(1 << 20); }
+  for (l = 0U; l < height; ++l) {
+    /* The host asks ONLY the off-picture pixels of a line: x = -left_px .. -1 on the left and x = 320 .. 319 + right_px on the right (never an in-picture pixel), each at plane x = x - hscroll. A side that has
+     * no extension asks nothing. */
+    const int k = (f->hs[plane][l] + off[l]) / 8;
+    const int row = floor_div((int)l + f->vs[plane][l], 8) - rmin;
+    if (row < 0 || row >= rows) return 1;
+    al_[l] = (int16_t)floor_div(-(int)left_px - f->hs[plane][l], 8);
+    bl_[l] = (int16_t)(left_px != 0U ? floor_div(-1 - f->hs[plane][l], 8) : al_[l] - 1);
+    ar_[l] = (int16_t)floor_div(320 - f->hs[plane][l], 8);
+    br_[l] = (int16_t)(right_px != 0U ? floor_div(319 + (int)right_px - f->hs[plane][l], 8) : ar_[l] - 1);
+    k_[l] = (int16_t)k;
+    if (al_[l] <= bl_[l]) {   /* translated world columns */
+      if (seen == 0 || al_[l] + k < cmin) cmin = al_[l] + k;
+      if (seen == 0 || bl_[l] + k > cmax) cmax = bl_[l] + k;
+      if (al_[l] + k < rmn[row]) rmn[row] = al_[l] + k;
+      if (bl_[l] + k > rmx[row]) rmx[row] = bl_[l] + k;
+      seen = 1;
+    }
+    if (ar_[l] <= br_[l]) {
+      if (seen == 0 || ar_[l] + k < cmin) cmin = ar_[l] + k;
+      if (seen == 0 || br_[l] + k > cmax) cmax = br_[l] + k;
+      if (ar_[l] + k < rmn[row]) rmn[row] = ar_[l] + k;
+      if (br_[l] + k > rmx[row]) rmx[row] = br_[l] + k;
+      seen = 1;
+    }
+  }
+  if (seen == 0) return 6;
   span = cmax - cmin + 1;
-  if (rows < 1 || rows > (int)MAX_WIN_ROWS || span > SPAN_MAX) return 1;
-  for (rr = 0; rr < rows; ++rr)
-    for (c = 0; c < span; ++c) g_cell[rr][c] = -1;
+  /* Packing, first choice: the translated columns some line asks (never the picture itself, never a side with no extension) covered by at most two windows of at most MAX_COLS columns each over all rows (a greedy cover:
+   * the first starts at the lowest asked column, the second at the first asked column beyond the first). Columns nobody asks (the picture between a line's two sides, the gap between two scroll bands) cost nothing. */
+  if (span <= NEED_MAX) {
+    for (c = 0; c < span; ++c) g_need[c] = 0U;
+    for (l = 0U; l < height; ++l) {
+      for (c = al_[l]; c <= bl_[l]; ++c) g_need[c + k_[l] - cmin] = 1U;
+      for (c = ar_[l]; c <= br_[l]; ++c) g_need[c + k_[l] - cmin] = 1U;
+    }
+    ok = 1;
+    for (c = 0; c < span;) {
+      int last = c, e;
+      if (g_need[c] == 0U) { ++c; continue; }
+      if (nwin == 2) { ok = 0; break; }   /* more than two column windows would be needed */
+      for (e = c; e < span && e < c + (int)MAX_COLS; ++e) if (g_need[e] != 0U) last = e;
+      wc0[nwin] = cmin + c;
+      wcols[nwin] = (unsigned)(last - c + 1);
+      wr0[nwin] = 0;
+      wrn[nwin] = rows;
+      ++nwin;
+      c = last + 1;
+    }
+  }
+  /* Second choice: the plane's rows split once; each group of consecutive plane cell rows gets ONE window over the columns its own lines ask (a band of lines that scroll alike needs only its own columns, however far the
+   * other bands are). The split is the first one for which both groups fit MAX_COLS columns. */
+  if (ok == 0) {
+    int split;
+    nwin = 0;
+    for (split = 1; split <= rows && ok == 0; ++split) {
+      int lo[2] = {1 << 20, 1 << 20}, hi[2] = {-(1 << 20), -(1 << 20)}, fits = 1, g;
+      for (c = 0; c < rows; ++c) {
+        g = c < split ? 0 : 1;
+        if (rmn[c] < lo[g]) lo[g] = rmn[c];
+        if (rmx[c] > hi[g]) hi[g] = rmx[c];
+      }
+      for (g = 0; g < 2; ++g) if (hi[g] >= lo[g] && hi[g] - lo[g] + 1 > (int)MAX_COLS) fits = 0;
+      if (fits == 0) continue;
+      nwin = 0;
+      for (g = 0; g < 2; ++g) {
+        if (hi[g] < lo[g]) continue;
+        wc0[nwin] = lo[g];
+        wcols[nwin] = (unsigned)(hi[g] - lo[g] + 1);
+        wr0[nwin] = g == 0 ? 0 : split;
+        wrn[nwin] = g == 0 ? split : rows - split;
+        ++nwin;
+      }
+      ok = nwin > 0;
+    }
+    if (ok == 0) {
+      /* Third choice: no two windows hold every line, so the lines that do not fit are answered by the VDP's own plane (the per-row generic mask, the ABI 1 `own_plane` lines) and the rest keep their authored scenery. The
+       * two column windows (each starting at the lowest asked column of some line, covering all plane rows) are chosen to cover the most lines; ties keep the lowest start. */
+      int ncand = 0, best = 0, bs1 = 0, bs2 = 0, bhas2 = 0, s1, s2;
+      for (l = 0U; l < height; ++l) {
+        int lo = 1 << 20, hi = -(1 << 20), dup = 0, i;
+        if (al_[l] <= bl_[l]) { lo = al_[l] + k_[l]; hi = bl_[l] + k_[l]; }
+        if (ar_[l] <= br_[l]) { if (ar_[l] + k_[l] < lo) lo = ar_[l] + k_[l]; if (br_[l] + k_[l] > hi) hi = br_[l] + k_[l]; }
+        g_lo[l] = lo;
+        g_hi[l] = hi;
+        for (i = 0; i < ncand && dup == 0; ++i) if (g_cand_lo[i] == lo) dup = 1;
+        if (dup == 0 && hi >= lo && ncand < (int)S1_HSCROLL_LINES) g_cand_lo[ncand++] = lo;
+      }
+      for (s1 = 0; s1 < ncand; ++s1)
+        for (s2 = -1; s2 < ncand; ++s2) {
+          int n = 0;
+          for (l = 0U; l < height; ++l) {
+            if (g_hi[l] < g_lo[l]) continue;
+            if (g_lo[l] >= g_cand_lo[s1] && g_hi[l] < g_cand_lo[s1] + (int)MAX_COLS) ++n;
+            else if (s2 >= 0 && g_lo[l] >= g_cand_lo[s2] && g_hi[l] < g_cand_lo[s2] + (int)MAX_COLS) ++n;
+          }
+          if (n > best) { best = n; bs1 = g_cand_lo[s1]; bhas2 = s2 >= 0; bs2 = s2 >= 0 ? g_cand_lo[s2] : 0; }
+        }
+      if (best == 0) return 1;   /* nothing of the plane can be authored: the caller declines the scenery */
+      nwin = 0;
+      for (int q = 0; q < 2; ++q) {
+        const int s = q == 0 ? bs1 : bs2;
+        int top = s - 1;
+        if (q == 1 && bhas2 == 0) break;
+        for (l = 0U; l < height; ++l)
+          if (g_hi[l] >= g_lo[l] && g_lo[l] >= s && g_hi[l] < s + (int)MAX_COLS && (q == 0 || !(g_lo[l] >= bs1 && g_hi[l] < bs1 + (int)MAX_COLS)) && g_hi[l] > top) top = g_hi[l];
+        if (top < s) continue;
+        wc0[nwin] = s;
+        wcols[nwin] = (unsigned)(top - s + 1);
+        wr0[nwin] = 0;
+        wrn[nwin] = rows;
+        ++nwin;
+      }
+      for (l = 0U; l < height; ++l) {
+        int covered = 0, q;
+        for (q = 0; q < nwin; ++q) if (g_hi[l] >= g_lo[l] && g_lo[l] >= wc0[q] && g_hi[l] < wc0[q] + (int)wcols[q]) covered = 1;
+        g_masked[l] = (uint8_t)(covered == 0 && g_hi[l] >= g_lo[l] ? 1U : 0U);
+      }
+      nmask = 1;
+    }
+  }
+  for (w = 0U; w < (unsigned)nwin; ++w)
+    for (unsigned i = 0U; i < wcols[w] * (unsigned)wrn[w]; ++i) { g_words[plane][w][i] = 0U; g_set[w][i] = 0U; }
   for (l = 0U; l < height; ++l) {
     const int row = floor_div((int)l + f->vs[plane][l], 8) - rmin;
     const int wrow = rmin + row + (camy - f->vs[plane][0]) / 8;   /* the world cell row of this plane cell row */
+    if (nmask != 0 && g_masked[l] != 0U) continue;   /* answered by the VDP's own plane */
     for (unsigned side = 0U; side < 2U; ++side)
       for (c = side == 0U ? al_[l] : ar_[l]; c <= (side == 0U ? bl_[l] : br_[l]); ++c) {
-        int32_t *o = &g_cell[row][c + k_[l] - cmin];
-        if (*o < 0) {
-          const int word = world_cell(ram, plane, c + k_[l], wrow);
-          if (word < 0) return 3;
-          *o = word;   /* a function of the world cell alone: every line that asks this translated cell wants this word */
+        const int wcol = c + k_[l];
+        for (w = 0U; w < (unsigned)nwin; ++w) {
+          const int rel = wcol - wc0[w];
+          if (rel >= 0 && rel < (int)wcols[w] && row >= wr0[w] && row < wr0[w] + wrn[w]) {
+            const unsigned idx = (unsigned)(row - wr0[w]) * wcols[w] + (unsigned)rel;
+            if (g_set[w][idx] == 0U) {
+              const int word = world_cell(ram, plane, wcol, wrow);
+              if (word < 0) return 3;
+              g_words[plane][w][idx] = (uint16_t)word;   /* a function of the world cell alone: every line that asks this translated cell wants this word */
+              g_set[w][idx] = 1U;
+            }
+            break;
+          }
         }
       }
   }
-  windows = span > (int)MAX_COLS ? 2U : 1U;
-  for (unsigned w = 0U; w < windows; ++w) {
-    const unsigned n0 = windows == 1U ? (unsigned)span : ((unsigned)span + 1U) / 2U;
-    const int c0 = w == 0U ? cmin : cmin + (int)n0;
-    const unsigned cols = windows == 1U ? (unsigned)span : (w == 0U ? n0 : (unsigned)span - n0);
-    for (rr = 0; rr < rows; ++rr)
-      for (unsigned i = 0U; i < cols; ++i) {
-        const int32_t word = g_cell[rr][c0 - cmin + (int)i];
-        g_words[plane][w][(unsigned)rr * cols + i] = (uint16_t)(word < 0 ? 0 : word);   /* a cell no line asks is never read */
-      }
-    if (r->scenery_window(plane, c0, rmin, cols, (uint32_t)rows, g_words[plane][w]) != 0) return 4;
+  for (w = 0U; w < (unsigned)nwin; ++w)
+    if (r->scenery_window(plane, wc0[w], rmin + wr0[w], wcols[w], (uint32_t)wrn[w], g_words[plane][w]) != 0) return 4;
+  if (nmask != 0) {
+    uint8_t mask[56];
+    for (l = 0U; l < 56U; ++l) mask[l] = 0U;
+    for (l = 0U; l < height; ++l) if (g_masked[l] != 0U) mask[l >> 3] = (uint8_t)(mask[l >> 3] | (1U << (l & 7U)));
+    if (r->scenery_generic_rows(plane, mask, height, (height + 7U) / 8U) != 0) return 7;
   }
   if (r->scenery_row_origin(plane, k_, height, height * 2U) != 0) return 5;
   return 0;
 }
-
 
 /* ---------------------------------------------------------------------------------------------------------------- special stage maze in the margins */
 /* The special stage's maze is sprites, and the game only builds the sprites of the blocks inside its own 320 px view (it computes the screen position of a 16 x 16 window of 24 px blocks into a position
@@ -628,6 +749,40 @@ static int draw_hud(const Sonic1Frame *f, const SegaGenesisFrameView *v, const S
   return 1;
 }
 
+/* ---------------------------------------------------------------------------------------------------------------- placement (SEG-152-T014) */
+/* Where the native picture sits in the planned total of 2 * margin extension columns: `left_px` columns left of it, the rest right of it, as a PURE function of the camera and the camera's range (no state: replay, rewind and
+ * load see the same value for the same camera). The view is aligned left at the level's first camera position (left_px 0: the planes hold no world left of the layout's first column), centred in the middle (left_px = margin) and
+ * aligned right at the last camera position (left_px = 2 * margin: the view's right edge never passes the level's end). The picture's own parallax layers are drawn by the guest for ITS camera (scroll k * camera), so while
+ * left_px changes they drift against the foreground at (1 - k) * d(left_px)/d(camera) of the camera's speed; the ramp is therefore slow (the same shape as the reference placement of the Castle of Illusion package, a slope of
+ * at most 1/RAMP_DEN, never faster than the camera moves) at both ends and constant elsewhere. The slope bound is a property of this game's own background factors (see the README: the factors the guest uses, measured). A level
+ * narrower than the planned total keeps the plain rule (the picture at the left until the camera is `margin` in). `cam` is the camera x relative to the camera's first value; `range` its last value. */
+#define RAMP_DEN 6
+static int32_t placement(int32_t cam, int32_t range, int32_t margin) {
+  int64_t zone, lo, hi;
+  if (cam < 0) cam = 0;
+  if (range < 2 * margin) return cam < margin ? cam : margin;   /* narrower than the planned total: no room for a ramp at each end */
+  if (cam > range) cam = range;
+  zone = range / 2 < (int64_t)RAMP_DEN * margin ? range / 2 : (int64_t)RAMP_DEN * margin;   /* >= margin: a slope of at most 1 */
+  lo = cam < zone ? cam : zone;
+  hi = range - cam < zone ? range - cam : zone;
+  return (int32_t)(((int64_t)margin * lo) / zone + (int64_t)margin - ((int64_t)margin * hi) / zone);
+}
+
+/* The placement of this frame's running level, for the acts of k_placement_acts only (others: centred, no placement declared). The camera's first value is 0 in every such act (the game's left limit is 0 there and the layout's first column is world x 0) and its last value is the game's right limit
+ * (level width - 320: the camera never passes it). The LEFT limit is deliberately not read: the end-of-act sequence sets it to the right limit to lock the screen, which would collapse the range and make a camera-only
+ * placement jump; the first column of the layout is a property of the layout, not of that limit. A right limit the world cannot hold is the verified-boundary-not-obtainable fallback: the picture stays centred. */
+/* The acts whose camera start, right limit and placement were verified on the real image at every supported ratio, with save/load, rewind and aspect transitions: Green Hill acts 1-3 (zone 0). Eligibility for authored scenery
+ * (k_scenery_acts) does not imply eligibility for placement: every other scenery act keeps its scenery and HUD and the picture stays centred until its boundaries are verified (SEG-152-T014 evidence). */
+static const uint8_t k_placement_acts[6] = {0x07, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+static int placement_scope(unsigned zone, unsigned act) { return zone < 6U && act < 8U && ((k_placement_acts[zone] >> act) & 1U) != 0U; }
+
+static unsigned level_left_px(const uint8_t *ram, unsigned margin_px) {
+  const int camx = (int)u16(ram, S1_CAMX), lim_r = (int)u16(ram, S1_LIMRIGHT);
+  if (S1_PLACEMENT == 0 || !placement_scope(ram[S1_ZONE], ram[S1_ZONE + 1U]) || lim_r <= 0 || lim_r >= S1_WORLD_W) return margin_px;
+  return (unsigned)placement(camx, lim_r, (int32_t)margin_px);
+}
+
 /* ---------------------------------------------------------------------------------------------------------------- the exact-frame render */
 
 static void refuse(const SegaGenesisRenderApi *r, uint32_t requested, uint32_t reason) {
@@ -684,8 +839,11 @@ static void render_frame(const SegaModHost *host) {
   if (accepted == 0U) { refuse(r, requested, scenery_reason != REASON_OK ? scenery_reason : REASON_BAD_STATE); return; }
   (void)r->scene("level", 5U);
   if ((accepted & SEGA_GEN_COMPONENT_SCENERY) != 0U) {
+    left_px = level_left_px(ram, margin_px);
     if (build_plane_windows(r, f, ram, 0U, v->height, left_px, margin_px) != 0 || build_plane_windows(r, f, ram, 1U, v->height, left_px, margin_px) != 0)
       (void)r->decline(SEGA_GEN_COMPONENT_SCENERY, REASON_BAD_STATE);   /* the windows cannot express this frame's answers: never served half-way */
+    else if (S1_PLACEMENT != 0 && placement_scope(ram[S1_ZONE], ram[S1_ZONE + 1U]) && v->side != 0U && r->view_left != NULL && r->view_left(left_px, margin_px) != 0)
+      (void)r->decline(SEGA_GEN_COMPONENT_SCENERY, REASON_BAD_STATE);   /* a placement the host does not accept: the windows built for it are not served either */
   }
   if ((accepted & SEGA_GEN_COMPONENT_HUD) != 0U && draw_hud(f, v, vdp) != 0) {
     (void)r->overlay_fallback(HUD_X0 - HUD_PAD, 0U);
