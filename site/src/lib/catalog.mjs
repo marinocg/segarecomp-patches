@@ -31,6 +31,7 @@ const common = {
   supported_scope: z.string().min(1),
   limitations: z.array(z.string()),
   superseded_by: z.string().optional(),
+  abi_status: z.literal('deprecated').optional(),
   source_revision: z.object({ repository: https, commit: sha1, tag: z.string().optional(), tag_commit: sha1.optional() }).strict(),
   build: z.object({ writer: z.string(), writer_ref: sha1, deterministic: z.boolean() }).strict(),
   asset: z.object({ name: z.string().min(1), url: https }).strict(),
@@ -86,10 +87,49 @@ export function parseCatalog(text, where = 'catalog') {
     if (seen.has(k)) throw new Error(`${where}: duplicate catalog entry ${k}`);
     seen.add(k);
   }
+  const bad = supersessionErrors(r.data.packages);
+  if (bad.length) throw new Error(`${where}: malformed catalog: ${bad.join('; ')}`);
   return [...r.data.packages].sort((a, b) => (a.platform + a.game + a.id + a.version).localeCompare(b.platform + b.game + b.id + b.version));
 }
 
 export function loadCatalog(path) { return parseCatalog(readFileSync(path, 'utf8'), path); }
+
+export const ref = (e) => `${e.id}@${e.version}`;
+const imagesOf = (e) => (isMod(e) ? e.images.map((i) => i.sha256) : [e.source_image_sha256]);
+const compareVersions = (a, b) => { const [x, y] = [a, b].map((v) => v.match(/^(\d+)\.(\d+)\.(\d+)/).slice(1).map(Number)); return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]); };
+
+/** Why any `superseded_by` of these entries cannot be trusted to hide its predecessor (the same rules as scripts/validate_catalog.py `supersession_errors`). */
+export function supersessionErrors(entries) {
+  const by = new Map(entries.map((e) => [ref(e), e]));
+  const errs = [];
+  for (const e of entries) {
+    if (!e.superseded_by) continue;
+    const n = ref(e), next = by.get(e.superseded_by);
+    if (e.superseded_by === n) { errs.push(`${n}: supersedes itself`); continue; }
+    if (!next) { errs.push(`${n}: superseded_by ${e.superseded_by} is not in this catalog`); continue; }
+    if (next.id === e.id && compareVersions(next.version, e.version) <= 0) errs.push(`${n}: superseded_by must name a higher version`);
+    if (next.platform !== e.platform || next.game_path !== e.game_path) errs.push(`${n}: successor ${ref(next)} is for another platform or game directory`);
+    const covered = new Set(imagesOf(next));
+    if (!imagesOf(e).every((d) => covered.has(d))) errs.push(`${n}: successor ${ref(next)} does not target every image of the package it replaces`);
+    const seen = new Set([n]);   // bounded by the number of entries: every step adds a new one
+    for (let cur = next; cur; cur = by.get(cur.superseded_by)) {
+      if (seen.has(ref(cur))) { errs.push(`${n}: supersession cycle`); break; }
+      seen.add(ref(cur));
+    }
+  }
+  return errs;
+}
+
+/**
+ * The current-package browsing view: the published entries that have no published successor, in the order given. The explicit `superseded_by` pointer is the ONLY
+ * signal (never versions across ids, game titles or deprecation). A chain A -> B -> C therefore leaves only C. Throws on invalid supersession metadata.
+ * `entries` must be the whole published catalog.
+ */
+export function currentPackages(entries) {
+  const bad = supersessionErrors(entries);
+  if (bad.length) throw new Error(`invalid supersession: ${bad.join('; ')}`);
+  return entries.filter((e) => !e.superseded_by);
+}
 
 export const slug = (e) => `${e.id}/${e.version}`;
 export const shortSha = (s) => s.slice(0, 12);

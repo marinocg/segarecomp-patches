@@ -27,4 +27,5 @@ The removal gate needs a published release with the ABI 2 replacements, no recom
 
 * `catalog/index.json`: every `native_abi` 1 entry carries `abi_status: "deprecated"`. The generator derives it; no published value changes.
 * `superseded_by` is added to an old entry only when its successor is published (`scripts/prepare_release.py supersede`): the field must name an existing catalog entry and is immutable once published, so it cannot point at an unpublished package. When it is added, this table is updated in the same change.
+* The site's `/catalog/` page lists only packages without a published successor. A retained ABI 1 package stays there, marked "replacement not yet published", until `superseded_by` is recorded ([sequence](releases.md#replacing-a-published-package-supersession)); after that its page and download remain.
 * `scripts/check_repo.py` accepts exactly the four retained package versions with their recorded digests and rejects any other native ABI 1 package, including a new version of a retained id.

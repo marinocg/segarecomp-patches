@@ -31,7 +31,18 @@ Worked example: preparing Castle of Illusion widescreen + Practice+ (`castle-of-
 5. **Create the draft:** run the **release** workflow from `main` with the tag (tick *dry run* first to rebuild and verify without creating anything). `scripts/release_guard.py` refuses a draft, a published release, an inconsistent one and a bad selection; the workflow builds exactly the listed packages (the product CLI at the pinned revision for schema 3, the pinned `segapatch.py` for schema 1/2), verifies each against its recorded digest and `SHA256SUMS`, and creates a **draft** with the assets.
 6. **Publish.** A maintainer publishes the draft on GitHub. This is the only publishing action; the `verify-release` and `pages` workflows then compare the published assets of that tag with the metadata.
 7. **Record it** in a follow-up pull request: `python3 scripts/prepare_release.py publish --tag v0.2.0 --commit <SHA> [--tag-commit <SHA>]` (the commit the tag points at), then `python3 scripts/build_catalog.py`. The catalog, and after the Pages deployment the site, now list the package with its download button. Never edit `catalog/index.json` by hand: CI rejects a stale one.
-8. **Publish an updated version:** change the sources, bump `version` in `mod.toml`, run `pin` again (a new entry is added next to the old one), select `id@new-version` in a new release, and after publication run `prepare_release.py supersede --old id@old --new id@new`. The old entry stays downloadable and unchanged; a published version must be strictly increased, never replaced.
+8. **Publish an updated version:** change the sources, bump `version` in `mod.toml`, run `pin` again (a new entry is added next to the old one), select `id@new-version` in a new release, then record the replacement (below). The old entry stays downloadable and unchanged; a published version must be strictly increased, never replaced.
+
+## Replacing a published package (supersession)
+
+A successor may be a higher version of the same id, or a new id (for example the ABI 2 successor of a Sonic ABI 1 package, [abi1-retention.md](abi1-retention.md)). Merging its source or preparing its release replaces nothing: until it is published the old package stays current on the site.
+
+1. Release the successor with steps 1 to 6.
+2. In the follow-up pull request of step 7: `python3 scripts/prepare_release.py publish --tag <tag> --commit <SHA> [--tag-commit <SHA>]`.
+3. In the same pull request, once per replaced package: `python3 scripts/prepare_release.py supersede --old <old-id>@<version> --new <new-id>@<version>`. It writes only `superseded_by` in the old patch's `package.json`, and refuses (writing nothing) unless both packages are published and the successor is for the same platform and game directory and targets every image of the old one. Replace REV00 with the REV00 successor and REV01 with the REV01 successor. In a chain, point each package at the one that directly replaces it. The pointer cannot be changed once published.
+4. `python3 scripts/build_catalog.py`, then `python3 scripts/validate_catalog.py --baseline-ref origin/main`; for an ABI 1 package also update the table in [abi1-retention.md](abi1-retention.md). If `check_source_review.py` reports a changed record, review it as in step 3.
+
+After the Pages deployment the `/catalog/` page lists the successor instead of the old package; the old page, download and catalog entry remain.
 
 Release lifecycle checks, in the order they run: `release_guard.py` (new / draft / published / deleted / bad selection), repository checks, rebuild of the selected packages, draft, manual publication, `verify-release`, record, Pages.
 

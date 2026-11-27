@@ -1,20 +1,23 @@
 ---
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { getCollection } from 'astro:content';
-import { kib, shortSha } from '../../lib/catalog.mjs';
+import { currentPackages, kib, ref, shortSha } from '../../lib/catalog.mjs';
 import DownloadButton from '../../components/DownloadButton.astro';
 import { absolute, breadcrumbLd, collectionLd, ldScript } from '../../lib/seo.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const entries = (await getCollection('catalog')).map((e) => e.data);
-const description = 'Every published segarecomp patch package for Sega Genesis / Mega Drive games with its SHA-256, exact source revision, trust class and the exact images it applies to.';
+const published = (await getCollection('catalog')).map((e) => e.data);
+const entries = currentPackages(published);
+const older = published.filter((e) => !entries.includes(e));
+const description = 'Current segarecomp patch packages for Sega Genesis / Mega Drive games with SHA-256, exact source revision, trust class and the exact images each applies to.';
 const site = Astro.site!;
 const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
 ---
 <StarlightPage frontmatter={{ title: 'Patch catalog', description, tableOfContents: false, head: [{ tag: 'meta', attrs: { property: 'og:type', content: 'website' } }, ldScript(collectionLd(site, base, entries, description)), ldScript(breadcrumbLd([{ name: 'segarecomp patches', url: absolute(site, base, '/') }, { name: 'Patch catalog', url: absolute(site, base, '/catalog/') }])), { tag: 'link', attrs: { rel: 'alternate', type: 'application/json', href: `${base}/catalog/index.json`, title: 'Machine-readable catalog' } }] }}>
   <p>Generated from <code>catalog/index.json</code> at build time; there is no hand-maintained copy. Every entry names the exact package digest and the source commit it was built from. An image is identified by its SHA-256, never by its title.</p>
   <p>Machine-readable: <a href={`${base}/catalog/index.json`}>catalog/index.json</a> and the <a href={`${base}/schema/catalog-2.schema.json`}>catalog</a>, <a href={`${base}/schema/release-2.schema.json`}>release</a> and <a href={`${base}/schema/package-1.schema.json`}>package</a> JSON Schemas.</p>
-  <p>{entries.length} package{entries.length === 1 ? '' : 's'} in {games.length} project{games.length === 1 ? '' : 's'}.</p>
+  <p>This page lists current packages: those with no published successor. It is not the complete publication history; every published version, current or superseded, is in <code>catalog/index.json</code>.</p>
+  <p>{entries.length} current package{entries.length === 1 ? '' : 's'} in {games.length} project{games.length === 1 ? '' : 's'}; {published.length} published in total.</p>
   {games.map((g) => {
     const [platform, game] = g.split('|');
     const rows = entries.filter((e) => e.platform === platform && e.game === game);
@@ -28,6 +31,7 @@ const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
                 <h3><a href={`${base}/catalog/${e.id}/${e.version}/`}>{e.name}</a></h3>
                 <DownloadButton e={e} location="catalog_list" compact />
               </div>
+              {e.abi_status === 'deprecated' && <p class="catalog-note">Deprecated ABI 1 — supported; replacement not yet published.</p>}
               <dl>
                 <div><dt>Version</dt><dd>{e.version}</dd></div>
                 <div><dt>Release</dt><dd>{e.release}</dd></div>
@@ -44,12 +48,21 @@ const games = [...new Set(entries.map((e) => `${e.platform}|${e.game}`))];
       </section>
     );
   })}
+  {older.length > 0 && (
+    <details>
+      <summary>Superseded packages ({older.length})</summary>
+      <ul>
+        {older.map((e) => <li><a href={`${base}/catalog/${e.id}/${e.version}/`}>{e.name} {e.version}</a> (<code>{ref(e)}</code>), superseded by <code>{e.superseded_by}</code></li>)}
+      </ul>
+    </details>
+  )}
 </StarlightPage>
 <style>
   .catalog-list { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 1rem; }
   .catalog-list li { margin: 0; border: 2px solid var(--sl-color-hairline); background: var(--sl-color-gray-6); padding: 0.75rem 1rem; }
   .catalog-list h3 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
   .catalog-head { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+  .catalog-note { margin: 0 0 0.75rem; font-size: var(--sl-text-sm); font-weight: 600; }
   .catalog-list dl { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 0; }
   .catalog-list dl div { min-width: 7rem; margin: 0 !important; }
   .catalog-list dt { font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); text-transform: uppercase; }

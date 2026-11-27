@@ -16,7 +16,7 @@ class Lifecycle(unittest.TestCase):
         s.begin("v1.0.0", "synth-demo@1.0.0"); s.notes("v1.0.0"); s.catalog(); s.commit("prepare A"); return s
 
     def release_b(self, s):
-        s.legacy_patch("game", "demo", "synth-demo", "1.1.0", "b", tag="v1.1.0"); s.legacy_patch("game", "other", "synth-other", "1.0.0", "c", tag="v1.1.0")
+        s.legacy_patch("game", "demo", "synth-demo", "1.1.0", "b", tag="v1.1.0", image="a"); s.legacy_patch("game", "other", "synth-other", "1.0.0", "c", tag="v1.1.0")
         s.begin("v1.1.0", "synth-demo@1.1.0", "synth-other@1.0.0"); s.notes("v1.1.0"); s.catalog(); s.commit("prepare B")
 
     def test_a_prepared_is_not_advertised_then_published(self):
@@ -42,7 +42,17 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(s.assets("v1.1.0", outb).returncode, 0, "B's assets verify without A's")
         outa = s.tmp / "outA2"; r = s.build("v1.0.0", outa); self.assertEqual(r.returncode, 0, "A is rebuilt from Git at its pinned commit although B replaced the working-tree sources: " + r.stdout + r.stderr)
         r = s.assets("v1.0.0", outa); self.assertEqual(r.returncode, 0, "A's assets verify without B's: " + r.stdout + r.stderr)
-        s.publish("v1.1.0"); run(S / "prepare_release.py", "--root", s.d, "supersede", "--old", "synth-demo@1.0.0", "--new", "synth-demo@1.1.0", check=True); s.catalog(); s.commit("supersede")
+        def refused(old, new, why):
+            before = {f: f.read_text() for f in s.d.glob("patches/*/*/*/package.json")}
+            r = run(S / "prepare_release.py", "--root", s.d, "supersede", "--old", old, "--new", new)
+            self.assertNotEqual(r.returncode, 0, why); self.assertIn(why, r.stderr)
+            self.assertEqual({f: f.read_text() for f in before}, before, "a refused supersession writes nothing")
+        refused("synth-demo@1.0.0", "synth-demo@1.1.0", "not a published package")   # B is only prepared
+        s.publish("v1.1.0")
+        refused("synth-demo@1.0.0", "synth-demo@9.0.0", "not a published package")
+        refused("synth-demo@1.1.0", "synth-demo@1.0.0", "must name a higher version")
+        refused("synth-demo@1.0.0", "synth-other@1.0.0", "does not target every image")
+        run(S / "prepare_release.py", "--root", s.d, "supersede", "--old", "synth-demo@1.0.0", "--new", "synth-demo@1.1.0", check=True); s.catalog(); s.commit("supersede")
         cat = s.catalog_entries(); ids = [(p["id"], p["version"], p["release"]) for p in cat]
         self.assertEqual(ids, [("synth-demo", "1.0.0", "v1.0.0"), ("synth-demo", "1.1.0", "v1.1.0"), ("synth-other", "1.0.0", "v1.1.0")])
         old = [p for p in cat if p["version"] == "1.0.0"][0]; was = baseline["packages"][0]

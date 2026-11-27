@@ -41,7 +41,7 @@ export default defineConfig({
       components: { Hero: './src/components/Hero.astro', Footer: './src/components/Footer.astro' },
       sidebar: [
         { label: 'Start here', items: [{ slug: 'getting-started' }, { slug: 'security' }, { slug: 'support' }, { slug: 'privacy' }] },
-        { label: 'Catalog', items: [{ label: 'All packages', link: '/catalog/' }] },
+        { label: 'Catalog', items: [{ label: 'Patch catalog', link: '/catalog/' }] },
         {
           label: 'Reference (imported)',
           items: [

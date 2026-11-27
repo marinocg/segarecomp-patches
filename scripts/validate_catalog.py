@@ -114,18 +114,30 @@ def semantic_errors(doc, kind="catalog"):
         want = f"{rev.get('repository')}/releases/download/{p.get('release')}/{a.get('name')}"
         if a.get("url") != want: errs.append(f"{n}: asset URL must be the version-pinned release URL {want} (never 'latest' or a branch)")
         errs += _kind_errors(p, n)
+    return errs + supersession_errors(_entries(doc))
+
+
+def _images(p): return {i.get("sha256") for i in p.get("images", [])} if p.get("schema_version") == 3 else {p.get("source_image_sha256")}
+
+
+def supersession_errors(entries):
+    """Whether each `superseded_by` can be trusted to replace its predecessor, which the site hides from its current-package view (site/src/lib/catalog.mjs
+    `supersessionErrors` applies the same rules)."""
+    errs, by = [], {_key(x): x for x in entries}
+    for p in entries:
         sup = p.get("superseded_by")
-        if sup:
-            sid, _, sver = sup.partition("@")
-            if (sid, sver) == _key(p): errs.append(f"{n}: supersedes itself")
-            elif (sid, sver) not in ids: errs.append(f"{n}: superseded_by {sup} is not in this catalog")
-            elif sid == p.get("id") and _semver(sver) <= _semver(p.get("version")): errs.append(f"{n}: superseded_by must name a higher version")
-    by = {_key(x): x for x in _entries(doc)}
-    for p in _entries(doc):   # supersession must not loop
-        cur, hops = p, 0
-        while cur and cur.get("superseded_by") and hops <= len(by):
-            sid, _, sver = cur["superseded_by"].partition("@"); cur = by.get((sid, sver)); hops += 1
-        if hops > len(by): errs.append(f"{p.get('id')}@{p.get('version')}: supersession cycle")
+        if not sup: continue
+        n = f"{p.get('id')}@{p.get('version')}"; sid, _, sver = sup.partition("@")
+        if (sid, sver) == _key(p): errs.append(f"{n}: supersedes itself"); continue
+        new = by.get((sid, sver))
+        if new is None: errs.append(f"{n}: superseded_by {sup} is not in this catalog"); continue
+        if sid == p.get("id") and _semver(sver) <= _semver(p.get("version")): errs.append(f"{n}: superseded_by must name a higher version")
+        if (new.get("platform"), new.get("game_path")) != (p.get("platform"), p.get("game_path")): errs.append(f"{n}: successor {sup} is for another platform or game directory")
+        if not _images(p) <= _images(new): errs.append(f"{n}: successor {sup} does not target every image of the package it replaces")
+        seen, cur = {_key(p)}, new
+        while cur:   # bounded: every step adds a new entry to `seen`
+            if _key(cur) in seen: errs.append(f"{n}: supersession cycle"); break
+            seen.add(_key(cur)); nid, _, nver = str(cur.get("superseded_by") or "").partition("@"); cur = by.get((nid, nver))
     return errs
 
 

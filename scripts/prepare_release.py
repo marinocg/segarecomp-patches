@@ -11,7 +11,8 @@
   prepare_release.py publish --tag v0.2.0 --commit SHA [--tag-commit SHA]
       After a maintainer published the draft: records the release as `published` with its exact source commit. The catalog then lists it.
   prepare_release.py supersede --old id@1.0.0 --new id@1.1.0
-      Additive supersession pointer on a published package. Nothing else of the old entry is touched.
+      Additive supersession pointer from one published package to another (docs/releases.md). Refused for an unpublished package or an invalid replacement.
+      Nothing else of the old entry is touched; regenerate the catalog afterwards (build_catalog.py).
 """
 import argparse, json, pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -67,13 +68,25 @@ def publish(root, tag, commit, tag_commit=None):
 
 
 def supersede(root, old, new):
-    (oid, _, over), (nid, _, nver) = old.partition("@"), new.partition("@")
+    """Only between PUBLISHED packages, and only if the resulting catalog is valid (same platform and game directory, every image covered, no cycle). Nothing is
+    written otherwise."""
+    import build_catalog, validate_catalog
+    (oid, _, over) = old.partition("@")
+    published = {pk.ref for pk in release_meta.published(root)}
+    for r in (old, new):
+        if r not in published: raise SystemExit(f"{r} is not a published package: supersede only after both releases are published and recorded (prepare_release.py publish)")
     for pt in release_meta.patches(root):
         meta = pt.meta
         for p in (meta or {}).get("packages", []):
             if (p["id"], p["version"]) == (oid, over):
                 if p.get("superseded_by") not in (None, new): raise SystemExit(f"{old} is already superseded by {p['superseded_by']}")
-                p["superseded_by"] = new; dump(pt.dir / "package.json", meta); return
+                path = pt.dir / "package.json"; before = path.read_text()
+                p["superseded_by"] = new; dump(path, meta)
+                errs = validate_catalog.supersession_errors(json.loads(build_catalog.build(root))["packages"])
+                if errs:
+                    path.write_text(before)
+                    raise SystemExit("supersession not recorded:\n  " + "\n  ".join(errs))
+                return
     raise SystemExit(f"{old} not found")
 
 
