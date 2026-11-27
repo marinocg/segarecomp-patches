@@ -419,7 +419,7 @@ class Sonic3kAbi2(unittest.TestCase):
     D = "patches/genesis/sonic-3-and-knuckles/native-widescreen-abi2"
     def test_recorded_pinned_and_reproducible(self):
         rec = next(pk for pk in release_meta.packages(ROOT) if pk.id == "sonic3k-native-widescreen-abi2")
-        self.assertEqual((rec.version, rec.p["schema_version"], rec.p["native_abi"]), ("0.1.0", 3, 2))
+        self.assertEqual((rec.version, rec.p["schema_version"], rec.p["native_abi"]), ("0.2.0", 3, 2))
         self.assertEqual(rec.build.get("writer_ref"), (ROOT / "scripts/PRODUCT_REF").read_text().strip())
         e = []; check_repo.check_mod_projects(ROOT, CLI, e, ["--cc", CC, "--sdk-dir", SDK], only={self.D}); self.assertEqual(e, [])
     def test_the_bps_delta_is_the_published_abi1_delta(self):

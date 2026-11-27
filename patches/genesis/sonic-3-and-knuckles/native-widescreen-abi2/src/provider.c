@@ -1,6 +1,7 @@
 /*
  * Sonic 3 & Knuckles (Genesis, lock-on composite) native widescreen provider for the schema 3 / native ABI 2 SDK (segarecomp_mod_genesis.h, minor 3): the port of the ABI 1 provider of
- * patches/genesis/sonic-3-and-knuckles/native-widescreen with the SAME game knowledge, constants and verification logic (SEG-152-T011, ADR 0320). Bound by its package to ONE exact image (the 4 MiB
+ * patches/genesis/sonic-3-and-knuckles/native-widescreen with the SAME game knowledge, constants and verification logic (SEG-152-T011, ADR 0320), plus adaptive native-picture placement
+ * (ADR 0315 view_left, SEG-152-T016; build with -DS3K_PLACEMENT=0 for the centred baseline). Bound by its package to ONE exact image (the 4 MiB
  * S&K + Sonic 3 composite, built as a declared lock-on cartridge); identities are enforced by the package, not here.
  *
  * What changes is only how the answers are delivered: the ABI 1 per-cell scenery callback becomes bounded scenery WINDOWS built from the exact-frame view, the per-line background plane multiple
@@ -31,7 +32,12 @@
 #define S3K_FLASH 0xFE05U       /* byte: bit 3 is the HUD blink phase */
 #define S3K_RINGS 0xFE20U       /* word: ring count */
 #define S3K_MINUTES 0xFE23U     /* byte: timer minutes */
+#define S3K_CAMX 0xEE78U      /* word: the camera's world x (the left edge of the picture) */
 #define S3K_EDGE 48U            /* picture edge bands judged apart from the centre (the game streams them) */
+
+#ifndef S3K_PLACEMENT
+#define S3K_PLACEMENT 1         /* 0: the SEG-152-T011 baseline (the picture always centred, no placement declared); the baseline comparison builds with 0 */
+#endif
 
 #define REASON_OK 0U
 #define REASON_UNSUPPORTED_SCENE SEGA_GEN_REASON_UNSUPPORTED_SCENE
@@ -57,6 +63,7 @@ typedef struct Sonic3kFrame {
   unsigned height;
   unsigned hud_frame;                   /* HUD: the game's mapping frame (0 all, 1 no RINGS label, 2 no TIME label, 3 neither) */
   int hud_x;                            /* HUD: the slide offset applied to every piece */
+  int ext_l, ext_r;                     /* background registration: the extension columns left / right of the picture that the tie-break samples (see bg_ext_agree) */
 } Sonic3kFrame;
 
 static Sonic3kFrame g_frame;
@@ -122,10 +129,11 @@ static unsigned bg_line_bad(const Sonic3kFrame *f, const SegaGenesisFrameView *v
   return bad;
 }
 
+/* The tie-break term of the registration: how many cells of the extension the candidate multiple agrees with the VDP's own plane on. The sampled extension is the actual one of the placement: ext_l columns left of the
+ * picture and ext_r right of it (centred: both the baseline's side, so the baseline answer is reproduced exactly; aligned left: nothing left and twice as much right). */
 static unsigned bg_ext_agree(const Sonic3kFrame *f, const SegaGenesisFrameView *v, unsigned l, int wx0, int wy) {
-  const int side = v->side > 0U && v->side < 128U ? (int)v->side : 64;
   unsigned agree = 0U;
-  for (int x = -side; x < (int)v->width + side; x += 8) {
+  for (int x = -f->ext_l; x < (int)v->width + f->ext_r; x += 8) {
     if (x >= 0 && x < (int)v->width) continue;
     agree += same_cell(world_cell(f, 1U, wx0 + x, wy), vdp_cell(v->vram, f->base[l][1], x, -f->off[l][1], l, f->vs[1]));
   }
@@ -403,6 +411,45 @@ static void draw_hud(const Sonic3kFrame *f, const SegaGenesisFrameView *v, const
   }
 }
 
+/* ---------------------------------------------------------------------------------------------------------------- placement (SEG-152-T016) */
+/* Where the native picture sits in the planned total of 2 * margin extension columns: `left_px` columns left of it, the rest right of it, as a PURE function of the camera and the camera's range (no state: replay, rewind and
+ * load see the same value for the same camera). The view is aligned left at the level's first camera position (left_px 0: the foreground holds no world left of the layout's first column), centred in the middle
+ * (left_px = margin) and aligned right at the last camera position (left_px = 2 * margin: the view's right edge never passes the level's end). The picture's own parallax layers are drawn by the guest for ITS camera
+ * (scroll k * camera), so while left_px changes they drift against the foreground at (1 - k) * d(left_px)/d(camera) of the camera's speed; the ramp is therefore slow (the same shape as the reference placement of the
+ * Castle of Illusion package: a slope of at most 1/RAMP_DEN, never faster than the camera moves) at both ends and constant elsewhere. A level narrower than the planned total keeps the plain rule (the picture at the left
+ * until the camera is `margin` in). `cam` is the camera x (the camera's first value is 0), `range` its last value. */
+#define RAMP_DEN 6
+static int32_t placement(int32_t cam, int32_t range, int32_t margin) {
+  int64_t zone, lo, hi;
+  if (cam < 0) cam = 0;
+  if (range < 2 * margin) return cam < margin ? cam : margin;   /* narrower than the planned total: no room for a ramp at each end */
+  if (cam > range) cam = range;
+  zone = range / 2 < (int64_t)RAMP_DEN * margin ? range / 2 : (int64_t)RAMP_DEN * margin;   /* >= margin: a slope of at most 1 */
+  lo = cam < zone ? cam : zone;
+  hi = range - cam < zone ? range - cam : zone;
+  return (int32_t)(((int64_t)margin * lo) / zone + (int64_t)margin - ((int64_t)margin * hi) / zone);
+}
+
+/* The scenes that shift: only those whose camera boundaries and behaviour the recorded evidence of SEG-152-T016 supports (README "Which scenes shift"). Each has the game's left limit 0 (the layout's first column), a
+ * left-to-right run that reaches a right limit the GAME sets less than 6 margins (of the widest view) before the layout's end, and no recorded camera loop, act boundary or exit camera reset that would step the picture or could not be shown not to. Eligibility for
+ * authored scenery (scenery_scope) does not imply eligibility for placement: every other scene keeps its scenery and HUD with the picture centred. One byte per zone id, bit n = act n. */
+static const uint8_t k_placement_acts[0x0C] = {
+    [0x02] = 0x03,   /* Marble Garden acts 1 and 2 */
+    [0x08] = 0x01,   /* Sandopolis act 1 */
+    [0x0B] = 0x02,   /* Death Egg act 2 */
+};
+static int placement_scope(unsigned zone, unsigned act) { return zone < sizeof(k_placement_acts) && act < 8U && ((k_placement_acts[zone] >> act) & 1U) != 0U; }
+
+/* The camera's range: its first value is 0 (the layout's first column is world x 0) and its last value is the layout's end - 320 (the foreground holds no world beyond it, so the view's right edge never passes
+ * it). That is the world's end, a constant of the act's layout, NOT the game's own camera limit: that limit (Camera_max_X_pos) is a default far beyond the layout until a boss or act event locks it to the arena
+ * (minimum = maximum = camera) when the camera is already there, so a placement computed from it would jump at the lock. A camera that stops earlier (an arena before the layout's end) keeps a continuous,
+ * partly shifted placement; it never leaves the layout. A layout the provider cannot read (a width of 0 or beyond 256 chunks) is the verified-boundary-not-obtainable fallback: the picture stays centred. */
+static unsigned level_left_px(const uint8_t *ram, unsigned margin_px) {
+  const int wide = (int)u16(ram, S3K_LAYOUT), cam = (int)u16(ram, S3K_CAMX);
+  if (S3K_PLACEMENT == 0 || !placement_scope(ram[S3K_ZONE], ram[S3K_ZONE + 1U]) || wide <= 0 || wide > 0x100) return margin_px;
+  return (unsigned)placement(cam, wide * 128 - 320, (int32_t)margin_px);
+}
+
 /* ---------------------------------------------------------------------------------------------------------------- the exact-frame render */
 
 static void refuse(const SegaGenesisRenderApi *r, uint32_t requested, uint32_t reason) {
@@ -430,7 +477,18 @@ static void render_frame(const SegaModHost *host) {
   /* scope: a running level of the single-player campaign inventory (scenery_scope). Every other screen (title, menus, special and bonus stages, competition) is declined. */
   if ((ram[S3K_GAMEMODE] != 0x0CU && ram[S3K_GAMEMODE] != 0x8CU) || !scenery_scope(ram[S3K_ZONE], ram[S3K_ZONE + 1U])) { refuse(r, requested, REASON_UNSUPPORTED_SCENE); return; }
   margin_px = v->side != 0U ? v->side : 64U;   /* the baseline keeps the picture centred (left_px == margin_px) and declares no placement */
-  left_px = margin_px;
+  left_px = v->side != 0U ? level_left_px(ram, margin_px) : margin_px;
+  {
+    const int e = v->side > 0U && v->side < 128U ? (int)v->side : 64;   /* the baseline's sampled side of the extension (a bound on the registration's work) */
+    f->ext_l = (int)((long)left_px * e / (long)margin_px);
+    f->ext_r = (int)((long)(2U * margin_px - left_px) * e / (long)margin_px);
+  }
+  /* the placement is declared for EVERY frame of a scene that shifts, whatever the scenery verdict is: it depends on the camera alone, and a frame whose scenery the identity checks decline (the host then extends it
+   * generically) must keep the picture where its neighbours have it, never snap it to the centre for one frame. The windows below are built for the same left_px and margin. */
+  if (S3K_PLACEMENT != 0 && placement_scope(ram[S3K_ZONE], ram[S3K_ZONE + 1U]) && v->side != 0U && r->view_left != NULL && r->view_left(left_px, margin_px) != 0) {
+    refuse(r, requested, REASON_BAD_STATE);   /* a placement the host does not accept: nothing built for it is served */
+    return;
+  }
   if ((requested & SEGA_GEN_COMPONENT_HUD) != 0U && hud_state(ram) && v->height == 224U) {
     f->hud_frame = hud_frame_of(ram);
     f->hud_x = (int8_t)ram[S3K_HUD_X];
