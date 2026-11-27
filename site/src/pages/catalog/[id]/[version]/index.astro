@@ -15,6 +15,10 @@ const site = Astro.site!;
 const repo = e.source_revision.repository;
 const commit = e.source_revision.commit;
 const successor = e.superseded_by ? all.find((x) => `${x.id}@${x.version}` === e.superseded_by) : undefined;
+const deprecated = e.abi_status === 'deprecated';
+let latest = successor;   // parseCatalog has validated every chain (targets exist, no cycle), so this terminates at the current package
+while (latest?.superseded_by) latest = all.find((x) => `${x.id}@${x.version}` === latest!.superseded_by);
+const retention = 'https://github.com/marinocg/segarecomp-patches/blob/main/docs/abi1-retention.md';
 const predecessors = all.filter((x) => x.superseded_by === `${e.id}@${e.version}`);
 const mod = isMod(e);
 const sourceDir = e.source_path ?? e.game_path;   // entries published before the per-patch layout kept their sources under game_path
@@ -23,9 +27,9 @@ const trustText = e.trust === 'trusted-native-source'
   : 'Data only: a BPS delta and a manifest, no executable code.';
 ---
 <StarlightPage frontmatter={{ title: `${e.name} ${e.version}`, description: packageDescription(e), tableOfContents: false, head: [{ tag: 'meta', attrs: { property: 'og:type', content: 'website' } }, ldScript(packageLd(site, base, e)), ldScript(breadcrumbLd([{ name: 'segarecomp patches', url: absolute(site, base, '/') }, { name: 'Patch catalog', url: absolute(site, base, '/catalog/') }, { name: `${e.name} ${e.version}`, url: absolute(site, base, `/catalog/${e.id}/${e.version}/`) }]))] }}>
-  <p><a href={`${base}/catalog/`}>All packages</a></p>
-  {successor && <aside aria-label="Superseded"><p><strong>Superseded</strong> by <a href={`${base}/catalog/${successor.id}/${successor.version}/`}>{successor.id} {successor.version}</a>. This version stays available and unchanged.</p></aside>}
-  {e.superseded_by && !successor && <aside aria-label="Superseded"><p><strong>Superseded</strong> by {e.superseded_by}.</p></aside>}
+  <p><a href={`${base}/catalog/`}>Current packages</a></p>
+  {deprecated && <aside aria-label="Deprecated"><p><strong>Deprecated ABI 1 — supported{successor ? '.' : '; replacement not yet published.'}</strong> This package stays published and unchanged under the <a href={retention}>ABI 1 retention policy</a>.</p></aside>}
+  {successor && <aside aria-label="Superseded"><p><strong>Superseded</strong> by <a href={`${base}/catalog/${successor.id}/${successor.version}/`}>{successor.id} {successor.version}</a>. {latest !== successor && <>The current package is <a href={`${base}/catalog/${latest!.id}/${latest!.version}/`}>{latest!.id} {latest!.version}</a>. </>}This version stays available and unchanged.</p></aside>}
   {predecessors.length > 0 && <p>Supersedes {predecessors.map((p, i) => <><a href={`${base}/catalog/${p.id}/${p.version}/`}>{p.id} {p.version}</a>{i < predecessors.length - 1 ? ', ' : ''}</>)}.</p>}
   <p>{e.supported_scope}</p>
   <p class="download-cta"><DownloadButton e={e} location="package_page_top" /></p>

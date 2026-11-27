@@ -24,7 +24,7 @@ They are static files with stable names: a new format adds a new schema file and
 
 ## Fields of a catalog entry
 
-Two entry shapes, told apart by `schema_version`. **Schema 1 and 2 entries are exactly the `catalog_format` 1 entries**: every field that existed keeps its name and meaning, and `v0.1.0`'s five entries are byte-for-byte the values they were published with.
+Two entry shapes, told apart by `schema_version`. **Schema 1 and 2 entries are exactly the `catalog_format` 1 entries**: every field that existed keeps its name and meaning, and every value `v0.1.0`'s five entries were published with is unchanged (its four native ABI 1 entries later gained only the additive `abi_status`; a copy of `catalog-2.schema.json` from before that addition rejects the field).
 
 | Group | Schema 1/2 patch entry | Schema 3 mod entry |
 |---|---|---|
@@ -35,6 +35,7 @@ Two entry shapes, told apart by `schema_version`. **Schema 1 and 2 entries are e
 | Provenance | `source_revision` (`repository`, exact `commit`, optional `tag`, `tag_commit`), `build` (`writer`, `writer_ref`, `deterministic`) | the same; `build.writer` is `segarecomp mod pack` and `writer_ref` the product revision that produced the archive |
 | Distribution | `asset` (`name`, HTTPS `url`) | the same (the URL is derived from the release that lists the package) |
 | Supersession | `superseded_by` (`<id>@<version>`), optional | the same |
+| ABI deprecation | `abi_status` (`deprecated`), derived by the generator for every `native_abi` 1 entry ([retention policy](abi1-retention.md)) | none |
 
 `game_path` is the game directory (`patches/<platform>/<game>`) and keeps its historical meaning for every published entry. `source_path` (the patch directory, `patches/<platform>/<game>/<patch>`) is present on entries from releases built in the per-patch layout; when it is absent the sources were under `game_path` at `source_revision.commit`. Master System, Game Gear and Sega CD entries are first-class through `platform`, `source_identity_kind` and `bios_requirement`; no field assumes a cartridge.
 
@@ -46,7 +47,8 @@ Two entry shapes, told apart by `schema_version`. **Schema 1 and 2 entries are e
 * **Consistency.** `trust`, `schema_version` and `executable_code` must agree; a schema 2 package needs `native_abi` and `native_source_sha256` and an MIT or MPL-2.0 licence; a schema 3 package needs `native_abi` 2, capabilities and its `images`, and a fabricated BPS or ROM field is an unknown field and is rejected.
 * **Explicit release membership.** A release lists exact `id@version` selections; every one must exist in a `package.json`, belong to an `eligible` patch ([releases.md](releases.md)) and be listed by no other release. A published release record cannot be removed, and the generated catalog cannot drop a published entry.
 * **Immutability.** A published `(id, version)` never changes. `validate_catalog.py --baseline-ref <ref>` compares the catalog with the one at the base commit (CI passes the pull request's base): removing an entry, removing a field, or changing any existing field of one is rejected. Evolution is purely additive: new entries, new optional fields introduced by a compatible format revision (the `v0.1.0` entries gained `source_revision` and `build` this way, without touching an existing value), and a `superseded_by` pointer, which once set is itself immutable. A fix is a new version.
-* **Supersession is additive and acyclic.** `superseded_by` must name an existing entry (a higher version when it is the same id), never itself, never in a cycle. A superseded version stays published and unchanged.
+* **Supersession is additive and acyclic.** `superseded_by` must name an existing entry (a higher version when it is the same id), never itself, never in a cycle. The successor must be for the same platform and game directory and target every image its predecessor targets, so one ROM revision never replaces another. A superseded version stays published and unchanged. It is recorded only by `prepare_release.py supersede`; generating the catalog never infers it.
+* **Current packages (site view).** The `/catalog/` page lists the entries without a `superseded_by` (`currentPackages` in `site/src/lib/catalog.mjs`); in a chain only the last one is listed. Versions of different ids, game titles and `abi_status` play no part. Superseded packages keep their detail pages and downloads and are linked from a collapsed list. `catalog/index.json` still lists every published package.
 * **Provenance is verifiable.** `scripts/verify_provenance.py` (needs full history) checks that `source_revision.commit` exists and is an ancestor of the checkout, that the recorded tag still resolves to `tag_commit` and has the same tree, and that, in the layout that commit had (`source_layout`), the manifest, BPS and provider source of a schema 1/2 package have exactly the recorded digests and a schema 3 package's `mod.toml` names its id and version.
 
 ## Schema version policy

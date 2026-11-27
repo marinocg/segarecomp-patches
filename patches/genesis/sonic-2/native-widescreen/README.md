@@ -1,5 +1,7 @@
 # Sonic the Hedgehog 2
 
+> **Native ABI 1: deprecated, still supported** ([retention policy](../../../../docs/abi1-retention.md)). The recommended successors are the schema 3 / ABI 2 packages [`sonic2-native-widescreen-abi2-rev00`](../native-widescreen-abi2-rev00/README.md) (for `sonic2-native-widescreen`) and [`sonic2-native-widescreen-abi2-rev01`](../native-widescreen-abi2-rev01/README.md) (for `sonic2-native-widescreen-rev01`); both are candidates and are not published. Until they are, these packages are the ones to install; they stay published and unchanged.
+
 > Native 16:9 for Sonic the Hedgehog 2 (Genesis) with reconstructed scenery, a relocated HUD and widened actor coverage, for two independently packaged revisions.
 
 ![Sonic the Hedgehog 2, Emerald Hill Zone 1, in 16:9 with extended scenery, the relocated HUD and a Buzzer enemy drawn in the extended right margin](https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-2-emerald-hill-patched-16x9.png)

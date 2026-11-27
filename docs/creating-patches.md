@@ -8,7 +8,7 @@ Authoring tools and the SDK live in the [segarecomp product repository](https://
 segarecomp mod init patches/genesis/my-game/widescreen --platform genesis --id my-game-widescreen --template c11-provider --rom-sha256 <image sha256>
 ```
 
-Read [`patch-packages.md`](https://github.com/marinocg/segarecomp/blob/main/docs/product/patch-packages.md) and [`native-patch-sdk.md`](https://github.com/marinocg/segarecomp/blob/main/docs/product/native-patch-sdk.md). Schema 1/2 packages (a BPS delta with optional C11 source) keep `package.json` and `source/`; a new patch should normally be a schema 3 mod (`mod.toml`).
+Read [`mod-projects.md`](https://github.com/marinocg/segarecomp/blob/main/docs/product/mod-projects.md) and [`native-sdk-abi-2.md`](https://github.com/marinocg/segarecomp/blob/main/docs/architecture/native-sdk-abi-2.md). A new patch with native code **must** be a schema 3 mod (`mod.toml`) written against native ABI 2: native ABI 1 is deprecated and `check_repo.py` rejects new ABI 1 packages ([retention policy](abi1-retention.md); [migration guide](https://github.com/marinocg/segarecomp/blob/main/docs/product/native-abi-migration.md)). The existing schema 1/2 packages keep `package.json` and `source/`.
 
 **2. How do I build and test it?** With the product's tools, never a second builder in this repository:
 
@@ -38,6 +38,7 @@ python3 scripts/check_repo.py --segarecomp <CLI> --cc cc --sdk-dir <product>/pla
 
 ## Rules
 
+* No new native ABI 1 package is accepted.
 * Commit the BPS delta of a schema 1/2 package next to its manifest as `source/<package-id>.bps`. Only patches that work against their exact image qualify. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 * Native code is trusted, unsandboxed code: say so, and keep the license the package declares.
 * The package formats are schema 1 (BPS only), 2 (BPS plus trusted C11) and 3 (a source-based mod); later schemas are expected to be additive.

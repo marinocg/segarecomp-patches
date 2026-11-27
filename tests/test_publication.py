@@ -406,7 +406,11 @@ class HistoricalIntegrity(unittest.TestCase):
         if first.returncode: self.skipTest("the W02 commit is not in this checkout")
         old, new = json.loads(first.stdout)["packages"], json.loads((ROOT / "catalog/index.json").read_text())["packages"]
         by_id = {p["id"]: p for p in new}   # the catalog is sorted by id, so a later release's entry may precede the originals: compare each original entry by its id
-        self.assertEqual([by_id.get(p["id"]) for p in old], old, "every published entry is byte-for-byte the same value")
+        for p in old:
+            now = dict(by_id.get(p["id"]) or {})
+            # SEG-152-T013: the ONE permitted addition, derived by the generator for native ABI 1 entries only (docs/abi1-retention.md). Every published field is compared exactly.
+            if p.get("native_abi") == 1: self.assertEqual(now.pop("abi_status", None), "deprecated", p["id"])
+            self.assertEqual(now, p, "every published value is unchanged")
 
 
 def check_repo_assets(out):

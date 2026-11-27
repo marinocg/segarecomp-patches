@@ -15,7 +15,7 @@ A `.segapatch` is a small ZIP archive that describes one optional modification o
 | Kind | Contents | Trust |
 |---|---|---|
 | **Schema 1: BPS only** | one verified BPS delta | data only: segarecomp never executes anything from it |
-| **Schema 2: BPS + native C11 source** | optional BPS and one `provider.c` written against segarecomp's public native patch SDK | **trusted executable code**: compiled into the Patched program and **not sandboxed**. SHA-256 digests prove the bytes are unchanged, not who wrote them |
+| **Schema 2: BPS + native C11 source** | optional BPS and one `provider.c` written against segarecomp's public native patch SDK | **deprecated native ABI 1, [still supported](docs/abi1-retention.md)**; **trusted executable code**: compiled into the Patched program and **not sandboxed**. SHA-256 digests prove the bytes are unchanged, not who wrote them |
 
 The format is documented in the [product's patch package guide](https://github.com/marinocg/segarecomp/blob/main/docs/product/patch-packages.md) and the [native patch SDK guide](https://github.com/marinocg/segarecomp/blob/main/docs/product/native-patch-sdk.md).
 

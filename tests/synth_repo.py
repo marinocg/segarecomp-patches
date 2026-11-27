@@ -81,10 +81,10 @@ class Synthetic:
     def state(self, rel, state):
         self.pub[rel] = {"state": state, **({"review": "synthetic review"} if state == "eligible" else {})}; self.write_publication()
 
-    def legacy_patch(self, game, name, pid, version, seed, state="eligible", tag=None):
-        """A schema 1 patch with its source files and package.json entry (digests computed with the fake writer)."""
+    def legacy_patch(self, game, name, pid, version, seed, state="eligible", tag=None, image=None):
+        """A schema 1 patch with its source files and package.json entry (digests computed with the fake writer). `image` is the seed of the target image (default: `seed`)."""
         d = self.patch(game, name); (d / "source").mkdir(parents=True, exist_ok=True); (d / "README.md").write_text(f"# {pid}\n")
-        bps = f"BPS-{pid}-{version}-{seed}".encode(); src = f"{seed}".encode()
+        bps = f"BPS-{pid}-{version}-{seed}".encode(); src = f"{image or seed}".encode()
         mf = {"id": pid, "version": version, "source_sha256": sha(b"src" + src), "payloads": {"rom": {"sha256": sha(bps), "target_sha256": sha(b"dst" + src)}}}
         mb = json.dumps(mf, sort_keys=True).encode()
         (d / "source" / f"{pid}.bps").write_bytes(bps); (d / "source" / f"{pid}.manifest.json").write_bytes(mb)

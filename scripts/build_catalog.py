@@ -35,6 +35,8 @@ def build(root=ROOT):
         else:
             e.update({k: p[k] for k in REQUIRED})
             e.update({k: p[k] for k in OPTIONAL if k in p})
+            # Derived, never stored in package.json: native ABI 1 is deprecated but supported (docs/abi1-retention.md). The successor is `superseded_by`, set only once it is published.
+            if p.get("native_abi") == 1: e["abi_status"] = "deprecated"
         entries.append(e)
     return json.dumps({"catalog_format": CATALOG_FORMAT, "packages": entries}, indent=2, ensure_ascii=False) + "\n"
 
