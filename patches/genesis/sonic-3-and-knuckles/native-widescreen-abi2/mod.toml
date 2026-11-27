@@ -1,0 +1,45 @@
+# Sonic 3 & Knuckles (Genesis, lock-on composite): native widescreen as a schema 3 / native ABI 2 package (SEG-152-T011). The same game knowledge, BPS delta and verification as the ABI 1 package
+# patches/genesis/sonic-3-and-knuckles/native-widescreen (which stays published and unchanged); only the SDK it is written against differs. Native code is host code: the user approves the exact package identity.
+# The image is the 4 MiB Sonic & Knuckles + Sonic 3 lock-on composite: the launcher builds it as a declared lock-on cartridge (a CLI build passes --mapper lock_on), exactly as for the ABI 1 package.
+[mod]
+id = "sonic3k-native-widescreen-abi2"
+author = "segarecomp SEG-124"
+version = "0.1.0"
+name = "Sonic 3 & Knuckles Native Widescreen (lock-on, ABI 2)"
+license = "MPL-2.0"
+
+[target]
+platform = "genesis"
+
+[[target.revision]]
+label = "lock-on-composite"
+sha256 = "fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23"
+
+[[source]]
+kind = "bps-image"
+path = "bps/game.bps"
+target_sha256 = "8d31e8b6288f0f35304daaa33a8ea7431b514e4cf2f34993594a21b3d44e7c43"
+
+[[source]]
+kind = "native-c11"
+path = "src/provider.c"
+
+[abi]
+native = 2
+minor = 3
+
+[capabilities]
+required = ["frame.vdp", "frame.work_ram", "overlay.rgba", "scenery.words", "state.mod"]
+
+[state]
+schema = 1
+
+[build]
+header_repair = "none"
+
+[geometry]
+aspect_max = "32:9"
+
+[[scene]]
+id = "level"
+components = ["scenery", "hud"]
