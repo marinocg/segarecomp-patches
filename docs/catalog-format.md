@@ -24,7 +24,7 @@ They are static files with stable names: a new format adds a new schema file and
 
 ## Fields of a catalog entry
 
-Two entry shapes, told apart by `schema_version`. **Schema 1 and 2 entries are exactly the `catalog_format` 1 entries**: every field that existed keeps its name and meaning, and `v0.1.0`'s five entries are byte-for-byte the values they were published with.
+Two entry shapes, told apart by `schema_version`. **Schema 1 and 2 entries are exactly the `catalog_format` 1 entries**: every field that existed keeps its name and meaning, and every value `v0.1.0`'s five entries were published with is unchanged (its four native ABI 1 entries later gained only the additive `abi_status`; a copy of `catalog-2.schema.json` from before that addition rejects the field).
 
 | Group | Schema 1/2 patch entry | Schema 3 mod entry |
 |---|---|---|
@@ -35,6 +35,7 @@ Two entry shapes, told apart by `schema_version`. **Schema 1 and 2 entries are e
 | Provenance | `source_revision` (`repository`, exact `commit`, optional `tag`, `tag_commit`), `build` (`writer`, `writer_ref`, `deterministic`) | the same; `build.writer` is `segarecomp mod pack` and `writer_ref` the product revision that produced the archive |
 | Distribution | `asset` (`name`, HTTPS `url`) | the same (the URL is derived from the release that lists the package) |
 | Supersession | `superseded_by` (`<id>@<version>`), optional | the same |
+| ABI deprecation | `abi_status` (`deprecated`), derived by the generator for every `native_abi` 1 entry ([retention policy](abi1-retention.md)) | none |
 
 `game_path` is the game directory (`patches/<platform>/<game>`) and keeps its historical meaning for every published entry. `source_path` (the patch directory, `patches/<platform>/<game>/<patch>`) is present on entries from releases built in the per-patch layout; when it is absent the sources were under `game_path` at `source_revision.commit`. Master System, Game Gear and Sega CD entries are first-class through `platform`, `source_identity_kind` and `bios_requirement`; no field assumes a cartridge.
 

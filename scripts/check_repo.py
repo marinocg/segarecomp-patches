@@ -103,6 +103,24 @@ def check_legacy_patch(root, pt, errs):
         elif src or (d / "source" / "provider.c").exists(): errs.append(f"{n}: data-only package must not carry source")
 
 
+# Native ABI 1 is deprecated (docs/abi1-retention.md): this closed set of existing package versions is kept, byte for byte, and no other ABI 1 package may be added
+# (a new version of an existing id is a new package). The set only shrinks, and only by a recorded removal decision.
+ABI1_RETAINED = {
+    "sonic1-native-widescreen@2.0.1": "636342c8a44516cc86bed4325c7f75d5721f0b38de8e852e2964a015566a5921",
+    "sonic2-native-widescreen-rev01@3.0.1": "3466a9482740901b06768c0e448bf11dce04217ab2295d72b8d34154a052a90d",
+    "sonic2-native-widescreen@3.0.1": "9763ffe11a2753a6bba49589de40faa4d6b5ee0b8ed9a912026b0fb79fa5bcca",
+    "sonic3k-native-widescreen@1.0.1": "8d08e4dbf13642331ba821fc46e29d576d8c6c6c017bbaea17f5f52771bf995a",
+}
+
+
+def check_abi1_frozen(root, pt, errs):
+    for p in pt.meta.get("packages", []) if isinstance(pt.meta, dict) else []:
+        if p.get("native_abi") != 1 and p.get("schema_version") != 2: continue
+        ref = f"{p.get('id')}@{p.get('version')}"
+        if ref not in ABI1_RETAINED: errs.append(f"{pt.rel}/{ref}: new native ABI 1 packages are not accepted (ABI 1 is deprecated): write a schema 3 / ABI 2 mod (docs/abi1-retention.md)")
+        elif p.get("package_sha256") != ABI1_RETAINED[ref]: errs.append(f"{pt.rel}/{ref}: a retained ABI 1 package keeps its published digest (docs/abi1-retention.md)")
+
+
 def check_mod_facts(root, pt, errs):
     """A schema 3 patch: its recorded package versions agree with mod.toml (the authority for what it declares) and with the optional tests/package.json pin.
     The package bytes themselves are the product tool's (check_mod_projects); nothing here rebuilds anything."""
@@ -147,7 +165,7 @@ def check(root, errs):
               "docs/repository-settings.md", "docs/publication-restrictions.md", "docs/layout-and-versioning.md", "catalog/index.json",
               "catalog/schema/catalog-1.schema.json", "catalog/schema/release-1.schema.json", "catalog/schema/catalog-2.schema.json",
               "catalog/schema/release-2.schema.json", "catalog/schema/package-1.schema.json", "publication.json",
-              "docs/catalog-format.md", "docs/artifact-hosting.md",
+              "docs/catalog-format.md", "docs/artifact-hosting.md", "docs/abi1-retention.md",
               "docs/source-review.md", "docs/source-review.json", "docs/analytics-and-privacy.md", "docs/seo.md"):
         if not (root / f).is_file(): errs.append(f"missing {f}")
     for p in tracked(root):
@@ -176,7 +194,9 @@ def check(root, errs):
             if name not in settings.read_text(): errs.append(f"docs/repository-settings.md does not name required check {name!r}")
     lint_layout.lint(root, errs)
     for pt in release_meta.patches(root):
-        if not pt.is_mod: check_legacy_patch(root, pt, errs)
+        if not pt.is_mod:
+            check_legacy_patch(root, pt, errs)
+            check_abi1_frozen(root, pt, errs)
         else: check_mod_facts(root, pt, errs)
     check_selected(root, errs)
     try: validate_catalog.validate_repository(root, errs)

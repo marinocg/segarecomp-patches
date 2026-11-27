@@ -1,5 +1,7 @@
 # Sonic 3 & Knuckles
 
+> **Native ABI 1: deprecated, still supported** ([retention policy](../../../../docs/abi1-retention.md)). The recommended successor is the schema 3 / ABI 2 package [`sonic3k-native-widescreen-abi2`](../native-widescreen-abi2/README.md); it is a candidate and is not published. Until it is published, this package is the one to install; it stays published and unchanged.
+
 > Native 16:9 for the Sonic 3 & Knuckles lock-on composite, with reconstructed foreground scenery, background reconstruction where the level layout explains it, a relocated HUD and widened actor coverage.
 
 ![Sonic 3 and Knuckles, Angel Island Zone 1, in 16:9 with extended jungle scenery and the relocated HUD](https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-3-knuckles-angel-island-patched-16x9.png)

@@ -241,7 +241,8 @@
       "license_declared_in_package": false,
       "default_widescreen": "enhanced_gameplay",
       "default_side_style": "raw",
-      "widescreen_width_max": 100
+      "widescreen_width_max": 100,
+      "abi_status": "deprecated"
     },
     {
       "platform": "genesis",
@@ -300,7 +301,8 @@
       "license_declared_in_package": true,
       "default_widescreen": "enhanced_gameplay",
       "default_side_style": "raw",
-      "widescreen_width_max": 100
+      "widescreen_width_max": 100,
+      "abi_status": "deprecated"
     },
     {
       "platform": "genesis",
@@ -359,7 +361,8 @@
       "license_declared_in_package": true,
       "default_widescreen": "enhanced_gameplay",
       "default_side_style": "raw",
-      "widescreen_width_max": 100
+      "widescreen_width_max": 100,
+      "abi_status": "deprecated"
     },
     {
       "platform": "genesis",
@@ -420,7 +423,8 @@
       "license_declared_in_package": true,
       "default_widescreen": "enhanced_gameplay",
       "default_side_style": "raw",
-      "widescreen_width_max": 100
+      "widescreen_width_max": 100,
+      "abi_status": "deprecated"
     },
     {
       "platform": "genesis",

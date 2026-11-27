@@ -1,5 +1,7 @@
 # Sonic the Hedgehog
 
+> **Native ABI 1: deprecated, still supported** ([retention policy](../../../../docs/abi1-retention.md)). The recommended successor is the schema 3 / ABI 2 package [`sonic1-native-widescreen-abi2`](../native-widescreen-abi2/README.md); its source is in this repository, but it has no recorded package and is not published. Until it is published, this package is the one to install; it stays published and unchanged.
+
 > Native 16:9 for Sonic the Hedgehog (Genesis, REV00): the level scenery is reconstructed beyond the original 320-pixel picture from the game's own level data, and the original HUD is moved to the left edge of the wider picture. The same package also extends actor initialisation so objects do not pop in at the edge of the wide picture.
 
 ![Sonic the Hedgehog, Green Hill Zone 1, in generated-native 16:9 with reconstructed scenery on both sides and the original score, time and rings HUD moved to the left edge](https://raw.githubusercontent.com/marinocg/segarecomp/main/docs/assets/showcase/sonic-1-green-hill-patched-16x9.png)

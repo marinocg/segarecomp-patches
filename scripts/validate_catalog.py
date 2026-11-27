@@ -82,6 +82,7 @@ def _kind_errors(p, n):
     """Rules every entry of a package.json or the catalog obeys, whatever its release: trust/schema agreement and the fields only one kind may carry."""
     errs, schema = [], p.get("schema_version")
     native = p.get("trust") == "trusted-native-source"
+    if "abi_status" in p and p.get("native_abi") != 1: errs.append(f"{n}: abi_status applies only to a native ABI 1 package")
     if schema == 3:
         if not native or not p.get("executable_code"): errs.append(f"{n}: a schema 3 package is trusted native source and executable")
         if p.get("native_abi") != 2 or not p.get("capabilities"): errs.append(f"{n}: a schema 3 package needs native_abi 2 and its capabilities")

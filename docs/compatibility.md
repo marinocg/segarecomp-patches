@@ -10,6 +10,10 @@ A patch applies to exact images only. Support is described per package; "maintai
 | Sonic 3 & Knuckles (lock-on composite) | `sonic3k-native-widescreen` | 1.0.1 | `fba0677fde9f76df93f3e98d6310d8af68b9847bde16e253d73cd4dd8134ed23` | 2 | Sonic campaign, HUD, actors (playable widescreen, maintainer-tested) | Changes slightly |
 | Streets of Rage 2 (USA) | `sor2-widescreen` | 1.0.0 | `4a314edbfee92282850fe95c4c764921916efd9d3c2277fdec2581279b1369b1` | 1 | Extra enemies in the margins | None intended |
 
+## Native ABI 1 deprecation
+
+The four Sonic packages above (schema 2, native ABI 1) are **deprecated but supported**. Their ABI 2 successors are not published yet, so these remain the packages to install. See the [retention policy](abi1-retention.md) for the successor of each.
+
 ## Common limits
 
 * **16:9 only.** The packages were validated at Widescreen Width 100.
