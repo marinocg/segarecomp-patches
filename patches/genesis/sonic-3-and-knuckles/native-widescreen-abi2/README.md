@@ -20,7 +20,7 @@
 `left_px` (the columns of the planned `2 * margin` that lie left of the native picture) is a **pure function of the camera and the act's layout width**, with no placement state: 0 at camera 0, `margin` in the middle, `2 * margin` where the camera reaches the layout's end minus 320. It ramps over `6 * margin` pixels of camera travel at each end (`RAMP_DEN` 6, the shape of the Castle of Illusion package), so while the camera scrolls it moves at most 1/6 as fast. A range narrower than `2 * margin` uses the plain rule (picture at the left until the camera is `margin` in); no shifting scene is that narrow.
 
 * **Right boundary = the layout's end, not the game's camera limit.** The game's right limit is often a default far past the layout until an event locks the camera, and a placement computed from it would jump when it changes. The layout width is constant for the act: the view never passes the end of the layout.
-* **Partial right alignment (accepted by the operator, see the task record).** Where the game's own right limit lies `D` pixels before the layout's end, the picture there is short of `2 * margin` by `D / 6` pixels, and is centred once `D >= 6 * margin` (234 px at 16:9, 606 at 21:9, 1428 at 32:9).
+* **Partial right alignment.** Where the game's own right limit lies `D` pixels before the layout's end, the picture there is short of `2 * margin` by `D / 6` pixels, and is centred once `D >= 6 * margin` (234 px at 16:9, 606 at 21:9, 1428 at 32:9).
 * **Declared on every frame of a shifting scene,** also on frames whose scenery the identity checks decline (the host then extends them generically). Declaring it only with authored scenery recentred the picture for single frames (a jump of up to 238 px, found and fixed during this task). Frames the provider refuses wholly while a level loads (title card) are centred by the host.
 * **Background registration** samples the actual extension: the baseline's sample budget, split between the left and right sides in proportion to the placement (identical to the baseline when centred).
 
@@ -55,7 +55,20 @@ A scene shifts only if the local recordings support all of: (1) the game's left 
 
 Several centred causes are limits of the **evidence**, not shown faults. More recordings could move scenes into the shifting list.
 
-**Known risk, not verified:** the exits of the four shifting scenes, and the entries into Marble Garden 2 and Death Egg 2, were **not recorded**. All five act exits that were recorded (Angel Island 1, IceCap 1, Lava Reef 1, Sky Sanctuary 1, Hidden Palace) reset the camera without leaving the running-level mode. If a shifting scene's exit does the same, the picture steps there; a function of the current camera alone cannot prevent that. The 60-frame holds are not proof that a limit is the act's final one, and normal play-throughs were not recorded.
+**Visible step at level start (all four shifting scenes).** While a level loads, its zone title card is shown centred: the layout is not loaded yet, so there is no placement to compute. On the first frame with a layout the card and the picture move to the start position (captured against the centred build on the same frame for Marble Garden 2, 238 px at 32:9, and Sandopolis 1, 233 px: the centred card does not move; Marble Garden 1 and Death Egg 2 make the same kind of step, 233 and 212 px). A function of the current frame alone cannot avoid it.
+
+**Act exits of the shifting scenes: not captured.** They were attempted with a local test variant that writes the game's own "last hit" state to hittable objects at the arena (test ROM and variant only; this package writes no guest memory), then continued with scripted input:
+
+| Scene | How far the attempt got |
+|---|---|
+| Marble Garden 1 | Boss defeated, the act results screen, the camera limit reopens. The act never changed to act 2 (walking on was a fatal fall, debug flight reached the default limit). Over the results and the reopening, the placement made no step above 4 px |
+| Marble Garden 2 | One boss phase defeated; no exit |
+| Sandopolis 1 | The guardian has no hit counter; no exit |
+| Death Egg 2 | No hittable object appeared; no exit |
+
+**No exit break was observed, and no exit was verified.** All five act exits recorded elsewhere (Angel Island 1, IceCap 1, Lava Reef 1, Sky Sanctuary 1, Hidden Palace) reset the camera without leaving the running-level mode; if a shifting scene's exit does the same, the picture steps there. The entries into Marble Garden 2 and Death Egg 2 from the previous act were not recorded.
+
+**Other camera resets in the four scenes.** Death restarts recorded in Marble Garden 1 and Sandopolis 1 move the placement back to centred while the picture is completely black, with and without placement. The in-play camera jumps recorded in debug flights are described above (the centred picture jumps there too). The 60-frame holds are not proof that a limit is the act's final one, and normal play-throughs were not recorded.
 
 ### Placement evidence (local, aggregate only)
 
